@@ -1,0 +1,12 @@
+*.pyc
+__pycache__/
+*.pyo
+*.pdb
+*.log
+*.xml
+*.XML
+*.xlsx
+*.csv
+*.txt
+*.TXT
+*.7z
