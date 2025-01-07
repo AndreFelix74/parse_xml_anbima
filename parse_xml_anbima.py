@@ -46,7 +46,7 @@ def parse_monetary_value(value):
     Returns:
         float or str: Parsed monetary value as float if convertible, otherwise the original string.
     """
-    if not isinstance(value, str):
+    if isinstance(value, str):
         value = value.replace('R$', '').replace('$', '').replace(' ', '')
 
         if re.match(r'^-?\d+\.\d+$', value):
