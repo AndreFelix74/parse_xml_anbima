@@ -165,9 +165,6 @@ def main():
     equity_stake = compute_equity_stake(fundos, fundos)
     fundos.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
     
-    remove_prefix_and_merge_columns_inplace(fundos)
-    fundos.to_excel(f"{xlsx_destination_path}/fundos.xlsx", index=False)
-
     with open(f"{xlsx_destination_path}carteiras_metadata.json", "r") as f:
         dtypes = json.load(f)
 
@@ -179,9 +176,11 @@ def main():
     equity_real_state = compute_equity_real_state(carteiras)
     carteiras.loc[equity_real_state.index, 'valor'] = equity_real_state['valor']
 
+    remove_prefix_and_merge_columns_inplace(fundos)
+    fundos.to_excel(f"{xlsx_destination_path}/fundos.xlsx", index=False)
+
     remove_prefix_and_merge_columns_inplace(carteiras)
     carteiras.to_excel(f"{xlsx_destination_path}/carteiras.xlsx", index=False)
-
 
 if __name__ == "__main__":
      main()
