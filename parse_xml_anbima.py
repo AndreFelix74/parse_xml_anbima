@@ -124,7 +124,12 @@ def parse_files(str_file_name):
         print(excpt)
 
     if root is None or len(root) == 0:
+        print(f"{str_file_name} without root node.")
         return data
+
+    if root.find('.//header') is None:
+        print(f"{str_file_name} is missing a 'header' node.")
+        raise ValueError('header not found')
 
     for fundo in root.findall(".//*"):
         for child in fundo:
