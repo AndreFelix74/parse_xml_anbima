@@ -12,6 +12,7 @@ import time
 import multiprocessing
 import os
 import re
+import json
 from collections import defaultdict
 from configparser import ConfigParser
 import pandas as pd
@@ -82,16 +83,17 @@ def get_xml_files(files_path):
         files_path (str): Path to the directory containing XML files.
 
     Returns:
-        list: List of relative paths to XML files.
+        list: List of absolute paths to XML files.
     """
     lst_files = sorted(
         [
-            os.path.relpath(os.path.join(root, file), files_path)
+            os.path.join(root, file)
             for root, dirs, files in os.walk(files_path)
             for file in files
             if file.lower().endswith(".xml")
         ]
     )
+
     return lst_files
 
 
@@ -137,7 +139,7 @@ def parse_files(str_file_name):
                 continue
             node_data = {}
             for subchild in child:
-                node_data[subchild.tag] = parse_monetary_value(subchild.text.strip() if subchild.text else None)
+                node_data[f"{child.tag}-{subchild.tag}"] = parse_monetary_value(subchild.text.strip() if subchild.text else None)
             data[child.tag].append(node_data)
 
     return data
@@ -170,7 +172,7 @@ def read_data_from_parsed_data(xml_content):
 
         if 'header' in file_data:
             joined_data = {'header': header_data, 'posicao': posicao}
-            if header_data.get('cnpjcpf', None) is None:
+            if header_data.get('header-cnpjcpf', None) is None:
                 fundos.append(joined_data)
             else:
                 carteiras.append(joined_data)
@@ -191,10 +193,10 @@ def split_header(header):
         tuple: Two dictionaries, one for fund info and one for daily info.
     """
     daily_keys = [
-        'valorcota', 'quantidade', 'patliq', 'valorativos',
-        'valorreceber', 'valorpagar', 'vlcotasemitir',
-        'vlcotasresgatar', 'tributos'
-    ]
+        'header-valorcota', 'header-quantidade', 'header-patliq',
+        'header-valorativos', 'header-valorreceber', 'header-valorpagar',
+        'header-vlcotasemitir', 'header-vlcotasresgatar', 'header-tributos'
+        ]
 
     fund_info = {}
     daily_info = {}
@@ -224,7 +226,7 @@ def convert_to_dataframe(data_list):
         header_fixed_info, header_daily_values = split_header(joined_data['header'])
 
         for daily_key, value in header_daily_values.items():
-            row = {**header_fixed_info, 'tipo': daily_key, 'valor': value}
+            row = {**header_fixed_info, 'tipo': daily_key, 'header-valor': value}
             all_rows.append(row)
 
         posicao = joined_data['posicao']
@@ -289,6 +291,12 @@ def main():
     for idx, data in enumerate(lst_data):
         file_name = 'fundos' if idx % 2 == 0 else 'carteiras'
         dataframe = convert_to_dataframe(data)
+
+        dtypes_dict = dataframe.dtypes.apply(lambda x: x.name).to_dict()
+
+        with open(f"{xlsx_destination_path}{file_name}_metadata.json", "w") as f:
+            json.dump(dtypes_dict, f, indent=4)
+
         dataframe.to_excel(f"{xlsx_destination_path}{str(file_name)}_raw.xlsx", index=False)
 
 

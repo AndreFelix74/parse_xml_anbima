@@ -8,6 +8,9 @@ Created on Fri Jan  3 16:31:03 2025
 
 
 from configparser import ConfigParser
+from collections import defaultdict
+import json
+import os
 import pandas as pd
 
 
@@ -27,6 +30,25 @@ def load_config(config_file):
     return config
 
 
+def format_path(str_path):
+    """
+    Format a given path to ensure it starts with a proper prefix and ends with a slash.
+
+    Args:
+        str_path (str): The input file path.
+
+    Returns:
+        str: Formatted path.
+    """
+    if not str_path.startswith("/") and not str_path.startswith("."):
+        str_path = os.path.join("..", "data", str_path)
+
+    if not str_path.endswith("/"):
+        str_path += "/"
+
+    return str_path
+
+
 def compute_equity_stake(df_investor, df_invested):
     """
     Calculate the equity stake of investors based on available quotas and fund values.
@@ -40,27 +62,34 @@ def compute_equity_stake(df_investor, df_invested):
     Returns:
         pd.DataFrame: A DataFrame with the calculated equity stake for each investor.
     """
-    columns = ['cnpjfundo', 'qtdisponivel', 'dtposicao']
+    equity_stake = pd.DataFrame(columns=['equity_stake'])
 
-    cotas = df_investor[df_investor['cnpjfundo'].notnull()][columns]
+    columns = ['cotas-cnpjfundo', 'cotas-qtdisponivel', 'header-dtposicao']
 
-    missing_cotas = cotas[~cotas['cnpjfundo'].isin(df_invested['cnpj'])]
-    
+    if not all(col in df_investor.columns for col in columns):
+        return equity_stake
+
+    cotas = df_investor[df_investor['cotas-cnpjfundo'].notnull()][columns]
+
+    missing_cotas = cotas[~cotas['cotas-cnpjfundo'].isin(df_invested['header-cnpj'])]
+
     if len(missing_cotas) != 0:
-        print(f"cnpjfundo nao encontrado: {missing_cotas['cnpjfundo'].unique()}" )
+        print(f"cotas-cnpjfundo nao encontrado: {missing_cotas['cotas-cnpjfundo'].unique()}" )
 
     cotas['index_cotas'] = cotas.index
 
+    columns_invested = ['header-cnpj', 'header-valor', 'header-dtposicao']
+
     equity_stake = cotas.merge(
-        df_invested[df_invested['tipo'] == "quantidade"][['cnpj', 'valor', 'dtposicao']],
-        left_on=['cnpjfundo', 'dtposicao'],
-        right_on=['cnpj', 'dtposicao'],
+        df_invested[df_invested['tipo'] == "header-quantidade"][columns_invested],
+        left_on=['cotas-cnpjfundo', 'header-dtposicao'],
+        right_on=['header-cnpj', 'header-dtposicao'],
         how='inner'
     )
 
     equity_stake.set_index('index_cotas', inplace=True)
 
-    equity_stake['equity_stake'] = equity_stake['qtdisponivel'] / equity_stake['valor']
+    equity_stake['equity_stake'] = equity_stake['cotas-qtdisponivel'] / equity_stake['header-valor']
 
     return equity_stake
 
@@ -77,53 +106,42 @@ def compute_equity_real_state(df_investor):
     Returns:
         pd.DataFrame: A DataFrame with the calculated real state equity values.
     """
-    columns = ['percpart', 'valorcontabil']
+    real_state = pd.DataFrame(columns=['valor'])
 
-    real_state = df_investor.loc[df_investor['percpart'].notnull(), columns].copy()
+    columns = ['partplanprev-percpart', 'imoveis-valorcontabil']
 
-    real_state['valor'] = (real_state['percpart'] * real_state['valorcontabil']).round(2)
+    if not all(col in df_investor.columns for col in columns):
+        return real_state
+
+    real_state = df_investor.loc[df_investor['partplanprev-percpart'].notnull(), columns].copy()
+
+    real_state['valor'] = (real_state['partplanprev-percpart'] * real_state['imoveis-valorcontabil']).round(2)
 
     return real_state
 
 
-def get_text_columns_carteiras():
+def remove_prefix_and_merge_columns_inplace(dataframe):
     """
-    Get a list of column names that should be interpreted as text for 'carteiras' data.
+    Renomeia colunas removendo o prefixo antes de um hífen e mescla colunas duplicadas no mesmo DataFrame.
+
+    Args:
+        df (pd.DataFrame): O DataFrame a ser modificado.
 
     Returns:
-        list: A list of column names.
+        None: As alterações são feitas diretamente no DataFrame original.
     """
-    return [
-            'isin', 'cnpj', 'nome', 'dtposicao', 'nomeadm', 'cnpjadm', 'nomegestor',
-            'cnpjgestor', 'nomecustodiante', 'cnpjcustodiante', 'codanbid',
-            'tipofundo', 'nivelrsc', 'tipo', 'codativo', 'cusip', 'dtemissao',
-            'dtoperacao', 'dtvencimento', 'depgar', 'tributos', 'indexador',
-            'caracteristica', 'classeoperacao', 'idinternoativo', 'compromisso',
-            'cnpjemissor', 'coddeb', 'debconv', 'debpartlucro', 'SPE', 'ativo',
-            'cnpjcorretora', 'serie', 'hedge', 'tphedge', 'isininstituicao',
-            'tpconta', 'txperf', 'vltxperf', 'perctxperf', 'coddesp', 'codprov',
-            'credeb', 'dt', 'dtretorno', 'indexadorcomp', 'classecomp', 'cnpjfundo'
-            ]
+    new_columns = [col.split("-", 1)[-1] for col in dataframe.columns]
+    column_map = defaultdict(list)
+    
+    for old_col, new_col in zip(dataframe.columns, new_columns):
+        column_map[new_col].append(old_col)
 
-
-def get_text_columns_fundos():
-    """
-    Get a list of column names that should be interpreted as text for 'fundos' data.
-
-    Returns:
-        list: A list of column names.
-    """
-    return [
-            'isin', 'cnpj', 'nome', 'dtposicao', 'nomeadm', 'cnpjadm', 'nomegestor',
-            'cnpjgestor', 'nomecustodiante', 'cnpjcustodiante', 'codanbid',
-            'tipofundo', 'nivelrsc', 'tipo', 'codativo', 'cusip', 'dtemissao',
-            'dtoperacao', 'dtvencimento', 'depgar', 'tributos', 'indexador',
-            'caracteristica', 'classeoperacao', 'idinternoativo', 'compromisso',
-            'cnpjemissor', 'coddeb', 'debconv', 'debpartlucro', 'SPE', 'ativo',
-            'cnpjcorretora', 'serie', 'hedge', 'tphedge', 'isininstituicao',
-            'tpconta', 'txperf', 'vltxperf', 'perctxperf', 'coddesp', 'codprov',
-            'credeb', 'dt', 'dtretorno', 'indexadorcomp', 'classecomp', 'cnpjfundo'
-            ]
+    for new_col, old_cols in column_map.items():
+        if len(old_cols) > 1:
+            dataframe[new_col] = dataframe[old_cols].bfill(axis=1).iloc[:, 0]
+            dataframe.drop(columns=old_cols, inplace=True)
+        else:
+            dataframe.rename(columns={old_cols[0]: new_col}, inplace=True)
 
 
 def main():
@@ -139,15 +157,19 @@ def main():
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(format_path(xlsx_destination_path))}/"
 
-    fundos = pd.read_excel(f"{xlsx_destination_path}fundos_raw.xlsx",
-                           dtype={col: str for col in get_text_columns_fundos()})
+    with open(f"{xlsx_destination_path}fundos_metadata.json", "r") as f:
+        dtypes = json.load(f)
+
+    fundos = pd.read_excel(f"{xlsx_destination_path}fundos_raw.xlsx", dtype=dtypes)
 
     equity_stake = compute_equity_stake(fundos, fundos)
     fundos.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
     fundos.to_excel(f"{xlsx_destination_path}/fundos.xlsx", index=False)
 
-    carteiras = pd.read_excel(f"{xlsx_destination_path}carteiras_raw.xlsx",
-                              dtype={col: str for col in get_text_columns_carteiras()})
+    with open(f"{xlsx_destination_path}carteiras_metadata.json", "r") as f:
+        dtypes = json.load(f)
+
+    carteiras = pd.read_excel(f"{xlsx_destination_path}carteiras_raw.xlsx", dtype=dtypes)
 
     equity_stake = compute_equity_stake(carteiras, fundos)
     carteiras.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
