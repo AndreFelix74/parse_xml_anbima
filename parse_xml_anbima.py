@@ -139,7 +139,7 @@ def parse_files(str_file_name):
                 continue
             node_data = {}
             for subchild in child:
-                node_data[f"{child.tag}-{subchild.tag}"] = parse_monetary_value(subchild.text.strip() if subchild.text else None)
+                node_data[subchild.tag] = parse_monetary_value(subchild.text.strip() if subchild.text else None)
             data[child.tag].append(node_data)
 
     return data
@@ -172,7 +172,7 @@ def read_data_from_parsed_data(xml_content):
 
         if 'header' in file_data:
             joined_data = {'header': header_data, 'posicao': posicao}
-            if header_data.get('header-cnpjcpf', None) is None:
+            if header_data.get('cnpjcpf', None) is None:
                 fundos.append(joined_data)
             else:
                 carteiras.append(joined_data)
@@ -193,9 +193,9 @@ def split_header(header):
         tuple: Two dictionaries, one for fund info and one for daily info.
     """
     daily_keys = [
-        'header-valorcota', 'header-quantidade', 'header-patliq',
-        'header-valorativos', 'header-valorreceber', 'header-valorpagar',
-        'header-vlcotasemitir', 'header-vlcotasresgatar', 'header-tributos'
+        'valorcota', 'quantidade', 'patliq', 'valorativos',
+        'valorreceber', 'valorpagar', 'vlcotasemitir', 'vlcotasresgatar',
+        'tributos'
         ]
 
     fund_info = {}
@@ -226,7 +226,7 @@ def convert_to_dataframe(data_list):
         header_fixed_info, header_daily_values = split_header(joined_data['header'])
 
         for daily_key, value in header_daily_values.items():
-            row = {**header_fixed_info, 'tipo': daily_key, 'header-valor': value}
+            row = {**header_fixed_info, 'tipo': daily_key, 'valor': value}
             all_rows.append(row)
 
         posicao = joined_data['posicao']

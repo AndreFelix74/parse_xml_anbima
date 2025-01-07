@@ -8,7 +8,6 @@ Created on Fri Jan  3 16:31:03 2025
 
 
 from configparser import ConfigParser
-from collections import defaultdict
 import json
 import os
 import pandas as pd
@@ -64,32 +63,32 @@ def compute_equity_stake(df_investor, df_invested):
     """
     equity_stake = pd.DataFrame(columns=['equity_stake'])
 
-    columns = ['cotas-cnpjfundo', 'cotas-qtdisponivel', 'header-dtposicao']
+    columns = ['cnpjfundo', 'qtdisponivel', 'dtposicao']
 
     if not all(col in df_investor.columns for col in columns):
         return equity_stake
 
-    cotas = df_investor[df_investor['cotas-cnpjfundo'].notnull()][columns]
+    cotas = df_investor[df_investor['cnpjfundo'].notnull()][columns]
 
-    missing_cotas = cotas[~cotas['cotas-cnpjfundo'].isin(df_invested['header-cnpj'])]
+    missing_cotas = cotas[~cotas['cnpjfundo'].isin(df_invested['cnpj'])]
 
     if len(missing_cotas) != 0:
-        print(f"cotas-cnpjfundo nao encontrado: {missing_cotas['cotas-cnpjfundo'].unique()}" )
+        print(f"cnpjfundo nao encontrado: {missing_cotas['cnpjfundo'].unique()}")
 
-    cotas['index_cotas'] = cotas.index
+    cotas['orinal_index'] = cotas.index
 
-    columns_invested = ['header-cnpj', 'header-valor', 'header-dtposicao']
+    columns_invested = ['cnpj', 'valor', 'dtposicao']
 
     equity_stake = cotas.merge(
-        df_invested[df_invested['tipo'] == "header-quantidade"][columns_invested],
-        left_on=['cotas-cnpjfundo', 'header-dtposicao'],
-        right_on=['header-cnpj', 'header-dtposicao'],
+        df_invested[df_invested['tipo'] == "quantidade"][columns_invested],
+        left_on=['cnpjfundo', 'dtposicao'],
+        right_on=['cnpj', 'dtposicao'],
         how='inner'
     )
 
-    equity_stake.set_index('index_cotas', inplace=True)
+    equity_stake.set_index('orinal_index', inplace=True)
 
-    equity_stake['equity_stake'] = equity_stake['cotas-qtdisponivel'] / equity_stake['header-valor']
+    equity_stake['equity_stake'] = equity_stake['qtdisponivel'] / equity_stake['valor']
 
     return equity_stake
 
@@ -106,42 +105,25 @@ def compute_equity_real_state(df_investor):
     Returns:
         pd.DataFrame: A DataFrame with the calculated real state equity values.
     """
-    real_state = pd.DataFrame(columns=['valor'])
+    required_columns = ['percpart', 'valorcontabil', 'codcart', 'imoveis']
 
-    columns = ['partplanprev-percpart', 'imoveis-valorcontabil']
+    if not all(col in df_investor.columns for col in required_columns):
+        return pd.DataFrame(columns=['valor'])
 
-    if not all(col in df_investor.columns for col in columns):
-        return real_state
+    equity_stake = df_investor[df_investor['percpart'].notna()][['codcart', 'percpart']]
+    equity_stake['original_index'] = equity_stake.index
 
-    real_state = df_investor.loc[df_investor['partplanprev-percpart'].notnull(), columns].copy()
+    real_state_equity_book_value = equity_stake.merge(
+        df_investor[['codcart', 'valorcontabil']].dropna(subset=['valorcontabil']),
+        on='codcart',
+        how='inner'
+    )
 
-    real_state['valor'] = real_state['partplanprev-percpart'] * real_state['imoveis-valorcontabil']
+    real_state_equity_book_value['valor'] = real_state_equity_book_value['percpart'] * real_state_equity_book_value['valorcontabil']
 
-    return real_state
+    real_state_equity_book_value = real_state_equity_book_value.set_index('original_index')
 
-
-def remove_prefix_and_merge_columns_inplace(dataframe):
-    """
-    Renomeia colunas removendo o prefixo antes de um hífen e mescla colunas duplicadas no mesmo DataFrame.
-
-    Args:
-        df (pd.DataFrame): O DataFrame a ser modificado.
-
-    Returns:
-        None: As alterações são feitas diretamente no DataFrame original.
-    """
-    new_columns = [col.split("-", 1)[-1] for col in dataframe.columns]
-    column_map = defaultdict(list)
-    
-    for old_col, new_col in zip(dataframe.columns, new_columns):
-        column_map[new_col].append(old_col)
-
-    for new_col, old_cols in column_map.items():
-        if len(old_cols) > 1:
-            dataframe[new_col] = dataframe[old_cols].bfill(axis=1).iloc[:, 0]
-            dataframe.drop(columns=old_cols, inplace=True)
-        else:
-            dataframe.rename(columns={old_cols[0]: new_col}, inplace=True)
+    return real_state_equity_book_value
 
 
 def main():
@@ -157,16 +139,18 @@ def main():
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(format_path(xlsx_destination_path))}/"
 
-    with open(f"{xlsx_destination_path}fundos_metadata.json", "r") as f:
-        dtypes = json.load(f)
+    with open(f"{xlsx_destination_path}fundos_metadata.json", "r") as file:
+        dtypes = json.load(file)
 
     fundos = pd.read_excel(f"{xlsx_destination_path}fundos_raw.xlsx", dtype=dtypes)
 
     equity_stake = compute_equity_stake(fundos, fundos)
     fundos.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
-    
-    with open(f"{xlsx_destination_path}carteiras_metadata.json", "r") as f:
-        dtypes = json.load(f)
+
+    fundos.to_excel(f"{xlsx_destination_path}/fundos.xlsx", index=False)
+
+    with open(f"{xlsx_destination_path}carteiras_metadata.json", "r") as file:
+        dtypes = json.load(file)
 
     carteiras = pd.read_excel(f"{xlsx_destination_path}carteiras_raw.xlsx", dtype=dtypes)
 
@@ -176,11 +160,8 @@ def main():
     equity_real_state = compute_equity_real_state(carteiras)
     carteiras.loc[equity_real_state.index, 'valor'] = equity_real_state['valor']
 
-    remove_prefix_and_merge_columns_inplace(fundos)
-    fundos.to_excel(f"{xlsx_destination_path}/fundos.xlsx", index=False)
-
-    remove_prefix_and_merge_columns_inplace(carteiras)
     carteiras.to_excel(f"{xlsx_destination_path}/carteiras.xlsx", index=False)
 
+
 if __name__ == "__main__":
-     main()
+    main()
