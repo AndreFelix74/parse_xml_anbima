@@ -115,7 +115,7 @@ def compute_equity_real_state(df_investor):
 
     real_state = df_investor.loc[df_investor['partplanprev-percpart'].notnull(), columns].copy()
 
-    real_state['valor'] = (real_state['partplanprev-percpart'] * real_state['imoveis-valorcontabil']).round(2)
+    real_state['valor'] = real_state['partplanprev-percpart'] * real_state['imoveis-valorcontabil']
 
     return real_state
 
@@ -164,6 +164,8 @@ def main():
 
     equity_stake = compute_equity_stake(fundos, fundos)
     fundos.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
+    
+    remove_prefix_and_merge_columns_inplace(fundos)
     fundos.to_excel(f"{xlsx_destination_path}/fundos.xlsx", index=False)
 
     with open(f"{xlsx_destination_path}carteiras_metadata.json", "r") as f:
@@ -177,6 +179,7 @@ def main():
     equity_real_state = compute_equity_real_state(carteiras)
     carteiras.loc[equity_real_state.index, 'valor'] = equity_real_state['valor']
 
+    remove_prefix_and_merge_columns_inplace(carteiras)
     carteiras.to_excel(f"{xlsx_destination_path}/carteiras.xlsx", index=False)
 
 
