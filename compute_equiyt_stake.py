@@ -119,9 +119,11 @@ def compute_equity_real_state(df_investor):
         how='inner'
     )
 
+    real_state_equity_book_value['percpart'] = pd.to_numeric(real_state_equity_book_value['percpart'], errors='coerce')
+
     real_state_equity_book_value['valor'] = (
-        (pd.to_numeric(real_state_equity_book_value['percpart'], errors='coerce') *
-        real_state_equity_book_value['valorcontabil']) / 100.0
+        real_state_equity_book_value['percpart'] *
+        real_state_equity_book_value['valorcontabil'] / 100.0
         )
 
     real_state_equity_book_value = real_state_equity_book_value.set_index('original_index')
