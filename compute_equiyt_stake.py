@@ -110,7 +110,7 @@ def compute_equity_real_state(df_investor):
     if not all(col in df_investor.columns for col in required_columns):
         return pd.DataFrame(columns=['valor'])
 
-    equity_stake = df_investor[df_investor['percpart'].notna()][['codcart', 'percpart']]
+    equity_stake = df_investor[df_investor['tipo'] == 'partplanprev'].drop(columns=['valorcontabil'])
     equity_stake['original_index'] = equity_stake.index
 
     equity_book_value = equity_stake.merge(
@@ -127,6 +127,7 @@ def compute_equity_real_state(df_investor):
         equity_book_value['valorcontabil'] / 100.0
         )
 
+    equity_book_value['tipo'] = 'imoveis_partplanprev'
     equity_book_value = equity_book_value.set_index('original_index')
 
     return equity_book_value
@@ -164,7 +165,7 @@ def main():
     portfolios.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
 
     equity_real_state = compute_equity_real_state(portfolios)
-    portfolios.loc[equity_real_state.index, 'valor'] = equity_real_state['valor']
+    portfolios.loc[equity_real_state.index, ['tipo', 'valor']] = equity_real_state[['tipo', 'valor']].values
 
     portfolios.to_excel(f"{xlsx_destination_path}/carteiras.xlsx", index=False)
 
