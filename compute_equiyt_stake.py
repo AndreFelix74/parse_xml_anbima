@@ -155,7 +155,7 @@ def main():
     with open(f"{xlsx_destination_path}carteiras_metadata.json", "r") as file:
         dtypes = json.load(file)
 
-    portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras_raw_imo.xlsx", dtype=dtypes)
+    portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras_raw.xlsx", dtype=dtypes)
 
     equity_stake = compute_equity_stake(portfolios, funds)
     portfolios.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
