@@ -120,9 +120,9 @@ def compute_equity_real_state(df_investor):
     )
 
     real_state_equity_book_value['valor'] = (
-            (real_state_equity_book_value['percpart'] / 100 )*
-            real_state_equity_book_value['valorcontabil']
-            )
+        (real_state_equity_book_value['percpart'] / 100) *
+        real_state_equity_book_value['valorcontabil']
+        )
 
     real_state_equity_book_value = real_state_equity_book_value.set_index('original_index')
 
