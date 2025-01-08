@@ -113,22 +113,23 @@ def compute_equity_real_state(df_investor):
     equity_stake = df_investor[df_investor['percpart'].notna()][['codcart', 'percpart']]
     equity_stake['original_index'] = equity_stake.index
 
-    real_state_equity_book_value = equity_stake.merge(
+    equity_book_value = equity_stake.merge(
         df_investor[['codcart', 'valorcontabil']].dropna(subset=['valorcontabil']),
         on='codcart',
         how='inner'
     )
 
-    real_state_equity_book_value['percpart'] = pd.to_numeric(real_state_equity_book_value['percpart'], errors='coerce')
+    equity_book_value['percpart'] = pd.to_numeric(equity_book_value['percpart'], errors='coerce')
+    equity_book_value['valorcontabil'] = pd.to_numeric(equity_book_value['valorcontabil'], errors='coerce')
 
-    real_state_equity_book_value['valor'] = (
-        real_state_equity_book_value['percpart'] *
-        real_state_equity_book_value['valorcontabil'] / 100.0
+    equity_book_value['valor'] = (
+        equity_book_value['percpart'] *
+        equity_book_value['valorcontabil'] / 100.0
         )
 
-    real_state_equity_book_value = real_state_equity_book_value.set_index('original_index')
+    equity_book_value = equity_book_value.set_index('original_index')
 
-    return real_state_equity_book_value
+    return equity_book_value
 
 
 def main():
