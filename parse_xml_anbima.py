@@ -12,32 +12,16 @@ import time
 import multiprocessing
 import os
 import re
-import json
 from collections import defaultdict
-from configparser import ConfigParser
 import pandas as pd
+import util as utl
+import data_access as dta
 
 
 COUNT_PARSE = multiprocessing.Value('i', 0)
 
 
-def load_config(config_file):
-    """
-    Load and parse a configuration file.
-
-    Args:
-        config_file (str): Path to the configuration file.
-
-    Returns:
-        ConfigParser: Parsed configuration object.
-    """
-    config = ConfigParser()
-    config.read(config_file)
-
-    return config
-
-
-def parse_monetary_value(value):
+def parse_decimal_value(value):
     """
     Parse and convert a monetary value from string to float, removing currency symbols.
 
@@ -50,29 +34,15 @@ def parse_monetary_value(value):
     if isinstance(value, str):
         value = value.replace('R$', '').replace('$', '').replace(' ', '')
 
-        if re.match(r'^-?\d+\.\d+$', value):
+        if re.match(r'^-?\d+?\.\d+$', value):
+            if value.startswith('.'):
+                value = '0' + value
+            elif value.startswith('-.'):
+                value = value.replace('-.', '-0.')
+
             return float(value)
 
     return value
-
-
-def format_path(str_path):
-    """
-    Format a given path to ensure it starts with a proper prefix and ends with a slash.
-
-    Args:
-        str_path (str): The input file path.
-
-    Returns:
-        str: Formatted path.
-    """
-    if not str_path.startswith("/") and not str_path.startswith("."):
-        str_path = os.path.join("..", "data", str_path)
-
-    if not str_path.endswith("/"):
-        str_path += "/"
-
-    return str_path
 
 
 def get_xml_files(files_path):
@@ -139,12 +109,12 @@ def parse_files(str_file_name):
                 continue
             node_data = {}
             for subchild in child:
-                node_data[subchild.tag] = parse_monetary_value(subchild.text.strip() if subchild.text else None)
+                node_data[subchild.tag] = parse_decimal_value(subchild.text.strip() if subchild.text else None)
             data[child.tag].append(node_data)
 
     return data
 
-  
+
 def read_data_from_parsed_data(xml_content):
     """
     Process parsed XML data and split it into fund and portfolio data.
@@ -192,20 +162,17 @@ def split_header(header):
     Returns:
         tuple: Two dictionaries, one for fund info and one for daily info.
     """
-    daily_keys = [
-        'valorcota', 'quantidade', 'patliq', 'valorativos',
-        'valorreceber', 'valorpagar', 'vlcotasemitir', 'vlcotasresgatar',
-        'tributos'
-        ]
+    header_daily_values = dta.read('header_daily_values')
+    daily_keys = header_daily_values.keys()
 
     fund_info = {}
     daily_info = {}
 
-    for k, v in header.items():
-        if k in daily_keys:
-            daily_info[k] = v
+    for key, value in header.items():
+        if key in daily_keys:
+            daily_info[key] = value
         else:
-            fund_info[k] = v
+            fund_info[key] = value
 
     return fund_info, daily_info
 
@@ -267,13 +234,13 @@ def main():
     """
     Main function to process XML files, parse data, and export to Excel.
     """
-    config = load_config('config.ini')
+    config = utl.load_config('config.ini')
 
     xml_source_path = config['Paths']['xml_source_path']
-    xml_source_path = f"{os.path.dirname(format_path(xml_source_path))}/"
+    xml_source_path = f"{os.path.dirname(utl.format_path(xml_source_path))}/"
 
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
-    xlsx_destination_path = f"{os.path.dirname(format_path(xlsx_destination_path))}/"
+    xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
 
     setup_folders([xml_source_path, xlsx_destination_path])
 
@@ -294,11 +261,10 @@ def main():
 
         dtypes_dict = dataframe.dtypes.apply(lambda x: x.name).to_dict()
 
-        with open(f"{xlsx_destination_path}{file_name}_metadata.json", "w") as f:
-            json.dump(dtypes_dict, f, indent=4)
+        dta.create(f"{file_name}_metadata", dtypes_dict)
 
         dataframe.to_excel(f"{xlsx_destination_path}{str(file_name)}_raw.xlsx", index=False)
 
 
 if __name__ == "__main__":
-     main()
+    main()

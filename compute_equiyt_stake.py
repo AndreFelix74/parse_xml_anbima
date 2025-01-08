@@ -7,45 +7,10 @@ Created on Fri Jan  3 16:31:03 2025
 """
 
 
-from configparser import ConfigParser
-import json
 import os
 import pandas as pd
-
-
-def load_config(config_file):
-    """
-    Load configuration settings from a specified INI file.
-
-    Args:
-        config_file (str): Path to the configuration file.
-
-    Returns:
-        ConfigParser: A ConfigParser object containing the loaded configuration.
-    """
-    config = ConfigParser()
-    config.read(config_file)
-
-    return config
-
-
-def format_path(str_path):
-    """
-    Format a given path to ensure it starts with a proper prefix and ends with a slash.
-
-    Args:
-        str_path (str): The input file path.
-
-    Returns:
-        str: Formatted path.
-    """
-    if not str_path.startswith("/") and not str_path.startswith("."):
-        str_path = os.path.join("..", "data", str_path)
-
-    if not str_path.endswith("/"):
-        str_path += "/"
-
-    return str_path
+import util as utl
+import data_access as dta
 
 
 def compute_equity_stake(df_investor, df_invested):
@@ -93,7 +58,7 @@ def compute_equity_stake(df_investor, df_invested):
     return equity_stake
 
 
-def compute_equity_real_state(df_investor):
+def compute_proportional_allocation(df_investor, types_to_exclude):
     """
     Compute the real state equity value for investors based on participation percentage
     and book value.
@@ -105,33 +70,63 @@ def compute_equity_real_state(df_investor):
     Returns:
         pd.DataFrame: A DataFrame with the calculated real state equity values.
     """
-    required_columns = ['percpart', 'valorcontabil', 'codcart']
+    required_columns = ['percpart', 'new_valor', 'codcart']
 
     if not all(col in df_investor.columns for col in required_columns):
         return pd.DataFrame(columns=['valor'])
 
-    equity_stake = df_investor[df_investor['tipo'] == 'partplanprev'].drop(columns=['valorcontabil'])
-    equity_stake['original_index'] = equity_stake.index
+    allocation = df_investor[df_investor['tipo'] == 'partplanprev'].drop(columns=['new_valor'])
+    allocation['original_index'] = allocation.index
 
-    equity_book_value = equity_stake.merge(
-        df_investor[['codcart', 'valorcontabil']].dropna(subset=['valorcontabil']),
+    df_investor_filtered = df_investor[~df_investor['tipo'].isin(types_to_exclude + ['partplanprev'])]
+
+    allocation_value = allocation.merge(
+        df_investor_filtered[['codcart', 'new_valor']].dropna(subset=['new_valor']),
         on='codcart',
         how='inner'
     )
 
-    equity_book_value['percpart'] = pd.to_numeric(equity_book_value['percpart'], errors='coerce')
-    equity_book_value['valorcontabil'] = pd.to_numeric(equity_book_value['valorcontabil'], errors='coerce')
+    allocation_value['percpart'] = pd.to_numeric(allocation_value['percpart'], errors='coerce')
+    allocation_value['new_valor'] = pd.to_numeric(allocation_value['new_valor'], errors='coerce')
 
-    equity_book_value['valor'] = (
-        equity_book_value['percpart'] *
-        equity_book_value['valorcontabil'] / 100.0
+    allocation_value['new_valor'] = (
+        allocation_value['percpart'] *
+        allocation_value['new_valor'] / 100.0
         )
 
-    equity_book_value['tipo'] = 'imoveis_partplanprev'
-    equity_book_value = equity_book_value.set_index('original_index')
+    allocation_value = allocation_value.set_index('original_index')
 
-    return equity_book_value
+    return allocation_value
 
+
+def harmonize_values(dtfr, harmonization_rules):
+    dtfr['new_valor'] = None
+
+    for key, value in harmonization_rules.items():
+        filters = value["filters"]
+        formula = value["formula"]
+
+        filter_columns = [filter_item['column'] for filter_item in filters]
+        missing_columns = [col for col in filter_columns if col not in dtfr.columns]
+        
+        if missing_columns:
+            print(f"Warning: The following filter columns are missing in the DataFrame: {', '.join(missing_columns)}")
+            continue
+
+        query_parts = []
+        for filter_item in filters:
+            query_parts.append(f"{filter_item['column']} == '{filter_item['value']}'")
+        query = " & ".join(query_parts)
+
+        filtered_df = dtfr.query(query)
+
+        for idx in filtered_df.index:
+            if formula == "0":
+                dtfr.at[idx, 'new_valor'] = 0
+            else:
+                print(formula)
+                formula_value = eval(formula, {}, dtfr.loc[idx].to_dict())
+                dtfr.at[idx, 'new_valor'] = formula_value
 
 def main():
     """
@@ -141,13 +136,12 @@ def main():
     - Computes equity stake and real state equity values.
     - Saves processed data back to Excel files.
     """
-    config = load_config('config.ini')
+    config = utl.load_config('config.ini')
 
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
-    xlsx_destination_path = f"{os.path.dirname(format_path(xlsx_destination_path))}/"
+    xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
 
-    with open(f"{xlsx_destination_path}fundos_metadata.json", "r") as file:
-        dtypes = json.load(file)
+    dtypes = dta.read("fundos_metadata")
 
     funds = pd.read_excel(f"{xlsx_destination_path}fundos_raw.xlsx", dtype=dtypes)
 
@@ -156,19 +150,24 @@ def main():
 
     funds.to_excel(f"{xlsx_destination_path}fundos.xlsx", index=False)
 
-    with open(f"{xlsx_destination_path}carteiras_metadata.json", "r") as file:
-        dtypes = json.load(file)
+    dtypes = dta.read(f"carteiras_metadata")
 
     portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras_raw.xlsx", dtype=dtypes)
 
     equity_stake = compute_equity_stake(portfolios, funds)
     portfolios.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
 
-    equity_real_state = compute_equity_real_state(portfolios)
+    harmonization_rules = dta.read('harmonization_values_rules')
+    harmonize_values(portfolios, harmonization_rules)
+    
+    keys_to_not_allocate = dta.read('header_daily_values')
+    keys_to_not_allocate = {key: value for key, value in keys_to_not_allocate.items() if not value.get('allocation', False)}
+
+    equity_real_state = compute_proportional_allocation(portfolios, list(keys_to_not_allocate.keys()))
     portfolios.loc[equity_real_state.index, ['tipo', 'valor']] = equity_real_state[['tipo', 'valor']].values
 
     portfolios.to_excel(f"{xlsx_destination_path}/carteiras.xlsx", index=False)
 
 
 if __name__ == "__main__":
-    main()
+   main()

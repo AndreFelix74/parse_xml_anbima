@@ -1,0 +1,25 @@
+{
+    "valorcota": {
+    },
+    "quantidade": {
+    },
+    "patliq": {
+        "allocation": true
+    },
+    "valorativos": {
+        "allocation": true
+    },
+    "valorreceber": {
+        "allocation": true
+    },
+    "valorpagar": {
+        "allocation": true
+    },
+    "vlcotasemitir": {
+    },
+    "vlcotasresgatar": {
+    },
+    "tributos": {
+        "allocation": true
+    }
+}

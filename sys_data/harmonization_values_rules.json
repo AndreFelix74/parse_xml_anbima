@@ -1,0 +1,109 @@
+{
+    "CAIXA": {
+        "filters": [
+            {
+                "column": "tipo",
+                "value": "caixa"
+            }
+        ],
+        "formula": "saldo"
+    },
+    "COTAS": {
+        "filters": [
+            {
+                "column": "tipo",
+                "value": "cotas"
+            }
+        ],
+        "formula": "qtdisponivel * puposicao"
+    },
+    "TERMORF": {
+        "filters": [
+            {
+                "column": "tipo",
+                "value": "termorf"
+            }
+        ],
+        "formula": "valorfin"
+    },
+    "FUTURO": {
+        "filters": [
+            {
+                "column": "tipo",
+                "value": "futuros"
+            }
+        ],
+        "formula": "vlajuste"
+    },
+    "OPCOESACOES": {
+        "filters": [
+            {
+                "column": "tipo",
+                "value": "OPCOESACOES"
+            }
+        ],
+        "formula": "valorfinanceiro"
+    },
+    "OPCOESDERIV": {
+        "filters": [
+            {
+                "column": "tipo",
+                "value": "OPCOESDERIV"
+            }
+        ],
+        "formula": "valorfinanceiro"
+    },
+    "ALUGUEL_T": {
+        "filters": [
+            {
+                "column": "tipo",
+                "value":"ALUGUEL"
+            },
+            {
+                "column": "classeoperacao",
+                "value": "T"
+            }
+        ],
+        "formula": "0"
+    },
+    "ALUGUEL_D": {
+        "filters": [
+            {
+                "column": "tipo",
+                "value":"ALUGUEL"
+            },
+            {
+                "column": "classeoperacao",
+                "value": "D"
+            }
+        ],
+        "formula": "valorfinemgar"
+    },
+    "CAP": {
+        "filters": [
+            {
+                "column": "tipo",
+                "value": "cap"
+            }
+        ],
+        "formula": "VALOR2 * -1"
+    },
+    "EMPRESTIMO": {
+        "filters":  [
+            {
+                "column": "tipo",
+                "value": "emprestimos"
+            }
+        ],
+        "formula": "vlavencer + vlvencido - ( (vlavencer + vlvencido) * percprovcred / 100 )"
+    },
+    "IMOVEIS": {
+        "filters": [
+            {
+                "column": "tipo",
+                "value": "imoveis"
+            }
+        ],
+        "formula": "valorcontabil"
+    }
+}
