@@ -120,8 +120,8 @@ def compute_equity_real_state(df_investor):
     )
 
     real_state_equity_book_value['valor'] = (
-        (real_state_equity_book_value['percpart'] / 100) *
-        real_state_equity_book_value['valorcontabil']
+        (pd.to_numeric(real_state_equity_book_value['percpart'], errors='coerce') *
+        real_state_equity_book_value['valorcontabil']) / 100.0
         )
 
     real_state_equity_book_value = real_state_equity_book_value.set_index('original_index')
@@ -145,25 +145,25 @@ def main():
     with open(f"{xlsx_destination_path}fundos_metadata.json", "r") as file:
         dtypes = json.load(file)
 
-    fundos = pd.read_excel(f"{xlsx_destination_path}fundos_raw.xlsx", dtype=dtypes)
+    funds = pd.read_excel(f"{xlsx_destination_path}fundos_raw.xlsx", dtype=dtypes)
 
-    equity_stake = compute_equity_stake(fundos, fundos)
-    fundos.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
+    equity_stake = compute_equity_stake(funds, funds)
+    funds.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
 
-    fundos.to_excel(f"{xlsx_destination_path}/fundos.xlsx", index=False)
+    funds.to_excel(f"{xlsx_destination_path}fundos.xlsx", index=False)
 
     with open(f"{xlsx_destination_path}carteiras_metadata.json", "r") as file:
         dtypes = json.load(file)
 
-    carteiras = pd.read_excel(f"{xlsx_destination_path}carteiras_raw.xlsx", dtype=dtypes)
+    portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras_raw_imo.xlsx", dtype=dtypes)
 
-    equity_stake = compute_equity_stake(carteiras, fundos)
-    carteiras.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
+    equity_stake = compute_equity_stake(portfolios, funds)
+    portfolios.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
 
-    equity_real_state = compute_equity_real_state(carteiras)
-    carteiras.loc[equity_real_state.index, 'valor'] = equity_real_state['valor']
+    equity_real_state = compute_equity_real_state(portfolios)
+    portfolios.loc[equity_real_state.index, 'valor'] = equity_real_state['valor']
 
-    carteiras.to_excel(f"{xlsx_destination_path}/carteiras.xlsx", index=False)
+    portfolios.to_excel(f"{xlsx_destination_path}/carteiras.xlsx", index=False)
 
 
 if __name__ == "__main__":

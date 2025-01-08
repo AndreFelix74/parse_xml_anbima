@@ -133,8 +133,8 @@ def parse_files(str_file_name):
         print(f"{str_file_name} is missing a 'header' node.")
         raise ValueError('header not found')
 
-    for fundo in root.findall(".//*"):
-        for child in fundo:
+    for fund in root.findall(".//*"):
+        for child in fund:
             if len(child) == 0:
                 continue
             node_data = {}
@@ -155,8 +155,8 @@ def read_data_from_parsed_data(xml_content):
     Returns:
         list: Two lists, one for funds and one for portfolios.
     """
-    fundos = []
-    carteiras = []
+    funds = []
+    portfolios = []
 
     for file_data in xml_content:
         header = []
@@ -173,13 +173,13 @@ def read_data_from_parsed_data(xml_content):
         if 'header' in file_data:
             joined_data = {'header': header_data, 'posicao': posicao}
             if header_data.get('cnpjcpf', None) is None:
-                fundos.append(joined_data)
+                funds.append(joined_data)
             else:
-                carteiras.append(joined_data)
+                portfolios.append(joined_data)
         else:
             raise ValueError('header not found')
 
-    return [fundos, carteiras]
+    return [funds, portfolios]
 
 
 def split_header(header):
