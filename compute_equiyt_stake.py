@@ -105,7 +105,7 @@ def compute_equity_real_state(df_investor):
     Returns:
         pd.DataFrame: A DataFrame with the calculated real state equity values.
     """
-    required_columns = ['percpart', 'valorcontabil', 'codcart', 'imoveis']
+    required_columns = ['percpart', 'valorcontabil', 'codcart']
 
     if not all(col in df_investor.columns for col in required_columns):
         return pd.DataFrame(columns=['valor'])
@@ -119,7 +119,10 @@ def compute_equity_real_state(df_investor):
         how='inner'
     )
 
-    real_state_equity_book_value['valor'] = real_state_equity_book_value['percpart'] * real_state_equity_book_value['valorcontabil']
+    real_state_equity_book_value['valor'] = (
+            (real_state_equity_book_value['percpart'] / 100 )*
+            real_state_equity_book_value['valorcontabil']
+            )
 
     real_state_equity_book_value = real_state_equity_book_value.set_index('original_index')
 
