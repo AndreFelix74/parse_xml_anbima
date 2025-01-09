@@ -248,7 +248,7 @@ def main():
     proprtnl_allocation, rows_allocated = compute_proportional_allocation(portfolios,
                                                                           keys_not_allocated)
 
-    portfolios['is_rateada'] = portfolios.index.isin(rows_allocated)
+    portfolios['is_allocated'] = portfolios.index.isin(rows_allocated)
 
     portfolios = pd.concat([
         portfolios,
