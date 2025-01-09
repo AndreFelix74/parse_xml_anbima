@@ -78,9 +78,10 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
     allocation = df_investor[df_investor['tipo'] == 'partplanprev'].drop(columns=['new_valor'])
 
     invstr_filtrd = df_investor[~df_investor['tipo'].isin(types_to_exclude + ['partplanprev'])]
+    invstr_filtrd.loc[:, ['new_tipo']] = invstr_filtrd['tipo']
 
     allocation_value = allocation.merge(
-        invstr_filtrd[['codcart', 'new_valor']].dropna(subset=['new_valor']),
+        invstr_filtrd[['codcart', 'new_valor', 'new_tipo']].dropna(subset=['new_valor']),
         on='codcart',
         how='inner'
     )
