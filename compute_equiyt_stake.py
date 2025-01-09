@@ -120,6 +120,7 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
         )
 
     allocation_value['tipo'] = allocation_value['new_tipo']
+    allocation_value['flag_rateio'] = 0
     allocation_value.drop('new_tipo', axis=1, inplace=True)
 
     return allocation_value, rows_allocated
@@ -242,19 +243,23 @@ def main():
     harmonization_rules = dta.read('harmonization_values_rules')
     harmonize_values(portfolios, harmonization_rules)
 
-    keys_not_allocated = dta.read('header_daily_values')
-    keys_not_allocated = [key for key, value in keys_not_allocated.items() if value.get('serie', False)]
+    header_daily_values = dta.read('header_daily_values')
+    keys_not_allocated = [key for key, value in header_daily_values.items() if value.get('serie', False)]
+    types_series = [key for key, value in header_daily_values.items() if value.get('serie', True)]
 
     proprtnl_allocation, rows_allocated = compute_proportional_allocation(portfolios,
                                                                           keys_not_allocated)
 
-    portfolios['flag_rateio'] = portfolios.index.isin(rows_allocated).astype(int)
+    portfolios['flag_rateio'] = portfolios.index.isin(~rows_allocated).astype(int)
 
     portfolios = pd.concat([
         portfolios,
         proprtnl_allocation
     ], ignore_index=True)
 
+    portfolios['is_serie'] = portfolios['tipo'].isin(types_series)
+    portfolios['valor_serie'] = portfolios['valor'].where(portfolios['is_serie'], 0)
+    portfolios['new_valor'] = portfolios['new_valor'].where(~portfolios['is_serie'], 0)
 
     funds.to_excel(f"{xlsx_destination_path}fundos.xlsx", index=False)
     portfolios.to_excel(f"{xlsx_destination_path}/carteiras.xlsx", index=False)
