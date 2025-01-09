@@ -101,7 +101,7 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
 
     invstr_filtrd = df_investor[~df_investor['tipo'].isin(types_to_exclude + ['partplanprev'])]
 
-    rows_to_remove = invstr_filtrd.index
+    rows_allocated = invstr_filtrd.index
 
     invstr_filtrd.loc[:, ['new_tipo']] = invstr_filtrd['tipo']
 
@@ -122,7 +122,7 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
     allocation_value['tipo'] = allocation_value['new_tipo']
     allocation_value.drop('new_tipo', axis=1, inplace=True)
 
-    return allocation_value, rows_to_remove
+    return allocation_value, rows_allocated
 
 
 def harmonize_values(dtfr, harmonization_rules):
@@ -245,10 +245,10 @@ def main():
     keys_not_allocated = dta.read('header_daily_values')
     keys_not_allocated = [key for key, value in keys_not_allocated.items() if value.get('serie', False)]
 
-    proprtnl_allocation, rows_to_remove = compute_proportional_allocation(portfolios,
+    proprtnl_allocation, rows_allocated = compute_proportional_allocation(portfolios,
                                                                           keys_not_allocated)
 
-    portfolios.drop(rows_to_remove, inplace=True)
+    portfolios['is_rateada'] = portfolios.index.isin(rows_allocated)
 
     portfolios = pd.concat([
         portfolios,
