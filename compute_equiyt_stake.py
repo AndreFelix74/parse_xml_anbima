@@ -76,7 +76,6 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
         return pd.DataFrame(columns=['valor'])
 
     allocation = df_investor[df_investor['tipo'] == 'partplanprev'].drop(columns=['new_valor'])
-    allocation['original_index'] = allocation.index
 
     invstr_filtrd = df_investor[~df_investor['tipo'].isin(types_to_exclude + ['partplanprev'])]
 
@@ -93,8 +92,6 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
         allocation_value['percpart'] *
         allocation_value['new_valor'] / 100.0
         )
-
-    allocation_value = allocation_value.set_index('original_index')
 
     return allocation_value
 
@@ -219,7 +216,11 @@ def main():
     keys_not_allocated = {key: value for key, value in keys_not_allocated.items() if not value.get('allocation', False)}
 
     proprtnl_allocation = compute_proportional_allocation(portfolios, list(keys_not_allocated.keys()))
-    portfolios.loc[proprtnl_allocation.index, ['tipo', 'new_valor']] = proprtnl_allocation[['tipo', 'valor']].values
+    portfolios = pd.concat([
+        portfolios,
+        proprtnl_allocation)
+    ], ignore_index=True)
+
 
     funds.to_excel(f"{xlsx_destination_path}fundos.xlsx", index=False)
     portfolios.to_excel(f"{xlsx_destination_path}/carteiras.xlsx", index=False)
