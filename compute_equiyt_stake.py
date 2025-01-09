@@ -87,17 +87,17 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
 
     Args:
         df_investor (pd.DataFrame): DataFrame containing investor data with columns
-                                    'percpart' and 'valorcontabil'.
+                                    'percpart' and 'valor_calc'.
 
     Returns:
         pd.DataFrame: A DataFrame with the calculated real state equity values.
     """
-    required_columns = ['percpart', 'new_valor', 'codcart']
+    required_columns = ['percpart', 'valor_calc', 'codcart']
 
     if not all(col in df_investor.columns for col in required_columns):
         raise ValueError(f"""Error: required columns missing: {', '.join(required_columns)}""")
 
-    allocation = df_investor[df_investor['tipo'] == 'partplanprev'].drop(columns=['new_valor'])
+    allocation = df_investor[df_investor['tipo'] == 'partplanprev'].drop(columns=['valor_calc'])
 
     invstr_filtrd = df_investor[~df_investor['tipo'].isin(types_to_exclude + ['partplanprev'])]
 
@@ -106,17 +106,17 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
     invstr_filtrd.loc[:, ['new_tipo']] = invstr_filtrd['tipo']
 
     allocation_value = allocation.merge(
-        invstr_filtrd[['codcart', 'new_valor', 'new_tipo']].dropna(subset=['new_valor']),
+        invstr_filtrd[['codcart', 'valor_calc', 'new_tipo']].dropna(subset=['valor_calc']),
         on='codcart',
         how='inner'
     )
 
     allocation_value['percpart'] = pd.to_numeric(allocation_value['percpart'], errors='coerce')
-    allocation_value['new_valor'] = pd.to_numeric(allocation_value['new_valor'], errors='coerce')
+    allocation_value['valor_calc'] = pd.to_numeric(allocation_value['valor_calc'], errors='coerce')
 
-    allocation_value['new_valor'] = (
+    allocation_value['valor_calc'] = (
         allocation_value['percpart'] *
-        allocation_value['new_valor'] / 100.0
+        allocation_value['valor_calc'] / 100.0
         )
 
     allocation_value['tipo'] = allocation_value['new_tipo']
@@ -181,7 +181,7 @@ def harmonize_values(dtfr, harmonization_rules):
     1   cotas    200  180.0
     2   caixa    300  330.0
     """
-    dtfr['new_valor'] = None
+    dtfr['valor_calc'] = None
 
     for key, value in harmonization_rules.items():
         print_debug(f"{key} harmonization rule")
@@ -205,11 +205,11 @@ def harmonize_values(dtfr, harmonization_rules):
 
         if isinstance(formula, str):
             formula_expr = formula
-            dtfr.loc[mask, 'new_valor'] = dtfr.loc[mask].eval(formula_expr)
+            dtfr.loc[mask, 'valor_calc'] = dtfr.loc[mask].eval(formula_expr)
         elif isinstance(formula, list):
-            dtfr.loc[mask, 'new_valor'] = dtfr.loc[mask, formula].sum(axis=1)
+            dtfr.loc[mask, 'valor_calc'] = dtfr.loc[mask, formula].sum(axis=1)
         else:
-            dtfr.loc[mask, 'new_valor'] = formula
+            dtfr.loc[mask, 'valor_calc'] = formula
 
 
 def main():
@@ -250,16 +250,17 @@ def main():
     proprtnl_allocation, rows_allocated = compute_proportional_allocation(portfolios,
                                                                           keys_not_allocated)
 
-    portfolios['flag_rateio'] = portfolios.index.isin(~rows_allocated).astype(int)
+    portfolios['flag_rateio'] = portfolios.index.isin(rows_allocated).astype(int)
 
     portfolios = pd.concat([
         portfolios,
         proprtnl_allocation
     ], ignore_index=True)
 
-    portfolios['is_serie'] = portfolios['tipo'].isin(types_series)
-    portfolios['valor_serie'] = portfolios['valor'].where(portfolios['is_serie'], 0)
-    portfolios['new_valor'] = portfolios['new_valor'].where(~portfolios['is_serie'], 0)
+    portfolios['valor_calc'] = portfolios['valor_calc'].where(portfolios['flag_rateio'] != 1, 0)
+
+    portfolios['valor_serie'] = portfolios['valor'].where(portfolios['tipo'].isin(types_series), 0)
+    portfolios['valor_calc'] = portfolios['valor_calc'].where(~portfolios['tipo'].isin(types_series), 0)
 
     funds.to_excel(f"{xlsx_destination_path}fundos.xlsx", index=False)
     portfolios.to_excel(f"{xlsx_destination_path}/carteiras.xlsx", index=False)
