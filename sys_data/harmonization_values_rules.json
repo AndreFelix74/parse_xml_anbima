@@ -1,4 +1,17 @@
 {
+    "CREDEB": {
+        "filters": [
+            {
+                "column": "credeb",
+                "value": "D"
+            }
+        ],
+        "formula": "valor * -1"
+    },
+    "TODAS": {
+        "filters": [],
+        "formula": ["valor"]
+    },
     "CAIXA": {
         "filters": [
             {
@@ -57,20 +70,20 @@
         "filters": [
             {
                 "column": "tipo",
-                "value":"ALUGUEL"
+                "value":"ACOES"
             },
             {
                 "column": "classeoperacao",
                 "value": "T"
             }
         ],
-        "formula": "0"
+        "formula": 0
     },
     "ALUGUEL_D": {
         "filters": [
             {
                 "column": "tipo",
-                "value":"ALUGUEL"
+                "value":"ACOES"
             },
             {
                 "column": "classeoperacao",
@@ -86,7 +99,7 @@
                 "value": "cap"
             }
         ],
-        "formula": "VALOR2 * -1"
+        "formula": "new_valor * -1"
     },
     "EMPRESTIMO": {
         "filters":  [
@@ -95,7 +108,7 @@
                 "value": "emprestimos"
             }
         ],
-        "formula": "vlavencer + vlvencido - ( (vlavencer + vlvencido) * percprovcred / 100 )"
+        "formula": "vlavencer + vlvencido - ( (vlavencer + vlvencido) * percprovcred / 100.0 )"
     },
     "IMOVEIS": {
         "filters": [

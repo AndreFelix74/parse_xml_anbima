@@ -78,10 +78,10 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
     allocation = df_investor[df_investor['tipo'] == 'partplanprev'].drop(columns=['new_valor'])
     allocation['original_index'] = allocation.index
 
-    df_investor_filtered = df_investor[~df_investor['tipo'].isin(types_to_exclude + ['partplanprev'])]
+    invstr_filtrd = df_investor[~df_investor['tipo'].isin(types_to_exclude + ['partplanprev'])]
 
     allocation_value = allocation.merge(
-        df_investor_filtered[['codcart', 'new_valor']].dropna(subset=['new_valor']),
+        invstr_filtrd[['codcart', 'new_valor']].dropna(subset=['new_valor']),
         on='codcart',
         how='inner'
     )
@@ -100,33 +100,90 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
 
 
 def harmonize_values(dtfr, harmonization_rules):
+    """
+    Harmonize values in a DataFrame based on a set of rules.
+
+    This function applies transformations to a specified column (`valor`) in a pandas DataFrame
+    using a set of harmonization rules defined in a dictionary. Each rule specifies filters to
+    select rows and a formula to compute the new value for the `valor` column.
+
+    Parameters:
+    ----------
+    dtfr : pandas.DataFrame
+        The input DataFrame containing data to be harmonized.
+        Must include columns referenced in the filters and formulas.
+
+    harmonization_rules : dict
+        A dictionary where each key represents a harmonization rule name
+        and each value is a dictionary containing:
+        - "filters": A list of dictionaries, where each dictionary specifies:
+            - "column" (str): The name of the column to filter.
+            - "value" (str or any): The value to match for filtering.
+        - "formula": A string representing a formula to evaluate,
+          a list of columns to sum, or a constant value.
+
+    Returns:
+    -------
+    pandas.DataFrame
+        The DataFrame with the `valor` column harmonized according to the rules.
+
+    Formula Handling:
+    -----------------
+    - If `formula` is a string: It is evaluated as a pandas expression using the `eval` function.
+    - If `formula` is a list: The specified columns are summed across rows.
+    - If `formula` is a constant: The value is directly assigned to the `valor` column.
+
+    Notes:
+    ------
+    - Rows not matching any rule will retain `None` or their original value in the `valor` column.
+    - Warnings are printed if any filter references columns missing from the DataFrame.
+
+    Example:
+    --------
+    >>> import pandas as pd
+    >>> data = {'tipo': ['caixa', 'cotas', 'caixa'], 'saldo': [100, 200, 300]}
+    >>> df = pd.DataFrame(data)
+    >>> rules = {
+    ...     "CAIXA": {"filters": [{"column": "tipo", "value": "caixa"}], "formula": "saldo * 1.1"},
+    ...     "COTAS": {"filters": [{"column": "tipo", "value": "cotas"}], "formula": "saldo * 0.9"}
+    ... }
+    >>> harmonized_df = harmonize_values(df, rules)
+    >>> print(harmonized_df)
+         tipo  saldo  valor
+    0   caixa    100  110.0
+    1   cotas    200  180.0
+    2   caixa    300  330.0
+    """
     dtfr['new_valor'] = None
 
     for key, value in harmonization_rules.items():
+        print(f"{key} harmonization rule")
         filters = value["filters"]
         formula = value["formula"]
 
         filter_columns = [filter_item['column'] for filter_item in filters]
         missing_columns = [col for col in filter_columns if col not in dtfr.columns]
-        
+
         if missing_columns:
-            print(f"Warning: The following filter columns are missing in the DataFrame: {', '.join(missing_columns)}")
+            print(f"""Warning: filter columns missing: {', '.join(missing_columns)}""")
             continue
 
-        query_parts = []
+        mask = pd.Series(True, index=dtfr.index)
         for filter_item in filters:
-            query_parts.append(f"{filter_item['column']} == '{filter_item['value']}'")
-        query = " & ".join(query_parts)
+            column, filter_value = filter_item['column'], filter_item['value']
+            mask &= (dtfr[column] == filter_value)
 
-        filtered_df = dtfr.query(query)
+        if sum(mask) == 0:
+            continue
 
-        for idx in filtered_df.index:
-            if formula == "0":
-                dtfr.at[idx, 'new_valor'] = 0
-            else:
-                print(formula)
-                formula_value = eval(formula, {}, dtfr.loc[idx].to_dict())
-                dtfr.at[idx, 'new_valor'] = formula_value
+        if isinstance(formula, str):
+            formula_expr = formula
+            dtfr.loc[mask, 'new_valor'] = dtfr.loc[mask].eval(formula_expr)
+        elif isinstance(formula, list):
+            dtfr.loc[mask, 'new_valor'] = dtfr.loc[mask, formula].sum(axis=1)
+        else:
+            dtfr.loc[mask, 'new_valor'] = formula
+
 
 def main():
     """
@@ -148,8 +205,6 @@ def main():
     equity_stake = compute_equity_stake(funds, funds)
     funds.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
 
-    funds.to_excel(f"{xlsx_destination_path}fundos.xlsx", index=False)
-
     dtypes = dta.read(f"carteiras_metadata")
 
     portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras_raw.xlsx", dtype=dtypes)
@@ -159,15 +214,16 @@ def main():
 
     harmonization_rules = dta.read('harmonization_values_rules')
     harmonize_values(portfolios, harmonization_rules)
-    
-    keys_to_not_allocate = dta.read('header_daily_values')
-    keys_to_not_allocate = {key: value for key, value in keys_to_not_allocate.items() if not value.get('allocation', False)}
 
-    equity_real_state = compute_proportional_allocation(portfolios, list(keys_to_not_allocate.keys()))
-    portfolios.loc[equity_real_state.index, ['tipo', 'valor']] = equity_real_state[['tipo', 'valor']].values
+    keys_not_allocated = dta.read('header_daily_values')
+    keys_not_allocated = {key: value for key, value in keys_not_allocated.items() if not value.get('allocation', False)}
 
+    proprtnl_allocation = compute_proportional_allocation(portfolios, list(keys_not_allocated.keys()))
+    portfolios.loc[proprtnl_allocation.index, ['tipo', 'new_valor']] = proprtnl_allocation[['tipo', 'valor']].values
+
+    funds.to_excel(f"{xlsx_destination_path}fundos.xlsx", index=False)
     portfolios.to_excel(f"{xlsx_destination_path}/carteiras.xlsx", index=False)
 
 
 if __name__ == "__main__":
-   main()
+    main()
