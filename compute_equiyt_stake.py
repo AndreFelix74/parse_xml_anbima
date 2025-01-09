@@ -218,7 +218,7 @@ def main():
     proprtnl_allocation = compute_proportional_allocation(portfolios, list(keys_not_allocated.keys()))
     portfolios = pd.concat([
         portfolios,
-        proprtnl_allocation)
+        proprtnl_allocation
     ], ignore_index=True)
 
 
