@@ -13,6 +13,28 @@ import util as utl
 import data_access as dta
 
 
+DEBUG = False
+
+
+def print_debug(msg):
+    """
+    Prints the given message if debugging is enabled.
+
+    Parameters:
+    msg (str): The message to be printed.
+
+    This function only prints the message when the global DEBUG variable is set to True.
+    If DEBUG is False, the function does nothing.
+
+    Example:
+    >>> DEBUG = True
+    >>> print_debug("This is a debug message.")
+    This is a debug message.
+    """
+    if DEBUG:
+        print(msg)
+
+
 def compute_equity_stake(df_investor, df_invested):
     """
     Calculate the equity stake of investors based on available quotas and fund values.
@@ -73,11 +95,14 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
     required_columns = ['percpart', 'new_valor', 'codcart']
 
     if not all(col in df_investor.columns for col in required_columns):
-        return pd.DataFrame(columns=['valor'])
+        raise ValueError(f"""Error: required columns missing: {', '.join(required_columns)}""")
 
     allocation = df_investor[df_investor['tipo'] == 'partplanprev'].drop(columns=['new_valor'])
 
     invstr_filtrd = df_investor[~df_investor['tipo'].isin(types_to_exclude + ['partplanprev'])]
+
+    rows_to_remove = invstr_filtrd.index
+
     invstr_filtrd.loc[:, ['new_tipo']] = invstr_filtrd['tipo']
 
     allocation_value = allocation.merge(
@@ -94,7 +119,7 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
         allocation_value['new_valor'] / 100.0
         )
 
-    return allocation_value
+    return allocation_value, rows_to_remove
 
 
 def harmonize_values(dtfr, harmonization_rules):
@@ -155,7 +180,7 @@ def harmonize_values(dtfr, harmonization_rules):
     dtfr['new_valor'] = None
 
     for key, value in harmonization_rules.items():
-        print(f"{key} harmonization rule")
+        print_debug(f"{key} harmonization rule")
         filters = value["filters"]
         formula = value["formula"]
 
@@ -205,7 +230,8 @@ def main():
 
     dtypes = dta.read(f"carteiras_metadata")
 
-    portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras_raw.xlsx", dtype=dtypes)
+    portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras_raw.xlsx",
+                               dtype=dtypes)
 
     equity_stake = compute_equity_stake(portfolios, funds)
     portfolios.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
@@ -214,9 +240,14 @@ def main():
     harmonize_values(portfolios, harmonization_rules)
 
     keys_not_allocated = dta.read('header_daily_values')
-    keys_not_allocated = {key: value for key, value in keys_not_allocated.items() if not value.get('allocation', False)}
+    keys_not_allocated = [key for key, value in keys_not_allocated.items() if value.get('serie', False)]
 
-    proprtnl_allocation = compute_proportional_allocation(portfolios, list(keys_not_allocated.keys()))
+    proprtnl_allocation, rows_to_remove = compute_proportional_allocation(portfolios,
+                                                                          keys_not_allocated)
+
+    portfolios.drop(rows_to_remove, inplace=True)
+    portfolios.loc[:, ['new_tipo']] = portfolios['tipo']
+
     portfolios = pd.concat([
         portfolios,
         proprtnl_allocation
