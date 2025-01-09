@@ -119,6 +119,9 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
         allocation_value['new_valor'] / 100.0
         )
 
+    allocation_value['tipo'] = allocation_value['new_tipo']
+    allocation_value.drop('new_tipo', axis=1, inplace=True)
+
     return allocation_value, rows_to_remove
 
 
@@ -246,7 +249,6 @@ def main():
                                                                           keys_not_allocated)
 
     portfolios.drop(rows_to_remove, inplace=True)
-    portfolios.loc[:, ['new_tipo']] = portfolios['tipo']
 
     portfolios = pd.concat([
         portfolios,
