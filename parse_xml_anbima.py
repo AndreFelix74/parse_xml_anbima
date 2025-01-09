@@ -34,7 +34,7 @@ def parse_decimal_value(value):
     if isinstance(value, str):
         value = value.replace('R$', '').replace('$', '').replace(' ', '')
 
-        if re.match(r'^-?\d+?\.\d+$', value) or re.match(r'^\.\d+$'):
+        if re.match(r'^-?\d+?\.\d+$', value) or re.match(r'^\.\d+$', value):
             if value.startswith('.'):
                 value = '0' + value
             elif value.startswith('-.'):
