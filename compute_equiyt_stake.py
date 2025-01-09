@@ -92,7 +92,7 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
     Returns:
         pd.DataFrame: A DataFrame with the calculated real state equity values.
     """
-    required_columns = ['percpart', 'valor_calc', 'codcart']
+    required_columns = ['percpart', 'valor_calc', 'codcart', 'nome']
 
     if not all(col in df_investor.columns for col in required_columns):
         raise ValueError(f"""Error: required columns missing: {', '.join(required_columns)}""")
@@ -106,8 +106,8 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
     invstr_filtrd.loc[:, ['new_tipo']] = invstr_filtrd['tipo']
 
     allocation_value = allocation.merge(
-        invstr_filtrd[['codcart', 'valor_calc', 'new_tipo']].dropna(subset=['valor_calc']),
-        on='codcart',
+        invstr_filtrd[['codcart', 'nome', 'valor_calc', 'new_tipo']].dropna(subset=['valor_calc']),
+        on=['codcart', 'nome'],
         how='inner'
     )
 
