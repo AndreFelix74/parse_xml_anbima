@@ -82,30 +82,54 @@ def compute_equity_stake(df_investor, df_invested):
 
 def compute_proportional_allocation(df_investor, types_to_exclude):
     """
-    Compute the real state equity value for investors based on participation percentage
-    and book value.
+    Computes the proportional allocation of investment values for a given investor dataset, 
+    while excluding specified investment types, mostily series.
 
-    Args:
-        df_investor (pd.DataFrame): DataFrame containing investor data with columns
-                                    'percpart' and 'valor_calc'.
+    Parameters
+    ----------
+    df_investor : pandas.DataFrame
+        A DataFrame containing investment data. It must include the following columns:
+        'percpart', 'valor_calc', 'codcart', 'nome', and 'tipo'.
+    types_to_exclude : list of str
+        A list of investment types to exclude from the allocation calculation.
 
-    Returns:
-        pd.DataFrame: A DataFrame with the calculated real state equity values.
+    Returns
+    -------
+    pandas.DataFrame
+        A DataFrame with computed allocation values, including the following columns:
+        - 'codcart': Portfolio code.
+        - 'nome': Portfolio name.
+        - 'percpart': Percentage participation, converted to numeric.
+        - 'valor_calc': Computed allocation value, converted to numeric.
+        - 'flag_rateio': An allocation flag, initialized to 0.
+
+    Raises
+    ------
+    ValueError
+        If the required columns ('percpart', 'valor_calc', 'codcart', 'nome') 
+        are not present in the input DataFrame.
+
+    Notes
+    -----
+    - The function filters out rows based on the `types_to_exclude` list and the 
+      hardcoded exclusion of the type 'partplanprev'.
+    - The proportional allocation is computed by multiplying 'percpart' with 
+      'valor_calc' and dividing by 100.
+    - Any non-numeric values in 'percpart' or 'valor_calc' are coerced to NaN 
+      during processing.
     """
     required_columns = ['percpart', 'valor_calc', 'codcart', 'nome']
 
     if not all(col in df_investor.columns for col in required_columns):
         raise ValueError(f"""Error: required columns missing: {', '.join(required_columns)}""")
 
-    allocation = df_investor[df_investor['tipo'] == 'partplanprev'].drop(columns=['valor_calc'])
+    partplanprev = df_investor[df_investor['tipo'] == 'partplanprev']['codcart', 'nome', 'percpart']
 
     invstr_filtrd = df_investor[~df_investor['tipo'].isin(types_to_exclude + ['partplanprev'])]
+    invstr_filtrd.drop('percpart', axis=1, inplace=True)
     invstr_filtrd.loc[:, 'original_index'] = invstr_filtrd.index
 
-    invstr_filtrd.loc[:, ['new_tipo']] = invstr_filtrd['tipo']
-
-    columns_filtrd = ['codcart', 'nome', 'valor_calc', 'new_tipo', 'original_index']
-    allocation_value = allocation.merge(
+    allocation_value = partplanprev.merge(
         invstr_filtrd[columns_filtrd].dropna(subset=['valor_calc']),
         on=['codcart', 'nome'],
         how='inner'
@@ -119,9 +143,7 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
         allocation_value['valor_calc'] / 100.0
         )
 
-    allocation_value['tipo'] = allocation_value['new_tipo']
     allocation_value['flag_rateio'] = 0
-    allocation_value.drop('new_tipo', axis=1, inplace=True)
 
     return allocation_value
 
