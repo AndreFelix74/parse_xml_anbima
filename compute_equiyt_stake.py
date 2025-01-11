@@ -123,14 +123,14 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
     if not all(col in df_investor.columns for col in required_columns):
         raise ValueError(f"""Error: required columns missing: {', '.join(required_columns)}""")
 
-    partplanprev = df_investor[df_investor['tipo'] == 'partplanprev']['codcart', 'nome', 'percpart']
+    partplanprev = df_investor[df_investor['tipo'] == 'partplanprev'][['codcart', 'nome', 'percpart']]
 
     invstr_filtrd = df_investor[~df_investor['tipo'].isin(types_to_exclude + ['partplanprev'])]
     invstr_filtrd.drop('percpart', axis=1, inplace=True)
     invstr_filtrd.loc[:, 'original_index'] = invstr_filtrd.index
 
     allocation_value = partplanprev.merge(
-        invstr_filtrd[columns_filtrd].dropna(subset=['valor_calc']),
+        invstr_filtrd.dropna(subset=['valor_calc']),
         on=['codcart', 'nome'],
         how='inner'
     )
