@@ -118,12 +118,12 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
     - Any non-numeric values in 'percpart' or 'valor_calc' are coerced to NaN 
       during processing.
     """
-    required_columns = ['percpart', 'valor_calc', 'codcart', 'nome', 'cnpb']
+    required_columns = ['percpart', 'valor_calc', 'codcart', 'nome', 'cnpb', 'dtposicao']
 
     if not all(col in df_investor.columns for col in required_columns):
         raise ValueError(f"""Error: required columns missing: {', '.join(required_columns)}""")
 
-    partplanprev_columns = ['codcart', 'nome', 'percpart', 'cnpb']
+    partplanprev_columns = ['codcart', 'nome', 'percpart', 'cnpb', 'dtposicao']
     partplanprev = df_investor[df_investor['tipo'] == 'partplanprev'][partplanprev_columns]
 
     invstr_filtrd = df_investor[~df_investor['tipo'].isin(types_to_exclude + ['partplanprev'])]
@@ -132,7 +132,7 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
 
     allocation_value = partplanprev.merge(
         invstr_filtrd.dropna(subset=['valor_calc']),
-        on=['codcart', 'nome'],
+        on=['codcart', 'nome', 'dtposicao'],
         how='inner'
     )
 
