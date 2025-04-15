@@ -48,16 +48,13 @@ def compute_equity_stake(df_investor, df_invested):
     Returns:
         pd.DataFrame: A DataFrame with the calculated equity stake for each investor.
     """
-    equity_stake = pd.DataFrame(columns=['equity_stake'])
-
     columns = ['cnpjfundo', 'qtdisponivel', 'dtposicao']
 
-    if not all(col in df_investor.columns for col in columns):
-        return equity_stake
+    validate_required_columns(df_investor, columns)
 
-    cotas = df_investor[df_investor['cnpjfundo'].notnull()][columns]
+    cotas = df_investor[df_investor['cnpjfundo'].notnull()][columns].copy()
 
-    missing_cotas = cotas[~cotas['cnpjfundo'].isin(df_invested['cnpj'])]
+    missing_cotas = cotas[~cotas['cnpjfundo'].isin(df_invested['cnpj'])].copy()
 
     if len(missing_cotas) != 0:
         print(f"cnpjfundo nao encontrado: {missing_cotas['cnpjfundo'].unique()}")
@@ -67,7 +64,7 @@ def compute_equity_stake(df_investor, df_invested):
     columns_invested = ['cnpj', 'valor', 'dtposicao']
 
     equity_stake = cotas.merge(
-        df_invested[df_invested['tipo'] == "quantidade"][columns_invested],
+        df_invested[df_invested['tipo'] == 'quantidade'][columns_invested],
         left_on=['cnpjfundo', 'dtposicao'],
         right_on=['cnpj', 'dtposicao'],
         how='inner'
@@ -120,8 +117,7 @@ def compute_proportional_allocation(df_investor, types_to_exclude):
     """
     required_columns = ['percpart', 'valor_calc', 'codcart', 'nome', 'cnpb', 'dtposicao']
 
-    if not all(col in df_investor.columns for col in required_columns):
-        raise ValueError(f"""Error: required columns missing: {', '.join(required_columns)}""")
+    validate_required_columns(df_investor, required_columns)
 
     partplanprev_columns = ['codcart', 'nome', 'percpart', 'cnpb', 'dtposicao']
     partplanprev = df_investor[df_investor['tipo'] == 'partplanprev'][partplanprev_columns]
@@ -212,11 +208,8 @@ def harmonize_values(dtfr, harmonization_rules):
         formula = value["formula"]
 
         filter_columns = [filter_item['column'] for filter_item in filters]
-        missing_columns = [col for col in filter_columns if col not in dtfr.columns]
 
-        if missing_columns:
-            print(f"""Warning: filter columns missing: {', '.join(missing_columns)}""")
-            continue
+        validate_required_columns(dtfr, filter_columns)
 
         mask = pd.Series(True, index=dtfr.index)
         for filter_item in filters:
@@ -233,6 +226,24 @@ def harmonize_values(dtfr, harmonization_rules):
             dtfr.loc[mask, 'valor_calc'] = dtfr.loc[mask, formula].sum(axis=1)
         else:
             dtfr.loc[mask, 'valor_calc'] = formula
+
+
+def validate_required_columns(df: pd.DataFrame, required_columns: list):
+    """
+    Validates that all required columns are present in the given DataFrame.
+    Automatically identifies the name of the calling function to include in error messages.
+
+    Args:
+        df (pd.DataFrame): The DataFrame to validate.
+        required_columns (list): A list of column names that must be present.
+
+    Raises:
+        ValueError: If one or more required columns are missing.
+    """
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        caller_name = inspect.stack()[1].function
+        raise ValueError(f"[{caller_name}] Missing required columns: {', '.join(missing_columns)}")
 
 
 def main():
