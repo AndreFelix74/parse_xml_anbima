@@ -61,7 +61,7 @@ def calculate_funds_returns(df_funds):
     return returns
 
 
-def compute_direct_composition(investor, group_keys):
+def compute_direct_composition_by_patiliq(investor, group_keys, types_to_exclude):
     """
     Computes the composition of each asset within its portfolio group, based on
     the 'valor_calc' column. The total per portfolio is calculated by grouping on
@@ -84,14 +84,32 @@ def compute_direct_composition(investor, group_keys):
     if 'dtposicao' not in group_keys:
         group_keys = group_keys + ['dtposicao']
 
-    required_columns = group_keys + ['valor_calc']
+    required_columns = group_keys + ['valor_calc', 'tipo']
     validate_required_columns(investor, required_columns)
 
-    investor['valor_calc'] = pd.to_numeric(investor['valor_calc'])
+    composition = investor[
+        ~investor['tipo'].isin(types_to_exclude + ['partplanprev'])
+    ][group_keys + ['valor_calc', 'tipo']].copy()
 
-    patliq = investor.groupby(group_keys)['valor_calc'].transform('sum')
+    composition['original_index'] = composition.index
 
-    investor['composicao'] = investor['valor_calc'] / patliq
+    patliq = investor[investor['tipo'] == 'patliq'][group_keys + ['valor_serie']].copy()
+    patliq.rename(columns={'valor_serie': 'valor_patliq'}, inplace=True)
+
+    composition = composition.merge(
+        patliq,
+        on=group_keys,
+        how='inner'
+    )
+
+    composition['composicao'] = (
+        pd.to_numeric(composition['valor_calc'], errors='raise') /
+        pd.to_numeric(composition['valor_patliq'], errors='raise')
+    )
+
+    composition.set_index('original_index', inplace=True)
+
+    return composition
 
 
 def compute_equity_stake(df_investor, df_invested):
@@ -113,12 +131,12 @@ def compute_equity_stake(df_investor, df_invested):
 
     cotas = df_investor[df_investor['cnpjfundo'].notnull()][columns].copy()
 
-    missing_cotas = cotas[~cotas['cnpjfundo'].isin(df_invested['cnpj'])].copy()
+    missing_cotas = cotas[~cotas['cnpjfundo'].isin(df_invested['cnpj'])]
 
     if len(missing_cotas) != 0:
         print(f"cnpjfundo nao encontrado: {missing_cotas['cnpjfundo'].unique()}")
 
-    cotas['orinal_index'] = cotas.index
+    cotas['original_index'] = cotas.index
 
     columns_invested = ['cnpj', 'valor', 'dtposicao']
 
@@ -129,14 +147,14 @@ def compute_equity_stake(df_investor, df_invested):
         how='inner'
     )
 
-    equity_stake.set_index('orinal_index', inplace=True)
+    equity_stake.set_index('original_index', inplace=True)
 
     equity_stake['equity_stake'] = equity_stake['qtdisponivel'] / equity_stake['valor']
 
     return equity_stake
 
 
-def explode_partplanprev(portfolios, types_to_exclude):
+def explode_partplanprev_and_allocate(portfolios, types_to_exclude):
     """
     Decomposes aggregated allocations of type 'partplanprev' into proportional
     entries based on real underlying assets in the 'portfolios' dataset.
@@ -338,6 +356,11 @@ def main():
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
 
+    header_daily_values = dta.read('header_daily_values')
+
+    keys_not_allocated = [key for key, value in header_daily_values.items() if value.get('serie', False)]
+    types_series = [key for key, value in header_daily_values.items() if value.get('serie', True)]
+
     dtypes = dta.read("fundos_metadata")
     harmonization_rules = dta.read('harmonization_values_rules')
 
@@ -348,7 +371,11 @@ def main():
 
     harmonize_values(funds, harmonization_rules)
 
-    compute_direct_composition(funds, ['cnpj'])
+    funds['valor_serie'] = funds['valor'].where(funds['tipo'].isin(types_series), 0)
+    funds['valor_calc'] = funds['valor_calc'].where(~funds['tipo'].isin(types_series), 0)
+
+    composition = compute_direct_composition_by_patiliq(funds, ['cnpj'], types_series)
+    funds.loc[composition.index, 'composicao'] = composition['composicao']
 
     dtypes = dta.read(f"carteiras_metadata")
 
@@ -360,11 +387,13 @@ def main():
 
     harmonize_values(portfolios, harmonization_rules)
 
-    header_daily_values = dta.read('header_daily_values')
-    keys_not_allocated = [key for key, value in header_daily_values.items() if value.get('serie', False)]
-    types_series = [key for key, value in header_daily_values.items() if value.get('serie', True)]
+    portfolios['valor_serie'] = portfolios['valor'].where(portfolios['tipo'].isin(types_series), 0)
+    portfolios['valor_calc'] = portfolios['valor_calc'].where(~portfolios['tipo'].isin(types_series), 0)
 
-    allocated_partplanprev = explode_partplanprev(portfolios, keys_not_allocated)
+    composition = compute_direct_composition_by_patiliq(portfolios, ['codcart', 'nome', 'cnpb'], types_series)
+    portfolios.loc[composition.index, 'composicao'] = composition['composicao']
+
+    allocated_partplanprev = explode_partplanprev_and_allocate(portfolios, keys_not_allocated)
 
     portfolios['flag_rateio'] = portfolios.index.isin(allocated_partplanprev['original_index'].unique()).astype(int)
 
@@ -374,11 +403,6 @@ def main():
     ], ignore_index=True)
 
     portfolios['valor_calc'] = portfolios['valor_calc'].where(portfolios['flag_rateio'] != 1, 0)
-
-    portfolios['valor_serie'] = portfolios['valor'].where(portfolios['tipo'].isin(types_series), 0)
-    portfolios['valor_calc'] = portfolios['valor_calc'].where(~portfolios['tipo'].isin(types_series), 0)
-
-    compute_direct_composition(portfolios, ['codcart', 'nome', 'cnpb'])
 
     funds_returns = calculate_funds_returns(funds)
 
