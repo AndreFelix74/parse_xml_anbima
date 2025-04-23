@@ -61,7 +61,7 @@ def calculate_funds_returns(df_funds):
     return returns
 
 
-def compute_direct_composition_by_patiliq(investor, group_keys, types_to_exclude):
+def compute_direct_composition_by_patliq(investor, group_keys, types_to_exclude):
     """
     Computes the composition of each asset within its portfolio group, based on
     the 'valor_calc' column. The total per portfolio is calculated by grouping on
@@ -357,6 +357,7 @@ def main():
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
 
     header_daily_values = dta.read('header_daily_values')
+    types_to_exclude = dta.read('types_to_exclude')
 
     keys_not_allocated = [key for key, value in header_daily_values.items() if value.get('serie', False)]
     types_series = [key for key, value in header_daily_values.items() if value.get('serie', True)]
@@ -365,6 +366,7 @@ def main():
     harmonization_rules = dta.read('harmonization_values_rules')
 
     funds = pd.read_excel(f"{xlsx_destination_path}fundos_raw.xlsx", dtype=dtypes)
+    funds = funds[~funds['tipo'].isin(types_to_exclude)]
 
     equity_stake = compute_equity_stake(funds, funds)
     funds.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
@@ -374,13 +376,15 @@ def main():
     funds['valor_serie'] = funds['valor'].where(funds['tipo'].isin(types_series), 0)
     funds['valor_calc'] = funds['valor_calc'].where(~funds['tipo'].isin(types_series), 0)
 
-    composition = compute_direct_composition_by_patiliq(funds, ['cnpj'], types_series)
+    composition = compute_direct_composition_by_patliq(funds, ['cnpj'], types_series)
     funds.loc[composition.index, 'composicao'] = composition['composicao']
 
     dtypes = dta.read(f"carteiras_metadata")
 
     portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras_raw.xlsx",
                                dtype=dtypes)
+
+    portfolios = portfolios[~portfolios['tipo'].isin(types_to_exclude)]
 
     equity_stake = compute_equity_stake(portfolios, funds)
     portfolios.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
@@ -390,7 +394,7 @@ def main():
     portfolios['valor_serie'] = portfolios['valor'].where(portfolios['tipo'].isin(types_series), 0)
     portfolios['valor_calc'] = portfolios['valor_calc'].where(~portfolios['tipo'].isin(types_series), 0)
 
-    composition = compute_direct_composition_by_patiliq(portfolios, ['codcart', 'nome', 'cnpb'], types_series)
+    composition = compute_direct_composition_by_patliq(portfolios, ['codcart', 'nome', 'cnpb'], types_series)
     portfolios.loc[composition.index, 'composicao'] = composition['composicao']
 
     allocated_partplanprev = explode_partplanprev_and_allocate(portfolios, keys_not_allocated)
@@ -417,6 +421,9 @@ def main():
         on=['cnpjfundo', 'dtposicao'],
         how='left'
     )
+
+    portfolios['rentab_ponderada'] = portfolios['rentabilidade'] * portfolios['composicao']
+    funds['rentab_ponderada'] = funds['rentabilidade'] * funds['composicao']
 
     funds.to_excel(f"{xlsx_destination_path}fundos.xlsx", index=False)
     portfolios.to_excel(f"{xlsx_destination_path}/carteiras.xlsx", index=False)
