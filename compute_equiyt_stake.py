@@ -9,7 +9,6 @@ Created on Fri Jan  3 16:31:03 2025
 
 import os
 import inspect
-import networkx as nx
 import pandas as pd
 import util as utl
 import data_access as dta
@@ -35,81 +34,6 @@ def print_debug(msg):
     """
     if DEBUG:
         print(msg)
-
-
-def calculate_funds_returns(df_funds):
-    """
-    Calculate the return (rentabilidade) of each fund based on
-    the variation in puposicao (price per quota) over time.
-
-    Args:
-        df_funds (pd.DataFrame): DataFrame containing price data with columns:
-                           'cnpjfundo', 'dtposicao', 'puposicao'.
-
-    Returns:
-        pd.DataFrame: A copy of the input DataFrame with an added 'rentabilidade' column,
-                      which represents the return between subsequent positions for each fund.
-    """
-    required_columns = ['cnpjfundo', 'dtposicao', 'puposicao']
-
-    validate_required_columns(df_funds, required_columns)
-
-    returns = df_funds[df_funds['cnpjfundo'].notnull()][required_columns].copy()
-    returns.sort_values(by=['cnpjfundo', 'dtposicao'], inplace=True)
-    returns['rentabilidade'] = returns.groupby('cnpjfundo')['puposicao'].pct_change()
-
-    return returns
-
-
-def compute_direct_composition_by_patliq(investor, group_keys, types_to_exclude):
-    """
-    Computes the composition of each asset within its portfolio group, based on
-    the 'valor_calc' column. The total per portfolio is calculated by grouping on
-    ['codcart', 'nome', 'cnpb', 'dtposicao'].
-
-    The result is stored in a new column named 'composicao', representing the 
-    percentage share of each asset in the total portfolio.
-
-    Parameters
-    ----------
-    investor : pandas.DataFrame
-        DataFrame containing the calculated asset values per portfolio.
-        Must include columns: ['codcart', 'nome', 'cnpb', 'dtposicao', 'valor_calc'].
-
-    Raises
-    ------
-    ValueError
-        If any required columns are missing.
-    """
-    if 'dtposicao' not in group_keys:
-        group_keys = group_keys + ['dtposicao']
-
-    required_columns = group_keys + ['valor_calc', 'tipo']
-    validate_required_columns(investor, required_columns)
-
-    composition = investor[
-        ~investor['tipo'].isin(types_to_exclude + ['partplanprev'])
-    ][group_keys + ['valor_calc', 'tipo']].copy()
-
-    composition['original_index'] = composition.index
-
-    patliq = investor[investor['tipo'] == 'patliq'][group_keys + ['valor_serie']].copy()
-    patliq.rename(columns={'valor_serie': 'valor_patliq'}, inplace=True)
-
-    composition = composition.merge(
-        patliq,
-        on=group_keys,
-        how='inner'
-    )
-
-    composition['composicao'] = (
-        pd.to_numeric(composition['valor_calc'], errors='raise') /
-        pd.to_numeric(composition['valor_patliq'], errors='raise')
-    )
-
-    composition.set_index('original_index', inplace=True)
-
-    return composition
 
 
 def compute_equity_stake(df_investor, df_invested):
@@ -159,10 +83,10 @@ def explode_partplanprev_and_allocate(portfolios, types_to_exclude):
     Decomposes aggregated allocations of type 'partplanprev' into proportional
     entries based on real underlying assets in the 'portfolios' dataset.
 
-    This function is specific to portfolios that contain entries of type 
-    'partplanprev', which represent consolidated participation (e.g., of 
-    beneficiaries or plans). For each aggregated record, it generates new 
-    rows representing proportional allocations across the actual portfolio 
+    This function is specific to portfolios that contain entries of type
+    'partplanprev', which represent consolidated participation (e.g., of
+    beneficiaries or plans). For each aggregated record, it generates new
+    rows representing proportional allocations across the actual portfolio
     assets, using the 'percpart' percentage.
 
     Parameters
@@ -223,23 +147,6 @@ def explode_partplanprev_and_allocate(portfolios, types_to_exclude):
     allocated_assets['flag_rateio'] = 0
 
     return allocated_assets
-
-
-def get_ordered_funds(df):
-    """
-    Retorna uma lista de CNPJs de fundos em ordem topológica, com base nas dependências entre eles.
-    """
-    graph = nx.DiGraph()
-    for _, row in df.iterrows():
-        investor = row['cnpj']
-        invested = row.get('cnpjfundo')
-        if pd.notnull(invested):
-            graph.add_edge(invested, investor)
-
-    try:
-        return list(nx.topological_sort(graph))
-    except nx.NetworkXUnfeasible:
-        raise ValueError("Ciclo detectado nas dependências entre fundos.")
 
 
 def harmonize_values(dtfr, harmonization_rules):
@@ -376,8 +283,7 @@ def main():
     funds['valor_serie'] = funds['valor'].where(funds['tipo'].isin(types_series), 0)
     funds['valor_calc'] = funds['valor_calc'].where(~funds['tipo'].isin(types_series), 0)
 
-    composition = compute_direct_composition_by_patliq(funds, ['cnpj'], types_series)
-    funds.loc[composition.index, 'composicao'] = composition['composicao']
+    funds.to_excel(f"{xlsx_destination_path}fundos.xlsx", index=False)
 
     dtypes = dta.read(f"carteiras_metadata")
 
@@ -394,9 +300,6 @@ def main():
     portfolios['valor_serie'] = portfolios['valor'].where(portfolios['tipo'].isin(types_series), 0)
     portfolios['valor_calc'] = portfolios['valor_calc'].where(~portfolios['tipo'].isin(types_series), 0)
 
-    composition = compute_direct_composition_by_patliq(portfolios, ['codcart', 'nome', 'cnpb'], types_series)
-    portfolios.loc[composition.index, 'composicao'] = composition['composicao']
-
     allocated_partplanprev = explode_partplanprev_and_allocate(portfolios, keys_not_allocated)
 
     portfolios['flag_rateio'] = portfolios.index.isin(allocated_partplanprev['original_index'].unique()).astype(int)
@@ -408,24 +311,6 @@ def main():
 
     portfolios['valor_calc'] = portfolios['valor_calc'].where(portfolios['flag_rateio'] != 1, 0)
 
-    funds_returns = calculate_funds_returns(funds)
-
-    portfolios = portfolios.merge(
-        funds_returns[['cnpjfundo', 'dtposicao', 'rentabilidade']],
-        on=['cnpjfundo', 'dtposicao'],
-        how='left'
-    )
-
-    funds = funds.merge(
-        funds_returns[['cnpjfundo', 'dtposicao', 'rentabilidade']],
-        on=['cnpjfundo', 'dtposicao'],
-        how='left'
-    )
-
-    portfolios['rentab_ponderada'] = portfolios['rentabilidade'] * portfolios['composicao']
-    funds['rentab_ponderada'] = funds['rentabilidade'] * funds['composicao']
-
-    funds.to_excel(f"{xlsx_destination_path}fundos.xlsx", index=False)
     portfolios.to_excel(f"{xlsx_destination_path}/carteiras.xlsx", index=False)
 
 
