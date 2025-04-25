@@ -8,6 +8,7 @@ Created on Fri Jan  3 16:31:03 2025
 
 
 import os
+import inspect
 import pandas as pd
 import util as utl
 import data_access as dta
@@ -48,105 +49,104 @@ def compute_equity_stake(df_investor, df_invested):
     Returns:
         pd.DataFrame: A DataFrame with the calculated equity stake for each investor.
     """
-    equity_stake = pd.DataFrame(columns=['equity_stake'])
-
     columns = ['cnpjfundo', 'qtdisponivel', 'dtposicao']
 
-    if not all(col in df_investor.columns for col in columns):
-        return equity_stake
+    validate_required_columns(df_investor, columns)
 
-    cotas = df_investor[df_investor['cnpjfundo'].notnull()][columns]
+    cotas = df_investor[df_investor['cnpjfundo'].notnull()][columns].copy()
 
     missing_cotas = cotas[~cotas['cnpjfundo'].isin(df_invested['cnpj'])]
 
     if len(missing_cotas) != 0:
         print(f"cnpjfundo nao encontrado: {missing_cotas['cnpjfundo'].unique()}")
 
-    cotas['orinal_index'] = cotas.index
+    cotas['original_index'] = cotas.index
 
     columns_invested = ['cnpj', 'valor', 'dtposicao']
 
     equity_stake = cotas.merge(
-        df_invested[df_invested['tipo'] == "quantidade"][columns_invested],
+        df_invested[df_invested['tipo'] == 'quantidade'][columns_invested],
         left_on=['cnpjfundo', 'dtposicao'],
         right_on=['cnpj', 'dtposicao'],
         how='inner'
     )
 
-    equity_stake.set_index('orinal_index', inplace=True)
+    equity_stake.set_index('original_index', inplace=True)
 
     equity_stake['equity_stake'] = equity_stake['qtdisponivel'] / equity_stake['valor']
 
     return equity_stake
 
 
-def compute_proportional_allocation(df_investor, types_to_exclude):
+def explode_partplanprev_and_allocate(portfolios, types_to_exclude):
     """
-    Computes the proportional allocation of investment values for a given investor dataset, 
-    while excluding specified investment types, mostily series.
+    Decomposes aggregated allocations of type 'partplanprev' into proportional
+    entries based on real underlying assets in the 'portfolios' dataset.
+
+    This function is specific to portfolios that contain entries of type
+    'partplanprev', which represent consolidated participation (e.g., of
+    beneficiaries or plans). For each aggregated record, it generates new
+    rows representing proportional allocations across the actual portfolio
+    assets, using the 'percpart' percentage.
 
     Parameters
     ----------
-    df_investor : pandas.DataFrame
-        A DataFrame containing investment data. It must include the following columns:
-        'percpart', 'valor_calc', 'codcart', 'nome', and 'tipo'.
+    portfolios : pandas.DataFrame
+        Must include ['percpart', 'valor_calc', 'codcart', 'nome', 'cnpb', 'dtposicao', 'tipo'].
+
     types_to_exclude : list of str
-        A list of investment types to exclude from the allocation calculation.
+        A list of non-asset types that should be excluded from the allocation process.
+        Typically includes series-like records or auxiliary types.
 
     Returns
     -------
     pandas.DataFrame
-        A DataFrame with computed allocation values, including the following columns:
-        - 'codcart': Portfolio code.
-        - 'nome': Portfolio name.
-        - 'percpart': Percentage participation, converted to numeric.
-        - 'valor_calc': Computed allocation value, converted to numeric.
-        - 'flag_rateio': An allocation flag, initialized to 0.
+        A DataFrame containing the newly generated rows, each representing a
+        proportional allocation from a 'partplanprev' entry. Includes:
+        - 'valor_calc': calculated based on the original percentage.
+        - 'flag_rateio': a flag set to 0, indicating generated allocation rows.
 
     Raises
     ------
     ValueError
-        If the required columns ('percpart', 'valor_calc', 'codcart', 'nome') 
-        are not present in the input DataFrame.
+        If any required columns are missing from the input DataFrame.
 
     Notes
     -----
-    - The function filters out rows based on the `types_to_exclude` list and the 
-      hardcoded exclusion of the type 'partplanprev'.
-    - The proportional allocation is computed by multiplying 'percpart' with 
-      'valor_calc' and dividing by 100.
-    - Any non-numeric values in 'percpart' or 'valor_calc' are coerced to NaN 
-      during processing.
+    - The function performs an inner join between 'partplanprev' entries and
+      the actual underlying assets of the portfolio to compute proportional values.
+    - This process effectively expands the data structure by creating new rows.
     """
-    required_columns = ['percpart', 'valor_calc', 'codcart', 'nome', 'cnpb', 'dtposicao']
+    required_columns = ['percpart', 'valor_calc', 'codcart', 'nome', 'cnpb', 'dtposicao', 'tipo']
+    validate_required_columns(portfolios, required_columns)
 
-    if not all(col in df_investor.columns for col in required_columns):
-        raise ValueError(f"""Error: required columns missing: {', '.join(required_columns)}""")
+    partplanprev = portfolios[portfolios['tipo'] == 'partplanprev'][
+        ['codcart', 'nome', 'percpart', 'cnpb', 'dtposicao']
+    ]
 
-    partplanprev_columns = ['codcart', 'nome', 'percpart', 'cnpb', 'dtposicao']
-    partplanprev = df_investor[df_investor['tipo'] == 'partplanprev'][partplanprev_columns]
+    assets_to_allocate = portfolios[
+        ~portfolios['tipo'].isin(types_to_exclude + ['partplanprev'])
+    ].drop(columns=['cnpb', 'percpart'])
 
-    invstr_filtrd = df_investor[~df_investor['tipo'].isin(types_to_exclude + ['partplanprev'])]
-    invstr_filtrd.drop(['cnpb', 'percpart'], axis=1, inplace=True)
-    invstr_filtrd.loc[:, 'original_index'] = invstr_filtrd.index
+    assets_to_allocate = assets_to_allocate.copy()
+    assets_to_allocate['original_index'] = assets_to_allocate.index
 
-    allocation_value = partplanprev.merge(
-        invstr_filtrd.dropna(subset=['valor_calc']),
+    allocated_assets = partplanprev.merge(
+        assets_to_allocate.dropna(subset=['valor_calc']),
         on=['codcart', 'nome', 'dtposicao'],
         how='inner'
     )
 
-    allocation_value['percpart'] = pd.to_numeric(allocation_value['percpart'], errors='coerce')
-    allocation_value['valor_calc'] = pd.to_numeric(allocation_value['valor_calc'], errors='coerce')
+    allocated_assets['percpart'] = pd.to_numeric(allocated_assets['percpart'], errors='coerce')
+    allocated_assets['valor_calc'] = pd.to_numeric(allocated_assets['valor_calc'], errors='coerce')
 
-    allocation_value['valor_calc'] = (
-        allocation_value['percpart'] *
-        allocation_value['valor_calc'] / 100.0
-        )
+    allocated_assets['valor_calc'] = (
+        allocated_assets['percpart'] * allocated_assets['valor_calc'] / 100.0
+    )
 
-    allocation_value['flag_rateio'] = 0
+    allocated_assets['flag_rateio'] = 0
 
-    return allocation_value
+    return allocated_assets
 
 
 def harmonize_values(dtfr, harmonization_rules):
@@ -212,11 +212,8 @@ def harmonize_values(dtfr, harmonization_rules):
         formula = value["formula"]
 
         filter_columns = [filter_item['column'] for filter_item in filters]
-        missing_columns = [col for col in filter_columns if col not in dtfr.columns]
 
-        if missing_columns:
-            print(f"""Warning: filter columns missing: {', '.join(missing_columns)}""")
-            continue
+        validate_required_columns(dtfr, filter_columns)
 
         mask = pd.Series(True, index=dtfr.index)
         for filter_item in filters:
@@ -235,6 +232,24 @@ def harmonize_values(dtfr, harmonization_rules):
             dtfr.loc[mask, 'valor_calc'] = formula
 
 
+def validate_required_columns(df: pd.DataFrame, required_columns: list):
+    """
+    Validates that all required columns are present in the given DataFrame.
+    Automatically identifies the name of the calling function to include in error messages.
+
+    Args:
+        df (pd.DataFrame): The DataFrame to validate.
+        required_columns (list): A list of column names that must be present.
+
+    Raises:
+        ValueError: If one or more required columns are missing.
+    """
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        caller_name = inspect.stack()[1].function
+        raise ValueError(f"[{caller_name}] Missing required columns: {', '.join(missing_columns)}")
+
+
 def main():
     """
     Main function for processing fund and portfolio data:
@@ -248,43 +263,54 @@ def main():
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
 
+    header_daily_values = dta.read('header_daily_values')
+    types_to_exclude = dta.read('types_to_exclude')
+
+    keys_not_allocated = [key for key, value in header_daily_values.items() if value.get('serie', False)]
+    types_series = [key for key, value in header_daily_values.items() if value.get('serie', True)]
+
     dtypes = dta.read("fundos_metadata")
+    harmonization_rules = dta.read('harmonization_values_rules')
 
     funds = pd.read_excel(f"{xlsx_destination_path}fundos_raw.xlsx", dtype=dtypes)
+    funds = funds[~funds['tipo'].isin(types_to_exclude)]
 
     equity_stake = compute_equity_stake(funds, funds)
     funds.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
+
+    harmonize_values(funds, harmonization_rules)
+
+    funds['valor_serie'] = funds['valor'].where(funds['tipo'].isin(types_series), 0)
+    funds['valor_calc'] = funds['valor_calc'].where(~funds['tipo'].isin(types_series), 0)
+
+    funds.to_excel(f"{xlsx_destination_path}fundos.xlsx", index=False)
 
     dtypes = dta.read(f"carteiras_metadata")
 
     portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras_raw.xlsx",
                                dtype=dtypes)
 
+    portfolios = portfolios[~portfolios['tipo'].isin(types_to_exclude)]
+
     equity_stake = compute_equity_stake(portfolios, funds)
     portfolios.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
 
-    harmonization_rules = dta.read('harmonization_values_rules')
     harmonize_values(portfolios, harmonization_rules)
-
-    header_daily_values = dta.read('header_daily_values')
-    keys_not_allocated = [key for key, value in header_daily_values.items() if value.get('serie', False)]
-    types_series = [key for key, value in header_daily_values.items() if value.get('serie', True)]
-
-    proprtnl_allocation = compute_proportional_allocation(portfolios, keys_not_allocated)
-
-    portfolios['flag_rateio'] = portfolios.index.isin(proprtnl_allocation['original_index'].unique()).astype(int)
-
-    portfolios = pd.concat([
-        portfolios,
-        proprtnl_allocation
-    ], ignore_index=True)
-
-    portfolios['valor_calc'] = portfolios['valor_calc'].where(portfolios['flag_rateio'] != 1, 0)
 
     portfolios['valor_serie'] = portfolios['valor'].where(portfolios['tipo'].isin(types_series), 0)
     portfolios['valor_calc'] = portfolios['valor_calc'].where(~portfolios['tipo'].isin(types_series), 0)
 
-    funds.to_excel(f"{xlsx_destination_path}fundos.xlsx", index=False)
+    allocated_partplanprev = explode_partplanprev_and_allocate(portfolios, keys_not_allocated)
+
+    portfolios['flag_rateio'] = portfolios.index.isin(allocated_partplanprev['original_index'].unique()).astype(int)
+
+    portfolios = pd.concat([
+        portfolios,
+        allocated_partplanprev
+    ], ignore_index=True)
+
+    portfolios['valor_calc'] = portfolios['valor_calc'].where(portfolios['flag_rateio'] != 1, 0)
+
     portfolios.to_excel(f"{xlsx_destination_path}/carteiras.xlsx", index=False)
 
 
