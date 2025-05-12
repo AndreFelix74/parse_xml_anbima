@@ -32,7 +32,11 @@ def parse_decimal_value(value):
         float or str: Parsed monetary value as float if convertible, otherwise the original string.
     """
     if isinstance(value, str):
-        value = value.replace('R$', '').replace('$', '').replace(' ', '')
+        value = value.strip()
+        if not value:
+            return None
+
+        value = value.strip().replace('R$', '').replace('$', '').replace(' ', '')
 
         if re.match(r'^-?\d+?\.\d+$', value) or re.match(r'^\.\d+$', value):
             if value.startswith('.'):
@@ -109,7 +113,7 @@ def parse_files(str_file_name):
                 continue
             node_data = {}
             for subchild in child:
-                node_data[subchild.tag] = parse_decimal_value(subchild.text.strip() if subchild.text else None)
+                node_data[subchild.tag] = parse_decimal_value(subchild.text)
             data[child.tag].append(node_data)
 
     return data
