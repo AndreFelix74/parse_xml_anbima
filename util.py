@@ -8,6 +8,8 @@ Created on Wed Jan  8 17:34:44 2025
 
 
 import os
+import inspect
+import pandas as pd
 from configparser import ConfigParser
 
 
@@ -44,4 +46,22 @@ def format_path(str_path):
         str_path += "/"
 
     return str_path
+
+
+def validate_required_columns(df: pd.DataFrame, required_columns: list):
+    """
+    Validates that all required columns are present in the given DataFrame.
+    Automatically identifies the name of the calling function to include in error messages.
+
+    Args:
+        df (pd.DataFrame): The DataFrame to validate.
+        required_columns (list): A list of column names that must be present.
+
+    Raises:
+        ValueError: If one or more required columns are missing.
+    """
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        caller_name = inspect.stack()[1].function
+        raise ValueError(f"[{caller_name}] Missing required columns: {', '.join(missing_columns)}")
 
