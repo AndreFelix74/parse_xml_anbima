@@ -8,7 +8,6 @@ Created on Fri Jan  3 16:31:03 2025
 
 
 import os
-import inspect
 import pandas as pd
 import util as utl
 import data_access as dta
@@ -51,7 +50,7 @@ def compute_equity_stake(df_investor, df_invested):
     """
     columns = ['cnpjfundo', 'qtdisponivel', 'dtposicao']
 
-    validate_required_columns(df_investor, columns)
+    utl.validate_required_columns(df_investor, columns)
 
     cotas = df_investor[df_investor['cnpjfundo'].notnull()][columns].copy()
 
@@ -118,7 +117,7 @@ def explode_partplanprev_and_allocate(portfolios, types_to_exclude):
     - This process effectively expands the data structure by creating new rows.
     """
     required_columns = ['percpart', 'valor_calc', 'codcart', 'nome', 'cnpb', 'dtposicao', 'tipo']
-    validate_required_columns(portfolios, required_columns)
+    utl.validate_required_columns(portfolios, required_columns)
 
     partplanprev = portfolios[portfolios['tipo'] == 'partplanprev'][
         ['codcart', 'nome', 'percpart', 'cnpb', 'dtposicao']
@@ -213,7 +212,7 @@ def harmonize_values(dtfr, harmonization_rules):
 
         filter_columns = [filter_item['column'] for filter_item in filters]
 
-        validate_required_columns(dtfr, filter_columns)
+        utl.validate_required_columns(dtfr, filter_columns)
 
         mask = pd.Series(True, index=dtfr.index)
         for filter_item in filters:
@@ -230,24 +229,6 @@ def harmonize_values(dtfr, harmonization_rules):
             dtfr.loc[mask, 'valor_calc'] = dtfr.loc[mask, formula].sum(axis=1)
         else:
             dtfr.loc[mask, 'valor_calc'] = formula
-
-
-def validate_required_columns(df: pd.DataFrame, required_columns: list):
-    """
-    Validates that all required columns are present in the given DataFrame.
-    Automatically identifies the name of the calling function to include in error messages.
-
-    Args:
-        df (pd.DataFrame): The DataFrame to validate.
-        required_columns (list): A list of column names that must be present.
-
-    Raises:
-        ValueError: If one or more required columns are missing.
-    """
-    missing_columns = [col for col in required_columns if col not in df.columns]
-    if missing_columns:
-        caller_name = inspect.stack()[1].function
-        raise ValueError(f"[{caller_name}] Missing required columns: {', '.join(missing_columns)}")
 
 
 def main():
