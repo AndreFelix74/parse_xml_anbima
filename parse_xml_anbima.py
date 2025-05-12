@@ -107,13 +107,37 @@ def parse_files(str_file_name):
         print(f"{str_file_name} is missing a 'header' node.")
         raise ValueError('header not found')
 
+    return extract_node_data(root)
+
+
+def extract_node_data(root):
+    """
+    Traverse the XML tree and extract structured data, 
+    including special handling for nested tags such as <compromisso> inside <titulopublico>.
+
+    Args:
+        root (Element): Root element of the parsed XML.
+
+    Returns:
+        defaultdict: Dictionary mapping each tag to a list of extracted records.
+    """
+    data = defaultdict(list)
+
     for fund in root.findall(".//*"):
         for child in fund:
             if len(child) == 0:
                 continue
+
             node_data = {}
+
             for subchild in child:
-                node_data[subchild.tag] = parse_decimal_value(subchild.text)
+                if child.tag == 'titpublico' and subchild.tag == 'compromisso':
+                    for compromisso_child in subchild:
+                        key = f"compromisso_{compromisso_child.tag}"
+                        node_data[key] = parse_decimal_value(compromisso_child.text)
+                else:
+                    node_data[subchild.tag] = parse_decimal_value(subchild.text)
+
             data[child.tag].append(node_data)
 
     return data
