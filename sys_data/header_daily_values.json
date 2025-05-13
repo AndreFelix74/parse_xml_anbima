@@ -1,25 +1,29 @@
 {
     "valorcota": {
+        "serie": true
     },
     "quantidade": {
+        "serie": true
     },
     "patliq": {
-        "allocation": true
+        "serie": true
     },
     "valorativos": {
-        "allocation": true
+        "serie": true
     },
     "valorreceber": {
-        "allocation": true
+        "serie": false
     },
     "valorpagar": {
-        "allocation": true
+        "serie": false
     },
     "vlcotasemitir": {
+        "serie": true
     },
     "vlcotasresgatar": {
+        "serie": true
     },
     "tributos": {
-        "allocation": true
+        "serie": false
     }
 }

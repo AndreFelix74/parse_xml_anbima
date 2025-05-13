@@ -1,16 +1,20 @@
 {
-    "CREDEB": {
+    "TODAS": {
+        "filters": [],
+        "formula": [
+            "valorfindisp",
+            "valorfinemgar",
+            "valor"
+        ]
+    },
+    "CAP": {
         "filters": [
             {
-                "column": "credeb",
-                "value": "D"
+                "column": "tipo",
+                "value": "valorpagar"
             }
         ],
         "formula": "valor * -1"
-    },
-    "TODAS": {
-        "filters": [],
-        "formula": ["valor"]
     },
     "CAIXA": {
         "filters": [
@@ -52,7 +56,7 @@
         "filters": [
             {
                 "column": "tipo",
-                "value": "OPCOESACOES"
+                "value": "opcoesacoes"
             }
         ],
         "formula": "valorfinanceiro"
@@ -61,7 +65,7 @@
         "filters": [
             {
                 "column": "tipo",
-                "value": "OPCOESDERIV"
+                "value": "opcoesderiv"
             }
         ],
         "formula": "valorfinanceiro"
@@ -70,7 +74,7 @@
         "filters": [
             {
                 "column": "tipo",
-                "value":"ACOES"
+                "value": "acoes"
             },
             {
                 "column": "classeoperacao",
@@ -83,7 +87,7 @@
         "filters": [
             {
                 "column": "tipo",
-                "value":"ACOES"
+                "value": "acoes"
             },
             {
                 "column": "classeoperacao",
@@ -92,23 +96,14 @@
         ],
         "formula": "valorfinemgar"
     },
-    "CAP": {
+    "EMPRESTIMO": {
         "filters": [
             {
                 "column": "tipo",
-                "value": "cap"
+                "value": "operpart"
             }
         ],
-        "formula": "new_valor * -1"
-    },
-    "EMPRESTIMO": {
-        "filters":  [
-            {
-                "column": "tipo",
-                "value": "emprestimos"
-            }
-        ],
-        "formula": "vlavencer + vlvencido - ( (vlavencer + vlvencido) * percprovcred / 100.0 )"
+        "formula": " vlavencer + vlvencido - ( (vlavencer + vlvencido) * percprovcred/100 )"
     },
     "IMOVEIS": {
         "filters": [
