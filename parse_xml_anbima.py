@@ -32,15 +32,22 @@ def parse_decimal_value(value):
         float or str: Parsed monetary value as float if convertible, otherwise the original string.
     """
     if isinstance(value, str):
-        value = value.replace('R$', '').replace('$', '').replace(' ', '')
+        value = value.strip()
+        if not value:
+            return None
 
-        if re.match(r'^-?\d+?\.\d+$', value) or re.match(r'^\.\d+$', value):
-            if value.startswith('.'):
-                value = '0' + value
-            elif value.startswith('-.'):
-                value = value.replace('-.', '-0.')
+        if not any(c.isdigit() for c in value):
+            return value
 
-            return float(value)
+        vl_dec = value.replace('R$', '').replace('$', '').replace(' ', '')
+
+        if re.match(r'^-?\d+?\.\d+$', vl_dec) or re.match(r'^\.\d+$', vl_dec):
+            if vl_dec.startswith('.'):
+                vl_dec = '0' + vl_dec
+            elif vl_dec.startswith('-.'):
+                vl_dec = vl_dec.replace('-.', '-0.')
+
+            return float(vl_dec)
 
     return value
 
@@ -103,13 +110,44 @@ def parse_files(str_file_name):
         print(f"{str_file_name} is missing a 'header' node.")
         raise ValueError('header not found')
 
-    for fund in root.findall(".//*"):
-        for child in fund:
+    return extract_node_data(root)
+
+
+def extract_node_data(root):
+    """
+    Traverse the XML tree and extract structured data,
+    including special handling for nested tags such as <compromisso> inside <titulopublico>.
+
+    Args:
+        root (Element): Root element of the parsed XML.
+
+    Returns:
+        defaultdict: Dictionary mapping each tag to a list of extracted records.
+    """
+    inline_hildren = {
+        'titpublico': {'compromisso'},
+    }
+
+    data = defaultdict(list)
+
+    for parent in root.findall(".//*"):
+        for child in parent:
             if len(child) == 0:
                 continue
+
+            if child.tag in inline_hildren.get(parent.tag, set()):
+                continue
+
             node_data = {}
+
             for subchild in child:
-                node_data[subchild.tag] = parse_decimal_value(subchild.text.strip() if subchild.text else None)
+                if subchild.tag in inline_hildren.get(child.tag, set()):
+                    for nested in subchild:
+                        key = f"{subchild.tag}_{nested.tag}"
+                        node_data[key] = parse_decimal_value(nested.text)
+                else:
+                    node_data[subchild.tag] = parse_decimal_value(subchild.text)
+
             data[child.tag].append(node_data)
 
     return data
