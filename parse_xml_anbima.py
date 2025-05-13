@@ -36,6 +36,9 @@ def parse_decimal_value(value):
         if not value:
             return None
 
+        if not any(c.isdigit() for c in value):
+            return value
+
         vl_dec = value.replace('R$', '').replace('$', '').replace(' ', '')
 
         if re.match(r'^-?\d+?\.\d+$', vl_dec) or re.match(r'^\.\d+$', vl_dec):
