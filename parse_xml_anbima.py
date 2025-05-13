@@ -121,20 +121,27 @@ def extract_node_data(root):
     Returns:
         defaultdict: Dictionary mapping each tag to a list of extracted records.
     """
+    INLINE_CHILDREN = {
+        'titpublico': {'compromisso'},
+    }
+
     data = defaultdict(list)
 
-    for fund in root.findall(".//*"):
-        for child in fund:
+    for parent in root.findall(".//*"):
+        for child in parent:
             if len(child) == 0:
+                continue
+
+            if child.tag in INLINE_CHILDREN.get(parent.tag, set()):
                 continue
 
             node_data = {}
 
             for subchild in child:
-                if child.tag == 'titpublico' and subchild.tag == 'compromisso':
-                    for compromisso_child in subchild:
-                        key = f"compromisso_{compromisso_child.tag}"
-                        node_data[key] = parse_decimal_value(compromisso_child.text)
+                if subchild.tag in INLINE_CHILDREN.get(child.tag, set()):
+                    for nested in subchild:
+                        key = f"{subchild.tag}_{nested.tag}"
+                        node_data[key] = parse_decimal_value(nested.text)
                 else:
                     node_data[subchild.tag] = parse_decimal_value(subchild.text)
 
