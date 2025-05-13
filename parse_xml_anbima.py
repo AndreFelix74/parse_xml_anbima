@@ -36,15 +36,15 @@ def parse_decimal_value(value):
         if not value:
             return None
 
-        value = value.replace('R$', '').replace('$', '').replace(' ', '')
+        vl_dec = value.replace('R$', '').replace('$', '').replace(' ', '')
 
-        if re.match(r'^-?\d+?\.\d+$', value) or re.match(r'^\.\d+$', value):
-            if value.startswith('.'):
-                value = '0' + value
-            elif value.startswith('-.'):
-                value = value.replace('-.', '-0.')
+        if re.match(r'^-?\d+?\.\d+$', vl_dec) or re.match(r'^\.\d+$', vl_dec):
+            if vl_dec.startswith('.'):
+                vl_dec = '0' + vl_dec
+            elif vl_dec.startswith('-.'):
+                vl_dec = vl_dec.replace('-.', '-0.')
 
-            return float(value)
+            return float(vl_dec)
 
     return value
 
