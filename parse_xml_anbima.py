@@ -112,7 +112,7 @@ def parse_files(str_file_name):
 
 def extract_node_data(root):
     """
-    Traverse the XML tree and extract structured data, 
+    Traverse the XML tree and extract structured data,
     including special handling for nested tags such as <compromisso> inside <titulopublico>.
 
     Args:
@@ -121,7 +121,7 @@ def extract_node_data(root):
     Returns:
         defaultdict: Dictionary mapping each tag to a list of extracted records.
     """
-    INLINE_CHILDREN = {
+    inline_hildren = {
         'titpublico': {'compromisso'},
     }
 
@@ -132,13 +132,13 @@ def extract_node_data(root):
             if len(child) == 0:
                 continue
 
-            if child.tag in INLINE_CHILDREN.get(parent.tag, set()):
+            if child.tag in inline_hildren.get(parent.tag, set()):
                 continue
 
             node_data = {}
 
             for subchild in child:
-                if subchild.tag in INLINE_CHILDREN.get(child.tag, set()):
+                if subchild.tag in inline_hildren.get(child.tag, set()):
                     for nested in subchild:
                         key = f"{subchild.tag}_{nested.tag}"
                         node_data[key] = parse_decimal_value(nested.text)
