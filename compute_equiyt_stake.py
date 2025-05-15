@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Fri Jan  3 16:31:03 2025
+Created on Thu May 15 10:42:26 2025
 
 @author: andrefelix
 """
@@ -14,26 +14,22 @@ import util as utl
 import data_access as dta
 
 
-DEBUG = False
-
-
-def print_debug(msg):
+def validate_required_columns(df: pd.DataFrame, required_columns: list):
     """
-    Prints the given message if debugging is enabled.
+    Validates that all required columns are present in the given DataFrame.
+    Automatically identifies the name of the calling function to include in error messages.
 
-    Parameters:
-    msg (str): The message to be printed.
+    Args:
+        df (pd.DataFrame): The DataFrame to validate.
+        required_columns (list): A list of column names that must be present.
 
-    This function only prints the message when the global DEBUG variable is set to True.
-    If DEBUG is False, the function does nothing.
-
-    Example:
-    >>> DEBUG = True
-    >>> print_debug("This is a debug message.")
-    This is a debug message.
+    Raises:
+        ValueError: If one or more required columns are missing.
     """
-    if DEBUG:
-        print(msg)
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        caller_name = inspect.stack()[1].function
+        raise ValueError(f"[{caller_name}] Missing required columns: {', '.join(missing_columns)}")
 
 
 def compute_equity_stake(df_investor, df_invested):
@@ -149,107 +145,6 @@ def explode_partplanprev_and_allocate(portfolios, types_to_exclude):
     return allocated_assets
 
 
-def harmonize_values(dtfr, harmonization_rules):
-    """
-    Harmonize values in a DataFrame based on a set of rules.
-
-    This function applies transformations to a specified column (`valor`) in a pandas DataFrame
-    using a set of harmonization rules defined in a dictionary. Each rule specifies filters to
-    select rows and a formula to compute the new value for the `valor` column.
-
-    Parameters:
-    ----------
-    dtfr : pandas.DataFrame
-        The input DataFrame containing data to be harmonized.
-        Must include columns referenced in the filters and formulas.
-
-    harmonization_rules : dict
-        A dictionary where each key represents a harmonization rule name
-        and each value is a dictionary containing:
-        - "filters": A list of dictionaries, where each dictionary specifies:
-            - "column" (str): The name of the column to filter.
-            - "value" (str or any): The value to match for filtering.
-        - "formula": A string representing a formula to evaluate,
-          a list of columns to sum, or a constant value.
-
-    Returns:
-    -------
-    pandas.DataFrame
-        The DataFrame with the `valor` column harmonized according to the rules.
-
-    Formula Handling:
-    -----------------
-    - If `formula` is a string: It is evaluated as a pandas expression using the `eval` function.
-    - If `formula` is a list: The specified columns are summed across rows.
-    - If `formula` is a constant: The value is directly assigned to the `valor` column.
-
-    Notes:
-    ------
-    - Rows not matching any rule will retain `None` or their original value in the `valor` column.
-    - Warnings are printed if any filter references columns missing from the DataFrame.
-
-    Example:
-    --------
-    >>> import pandas as pd
-    >>> data = {'tipo': ['caixa', 'cotas', 'caixa'], 'saldo': [100, 200, 300]}
-    >>> df = pd.DataFrame(data)
-    >>> rules = {
-    ...     "CAIXA": {"filters": [{"column": "tipo", "value": "caixa"}], "formula": "saldo * 1.1"},
-    ...     "COTAS": {"filters": [{"column": "tipo", "value": "cotas"}], "formula": "saldo * 0.9"}
-    ... }
-    >>> harmonized_df = harmonize_values(df, rules)
-    >>> print(harmonized_df)
-         tipo  saldo  valor
-    0   caixa    100  110.0
-    1   cotas    200  180.0
-    2   caixa    300  330.0
-    """
-    dtfr['valor_calc'] = None
-
-    for key, value in harmonization_rules.items():
-        print_debug(f"{key} harmonization rule")
-        filters = value["filters"]
-        formula = value["formula"]
-
-        filter_columns = [filter_item['column'] for filter_item in filters]
-
-        validate_required_columns(dtfr, filter_columns)
-
-        mask = pd.Series(True, index=dtfr.index)
-        for filter_item in filters:
-            column, filter_value = filter_item['column'], filter_item['value']
-            mask &= (dtfr[column] == filter_value)
-
-        if sum(mask) == 0:
-            continue
-
-        if isinstance(formula, str):
-            formula_expr = formula
-            dtfr.loc[mask, 'valor_calc'] = dtfr.loc[mask].eval(formula_expr)
-        elif isinstance(formula, list):
-            dtfr.loc[mask, 'valor_calc'] = dtfr.loc[mask, formula].sum(axis=1)
-        else:
-            dtfr.loc[mask, 'valor_calc'] = formula
-
-
-def validate_required_columns(df: pd.DataFrame, required_columns: list):
-    """
-    Validates that all required columns are present in the given DataFrame.
-    Automatically identifies the name of the calling function to include in error messages.
-
-    Args:
-        df (pd.DataFrame): The DataFrame to validate.
-        required_columns (list): A list of column names that must be present.
-
-    Raises:
-        ValueError: If one or more required columns are missing.
-    """
-    missing_columns = [col for col in required_columns if col not in df.columns]
-    if missing_columns:
-        caller_name = inspect.stack()[1].function
-        raise ValueError(f"[{caller_name}] Missing required columns: {', '.join(missing_columns)}")
-
-
 def main():
     """
     Main function for processing fund and portfolio data:
@@ -264,41 +159,24 @@ def main():
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
 
     header_daily_values = dta.read('header_daily_values')
-    types_to_exclude = dta.read('types_to_exclude')
 
     keys_not_allocated = [key for key, value in header_daily_values.items() if value.get('serie', False)]
-    types_series = [key for key, value in header_daily_values.items() if value.get('serie', True)]
 
     dtypes = dta.read("fundos_metadata")
-    harmonization_rules = dta.read('harmonization_values_rules')
-
-    funds = pd.read_excel(f"{xlsx_destination_path}fundos_raw.xlsx", dtype=dtypes)
-    funds = funds[~funds['tipo'].isin(types_to_exclude)]
+    funds = pd.read_excel(f"{xlsx_destination_path}fundos_staged.xlsx", dtype=dtypes)
 
     equity_stake = compute_equity_stake(funds, funds)
     funds.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
-
-    harmonize_values(funds, harmonization_rules)
-
-    funds['valor_serie'] = funds['valor'].where(funds['tipo'].isin(types_series), 0)
-    funds['valor_calc'] = funds['valor_calc'].where(~funds['tipo'].isin(types_series), 0)
 
     funds.to_excel(f"{xlsx_destination_path}fundos.xlsx", index=False)
 
     dtypes = dta.read(f"carteiras_metadata")
 
-    portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras_raw.xlsx",
+    portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras_staged.xlsx",
                                dtype=dtypes)
-
-    portfolios = portfolios[~portfolios['tipo'].isin(types_to_exclude)]
 
     equity_stake = compute_equity_stake(portfolios, funds)
     portfolios.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
-
-    harmonize_values(portfolios, harmonization_rules)
-
-    portfolios['valor_serie'] = portfolios['valor'].where(portfolios['tipo'].isin(types_series), 0)
-    portfolios['valor_calc'] = portfolios['valor_calc'].where(~portfolios['tipo'].isin(types_series), 0)
 
     allocated_partplanprev = explode_partplanprev_and_allocate(portfolios, keys_not_allocated)
 
