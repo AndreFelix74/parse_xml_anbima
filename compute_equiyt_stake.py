@@ -32,6 +32,49 @@ def validate_required_columns(df: pd.DataFrame, required_columns: list):
         raise ValueError(f"[{caller_name}] Missing required columns: {', '.join(missing_columns)}")
 
 
+def compute_composition(investor, group_keys, types_to_exclude):
+    """
+    Computes the composition of each asset within its portfolio group, based on
+    the 'valor_calc' column. The total per portfolio is calculated by grouping on
+    group_keys.
+
+    The result is stored in a new column named 'composicao', representing the
+    percentage share of each asset in the total portfolio.
+
+    Parameters
+    ----------
+    investor : pandas.DataFrame
+        DataFrame containing the calculated asset values per portfolio.
+
+    Raises
+    ------
+    ValueError
+        If any required columns are missing.
+    """
+    if 'dtposicao' not in group_keys:
+        group_keys = group_keys + ['dtposicao']
+
+    required_columns = group_keys + ['valor_calc', 'tipo']
+    validate_required_columns(investor, required_columns)
+
+    composition = investor[
+        (~investor['tipo'].isin(types_to_exclude + ['partplanprev'])) &
+        (investor['valor_calc'] != 0)
+    ][group_keys + ['valor_calc']].copy()
+
+    composition['total_invest'] = (
+        composition.groupby(group_keys)['valor_calc']
+        .transform('sum')
+    )
+
+    composition['composicao'] = (
+        pd.to_numeric(composition['valor_calc'], errors='raise') /
+        pd.to_numeric(composition['total_invest'], errors='raise')
+    )
+
+    return composition
+
+
 def compute_equity_stake(df_investor, df_invested):
     """
     Calculate the equity stake of investors based on available quotas and fund values.
@@ -177,7 +220,7 @@ def main():
     Main function for processing fund and portfolio data:
     - Reads configuration settings.
     - Loads raw fund and portfolio data from Excel files.
-    - Computes equity stake and real state equity values.
+    - Computes equity stake
     - Saves processed data back to Excel files.
     """
     config = utl.load_config('config.ini')
@@ -192,9 +235,23 @@ def main():
         if value.get('serie', False)
     ]
 
-    entities = ['fundos', 'carteiras']
+    types_series = [key for key, value in header_daily_values.items() if value.get('serie', True)]
 
-    for entity_name in entities:
+    entities = [
+        {
+            'name': 'fundos',
+            'group_keys': ['cnpj']
+        },
+        {
+            'name': 'carteiras',
+            'group_keys': ['cnpjcpf', 'codcart', 'dtposicao', 'nome', 'cnpb']
+        }
+    ]
+
+    for entity_cfg in entities:
+        entity_name = entity_cfg['name']
+        group_keys = entity_cfg['group_keys']
+
         dtypes = dta.read(f"{entity_name}_metadata")
 
         entity = pd.read_excel(f"{xlsx_destination_path}{entity_name}_staged.xlsx", dtype=dtypes)
@@ -209,6 +266,9 @@ def main():
         if entity_name == 'carteiras':
             allocated_partplanprev = explode_partplanprev_and_allocate(entity, keys_not_allocated)
             entity = integrate_allocated_partplanprev(entity, allocated_partplanprev)
+
+        composition = compute_composition(entity, group_keys, types_series)
+        entity.loc[composition.index, 'composicao'] = composition['composicao']
 
         entity.to_excel(f"{xlsx_destination_path}{entity_name}.xlsx", index=False)
 
