@@ -29,6 +29,8 @@ def _apply_calculations_to_new_rows(current, mask, deep):
     current.loc[mask, 'composicao'] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
     current.loc[mask, 'isin'] = current.loc[mask, f"isin_nivel_{deep+1}"]
 
+    current.loc[mask, 'rentab_nivel_{deep+1}'] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
+
     sufix = '' if deep == 0 else f"_nivel_{deep}"
     current.loc[mask, 'PARENT_FUNDO'] = current.loc[mask, f"NEW_NOME_ATIVO{sufix}"]
     current.loc[mask, 'PARENT_FUNDO_GESTOR'] = current.loc[mask, f"NEW_GESTOR{sufix}"]
@@ -63,9 +65,7 @@ def build_tree_horizontal(portfolios, funds, deep=0):
     )
 
     mask = current['_merge'] == 'both'
-
     _apply_calculations_to_new_rows(current, mask, deep)
-
     current.drop(columns=['_merge'], inplace=True)
 
     return build_tree_horizontal(current, funds, deep + 1)
