@@ -38,6 +38,7 @@ def _apply_calculations_to_new_rows(current, mask, deep):
     current.loc[mask, 'classeoperacao'] = current.loc[mask, f"classeoperacao_nivel_{deep+1}"]
     current.loc[mask, 'dtvencimento'] = current.loc[mask, f"dtvencimento_nivel_{deep+1}"]
     current.loc[mask, 'dtvencativo'] = current.loc[mask, f"dtvencativo_nivel_{deep+1}"]
+    current.loc[mask, 'compromisso_dtretorno'] = current.loc[mask, f"compromisso_dtretorno_nivel_{deep+1}"]
 
 
 def validate_fund_graph_is_acyclic(funds):
@@ -186,7 +187,7 @@ def main():
 
     cols_funds = ['cnpj', 'dtposicao', 'tipo', 'cnpjfundo', 'equity_stake',
                   'valor_calc', 'composicao', 'isin', 'classeoperacao',
-                  'dtvencimento', 'dtvencativo']
+                  'dtvencimento', 'dtvencativo', 'compromisso_dtretorno']
 
     dtypes = dta.read("fundos_metadata")
     funds = pd.read_excel(f"{xlsx_destination_path}fundos.xlsx",
@@ -208,6 +209,7 @@ def main():
                             (portfolios['valor_serie'] == 0)][cols_port].copy()
 
     portfolios['dtvencativo'] = ''
+    portfolios['compromisso_dtretorno'] = ''
 
     tree = build_tree_horizontal(portfolios, funds)
 
