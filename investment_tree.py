@@ -34,6 +34,7 @@ def _apply_calculations_to_new_rows(current, mask, deep):
     )
 
     current.loc[mask, 'composicao'] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
+    current.loc[mask, 'rentab_nivel_{deep+1}'] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
 
 
 def validate_fund_graph_is_acyclic(funds):
@@ -95,9 +96,7 @@ def build_tree_horizontal(portfolios, funds, deep=0):
     )
 
     mask = current['_merge'] == 'both'
-
     _apply_calculations_to_new_rows(current, mask, deep)
-
     current.drop(columns=['_merge'], inplace=True)
 
     current.rename(columns={'cnpjfundo': f"cnpjfundo_nivel_{deep+1}"}, inplace=True)
@@ -181,27 +180,46 @@ def main():
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
 
     cols_funds = ['cnpj', 'dtposicao', 'tipo', 'cnpjfundo', 'equity_stake',
-                  'valor_calc', 'composicao']
-
-    dtypes = dta.read("fundos_metadata")
-    funds = pd.read_excel(f"{xlsx_destination_path}fundos.xlsx",
-                          dtype=dtypes)
-
-    validate_fund_graph_is_acyclic(funds)
-
-    funds = funds[funds['valor_serie'] == 0][cols_funds].copy()
+                  'valor_calc', 'composicao', 'rentab']
 
     cols_port = ['cnpjcpf', 'codcart', 'cnpb', 'dtposicao', 'nome', 'tipo',
-                 'cnpjfundo', 'equity_stake', 'valor_calc', 'composicao']
+                 'cnpjfundo', 'equity_stake', 'valor_calc', 'composicao', 'rentab']
 
-    dtypes = dta.read(f"carteiras_metadata")
-    portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras.xlsx",
-                               dtype=dtypes)
+    entities = ['fundos', 'carteiras']
 
-    portfolios = portfolios[(portfolios['flag_rateio'] == 0) &
-                            (portfolios['valor_serie'] == 0)][cols_port].copy()
+    returns = pd.read_csv(f"{xlsx_destination_path}funds_returns_by_puposicao.csv",
+                          dtype={'cnpjfundo': str})
+    returns['dtposicao'] = returns['dtposicao'].astype('datetime64[s]')
 
-    tree = build_tree_horizontal(portfolios, funds)
+    cols_result = None
+    investiments = []
+
+    for entity_name in entities:
+        dtypes = dta.read(f"{entity_name}_metadata")
+
+        entity = pd.read_excel(f"{xlsx_destination_path}{entity_name}.xlsx", dtype=dtypes)
+
+        if entity_name == 'fundos':
+            cols_result = cols_funds
+            validate_fund_graph_is_acyclic(entity)
+        elif entity_name == 'carteiras':
+            cols_result = cols_port
+            entity = entity[entity['flag_rateio'] == 0]
+
+        entity = entity[entity['valor_serie'] == 0]
+
+        entity['dtposicao'] = entity['dtposicao'].astype('datetime64[s]')
+        entity['cnpjfundo'] = entity['cnpjfundo'].str.strip()
+
+        merged = entity.merge(
+            returns,
+            on=['cnpjfundo', 'dtposicao'],
+            how='left'
+        )
+
+        investiments.append(merged[cols_result].copy())
+
+    tree = build_tree_horizontal(investiments[1], investiments[0])
 
     tree.to_excel(f"{xlsx_destination_path}/arvore_carteiras.xlsx", index=False)
 
