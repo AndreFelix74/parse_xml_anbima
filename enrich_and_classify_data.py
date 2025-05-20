@@ -77,7 +77,8 @@ def add_vencimento_tpf(entity):
 
     dt_venc_indices = pd.Series(dt_venc_aux, index=entity.index)
 
-    entity['ANO_VENC_TPF'] = pd.to_datetime(dt_venc_indices, errors='raise').dt.year
+    entity['DATA_VENC_TPF'] = pd.to_datetime(dt_venc_indices, errors='raise')
+    entity['ANO_VENC_TPF'] = entity['DATA_VENC_TPF'].dt.year
 
 
 def classify_new_tipo(entity, config):
