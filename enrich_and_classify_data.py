@@ -304,7 +304,6 @@ def main():
                                dtype=dtypes)
 
         entity['FLAG_SERIE'] = np.where(entity['tipo'].isin(tipos_serie), 'SIM', 'NAO')
-        entity['tipo'] = entity['tipo'].str.upper()
 
         entity = entity.merge(
             aux_asset,
