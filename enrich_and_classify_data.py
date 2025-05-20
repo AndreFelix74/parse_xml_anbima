@@ -44,10 +44,10 @@ def add_nome_ativo(entity):
     Args:
         entity (pd.DataFrame): The input DataFrame containing asset information.
     """
-    entity['NOME_ATIVO'] = entity['tipo']
+    entity['NOME_ATIVO'] = entity['NEW_TIPO']
 
     nome_emissor_nulo = entity['fEMISSOR.NOME_EMISSOR'].isna()
-    tipo_tpf = entity['tipo'] == 'TPF'
+    tipo_tpf = entity['NEW_TIPO'] == 'TPF'
 
     entity.loc[~nome_emissor_nulo, 'NOME_ATIVO'] = entity['fEMISSOR.NOME_EMISSOR']
     entity.loc[tipo_tpf & ~nome_emissor_nulo, 'NOME_ATIVO'] = (
@@ -138,7 +138,7 @@ def standardize_asset_names(entity, rules):
         entity (pd.DataFrame): The input DataFrame.
         rules (dict): Dictionary with 'abbreviations' and 'global_replacements' lists.
     """
-    entity['NEW_NOME_ATIVO'] = entity['fEMISSOR.NOME_EMISSOR'].fillna('').str.strip().str.upper()
+    entity['NEW_NOME_ATIVO'] = entity['NOME_ATIVO'].fillna('').str.strip().str.upper()
 
     for rule in rules['abbreviations']:
         prefix, abbrev = rule['prefix'], rule['abbrev']
