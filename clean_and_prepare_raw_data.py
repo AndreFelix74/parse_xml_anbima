@@ -178,7 +178,7 @@ def main():
         )
         entity = entity[mask]
 
-        entity.to_excel(f"{xlsx_destination_path}{entity_name}_staged.xlsx", index=False)
+        entity.to_excel(f"{xlsx_destination_path}{entity_name}_values_cleaned.xlsx", index=False)
 
 
 if __name__ == "__main__":
