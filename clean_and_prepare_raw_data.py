@@ -171,6 +171,13 @@ def main():
         entity['valor_serie'] = entity['valor'].where(entity['tipo'].isin(types_series), 0)
         entity['valor_calc'] = entity['valor_calc'].where(~entity['tipo'].isin(types_series), 0)
 
+        mask = (
+            (entity['valor_serie'] != 0)
+            | (entity['valor_calc'] != 0)
+            | (entity['tipo'] == 'partplanprev')
+        )
+        entity = entity[mask]
+
         entity.to_excel(f"{xlsx_destination_path}{entity_name}_staged.xlsx", index=False)
 
 
