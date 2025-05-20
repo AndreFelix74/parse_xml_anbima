@@ -1,0 +1,46 @@
+{
+    "TitulosPrivados": {
+        "conditions": {
+            "tipo": ["TITPRIVADO"]
+        },
+        "new_value": "PRIVADO"
+    },
+    "TitulosPublicos": {
+        "conditions": {
+            "tipo": ["TITPUBLICO"]
+        },
+        "new_value": "TPF"
+    },
+    "ValoresReceber": {
+        "conditions": {
+            "tipo": ["VALORRECEBER"]
+        },
+        "new_value": "CAR"
+    },
+    "Valorespagar": {
+        "conditions": {
+            "tipo": ["VALORPAGAR"]
+        },
+        "new_value": "CAP"
+    },
+    "Aluguel de Ações": {
+        "conditions": {
+            "tipo": ["ACOES"],
+            "classeoperacao": ["D", "T"]
+        },
+        "new_value": "ALUGUEL"
+    },
+    "Operações OVER": {
+        "conditions": {
+            "tipo": ["TPF"],
+            "compromisso_dtretorno": "NOT_NULL"
+        },
+        "new_value": "OVER"
+    },
+    "Operações Participantes": {
+        "conditions": {
+            "tipo": ["OPERPART"]
+        },
+        "new_value": "EMPRESTIMO"
+    }
+}

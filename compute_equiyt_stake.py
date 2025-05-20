@@ -163,7 +163,7 @@ def main():
     keys_not_allocated = [key for key, value in header_daily_values.items() if value.get('serie', False)]
 
     dtypes = dta.read("fundos_metadata")
-    funds = pd.read_excel(f"{xlsx_destination_path}fundos_staged.xlsx", dtype=dtypes)
+    funds = pd.read_excel(f"{xlsx_destination_path}fundos_enriched.xlsx", dtype=dtypes)
 
     equity_stake = compute_equity_stake(funds, funds)
     funds.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
@@ -172,7 +172,7 @@ def main():
 
     dtypes = dta.read(f"carteiras_metadata")
 
-    portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras_staged.xlsx",
+    portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras_enriched.xlsx",
                                dtype=dtypes)
 
     equity_stake = compute_equity_stake(portfolios, funds)

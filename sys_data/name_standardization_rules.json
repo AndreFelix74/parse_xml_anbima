@@ -1,0 +1,12 @@
+{
+    "abbreviations": [
+      { "prefix": "FUNDO DE INVESTIMENTO EM", "abbrev": "FI" },
+      { "prefix": "FUNDO DE INVESTIMENTO", "abbrev": "FI" },
+      { "prefix": "FUNDO INVEST COTAS FUNDOS INVEST", "abbrev": "FIC FI" },
+      { "prefix": "FUNDO INVEST COTAS FUNDO INVEST", "abbrev": "FIC FI" },
+      { "prefix": "FUNDO INVESTIMENTOS", "abbrev": "FI" }
+    ],
+    "global_replacements": [
+      { "old": "RENDA FIXA", "new": "RF" }
+    ]
+  }
