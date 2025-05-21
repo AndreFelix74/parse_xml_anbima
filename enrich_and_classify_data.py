@@ -268,6 +268,34 @@ def load_db_cad_fi_cvm(data_aux_path):
     return db_cad_fi_cvm
 
 
+def clean_gestor_names_for_wordcloud(entity, stopwords=None):
+    """
+    Cleans asset manager names for word cloud generation by removing unwanted words.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame with asset manager names.
+        column (str): Name of the column containing the raw names.
+        output_column (str): Name of the new column with cleaned names.
+        stopwords (list or set): List of words to remove (case-insensitive).
+
+    Returns:
+        pd.DataFrame: DataFrame with the new cleaned column added.
+    """
+    if stopwords is None:
+        stopwords = set()
+
+    stopwords = set(word.upper() for word in stopwords)
+
+    def clean_text(text):
+        if pd.isna(text):
+            return ''
+        words = str(text).upper().split()
+        filtered_words = [w for w in words if w not in stopwords]
+        return ' '.join(filtered_words)
+
+    entity['NEW_GESTOR_WORD_CLOUD'] = entity['NEW_GESTOR'].apply(clean_text)
+
+
 def main():
     """
     Main function that orchestrates the enrichment of asset data for
@@ -330,6 +358,13 @@ def main():
 
         entity['dCadFI_CVM.CLASSE_ANBIMA'] = entity['dCadFI_CVM.CLASSE_ANBIMA'].str.upper()
         entity['NEW_GESTOR'] = entity['dCadFI_CVM.GESTOR'].fillna('VIVEST')
+        entity['NEW_GESTOR'] = entity['NEW_GESTOR'].replace('FUNDACAO CESP', 'VIVEST')
+        clean_gestor_names_for_wordcloud(entity, ['LTDA', 'A', 'DTVM', 'GESTAO',
+                                                  'GESTÃO', 'S', 'RECURSOS',
+                                                  'INVESTIMENTOS', 'LIMITADA',
+                                                  'ASSET', 'BRASIL', 'UNIBANCO',
+                                                  'DE', 'BANCO', 'PARIBAS', 'COMPANY',
+                                                  'MANAGEMENT', ])
         entity.to_excel(f"{xlsx_destination_path}{entity_name}_enriched.xlsx", index=False)
 
 
