@@ -363,6 +363,13 @@ def explode_partplanprev_and_allocate(portfolios, types_to_exclude):
         allocated_assets['percpart'] * allocated_assets['valor_calc'] / 100.0
     )
 
+    mask_cotas = allocated_assets['tipo'] == 'cotas'
+    
+    allocated_assets.loc[mask_cotas, 'qtdisponivel'] = (
+        allocated_assets.loc[mask_cotas, 'percpart'] *
+        allocated_assets.loc[mask_cotas, 'qtdisponivel'] / 100.0
+    )
+
     allocated_assets['flag_rateio'] = 0
 
     return allocated_assets
