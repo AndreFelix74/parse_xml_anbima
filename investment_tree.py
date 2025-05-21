@@ -33,7 +33,7 @@ def _apply_calculations_to_new_rows(current, mask, deep):
         * current.loc[mask, 'equity_stake'].fillna(1)
     )
 
-    current.loc[mask, 'composicao'] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
+#    current.loc[mask, 'composicao'] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
     current.loc[mask, 'isin'] = current.loc[mask, f"isin_nivel_{deep+1}"]
     current.loc[mask, 'classeoperacao'] = current.loc[mask, f"classeoperacao_nivel_{deep+1}"]
     current.loc[mask, 'dtvencimento'] = current.loc[mask, f"dtvencimento_nivel_{deep+1}"]
@@ -186,7 +186,7 @@ def main():
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
 
     cols_funds = ['cnpj', 'dtposicao', 'tipo', 'cnpjfundo', 'equity_stake',
-                  'valor_calc', 'composicao', 'isin', 'classeoperacao',
+                  'valor_calc', 'isin', 'classeoperacao',
                   'dtvencimento', 'dtvencativo', 'compromisso_dtretorno',
                   'NEW_TIPO', 'coupom', 'qtd', 'quantidade', 'fNUMERACA.DESCRICAO',
                   'fNUMERACA.TIPO_ATIVO', 'fEMISSOR.NOME_EMISSOR', 'DATA_VENC_TPF',
@@ -202,8 +202,8 @@ def main():
     funds = funds[funds['valor_serie'] == 0][cols_funds].copy()
 
     cols_port = ['cnpjcpf', 'codcart', 'cnpb', 'dtposicao', 'nome', 'tipo',
-                 'cnpjfundo', 'equity_stake', 'valor_calc', 'composicao', 'isin',
-                 'classeoperacao', 'dtvencimento']
+                 'cnpjfundo', 'equity_stake', 'valor_calc', 'isin',
+                 'classeoperacao', 'dtvencimento', 'NEW_NOME_ATIVO', 'NEW_GESTOR']
 
     dtypes = dta.read(f"carteiras_metadata")
     portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras.xlsx",
