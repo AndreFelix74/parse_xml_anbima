@@ -329,7 +329,7 @@ def main():
         standardize_asset_names(entity, name_standardization_rules)
 
         entity['dCadFI_CVM.CLASSE_ANBIMA'] = entity['dCadFI_CVM.CLASSE_ANBIMA'].str.upper()
-        entity['NEW_GESTOR'] = entity['dCadFI_CVM.GESTOR'].fillna('FUNDACAO CESP')
+        entity['NEW_GESTOR'] = entity['dCadFI_CVM.GESTOR'].fillna('VIVEST')
         entity.to_excel(f"{xlsx_destination_path}{entity_name}_enriched.xlsx", index=False)
 
 
