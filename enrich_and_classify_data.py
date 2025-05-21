@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 import util as utl
 import data_access as dta
+import file_handler as fhdl
 
 
 def convert_column_types(dtfrm, dtype_map):
@@ -309,6 +310,7 @@ def main():
 
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
+    file_ext = config['Paths'].get('destination_file_extension', 'xlsx')
 
     data_aux_path = config['Paths']['data_aux_path']
     data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
@@ -329,8 +331,8 @@ def main():
 
     for entity_name in entities:
         dtypes = dta.read(f"{entity_name}_metadata")
-        entity = pd.read_excel(f"{xlsx_destination_path}{entity_name}_values_cleaned.xlsx",
-                               dtype=dtypes)
+        file_name = f"{xlsx_destination_path}{entity_name}_values_cleaned"
+        entity = fhdl.load_df(file_name, file_ext, dtypes)
 
         entity['FLAG_SERIE'] = np.where(entity['tipo'].isin(tipos_serie), 'SIM', 'NAO')
 
@@ -365,7 +367,9 @@ def main():
                                                   'ASSET', 'BRASIL', 'UNIBANCO',
                                                   'DE', 'BANCO', 'PARIBAS', 'COMPANY',
                                                   'MANAGEMENT', ])
-        entity.to_excel(f"{xlsx_destination_path}{entity_name}_enriched.xlsx", index=False)
+
+        file_name = f"{xlsx_destination_path}{entity_name}_enriched"
+        fhdl.save_df(entity, file_name, file_ext)
 
 
 if __name__ == "__main__":

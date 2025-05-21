@@ -16,6 +16,7 @@ from collections import defaultdict
 import pandas as pd
 import util as utl
 import data_access as dta
+import file_handler as fhdl
 
 
 COUNT_PARSE = multiprocessing.Value('i', 0)
@@ -280,6 +281,8 @@ def main():
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
 
+    file_ext = config['Paths'].get('destination_file_extension', 'xlsx')
+
     setup_folders([xml_source_path, xlsx_destination_path])
 
     lst_files = get_xml_files(f"{xml_source_path}")
@@ -301,7 +304,8 @@ def main():
 
         dta.create_if_not_exists(f"{file_name}_metadata", dtypes_dict)
 
-        dataframe.to_excel(f"{xlsx_destination_path}{str(file_name)}_raw.xlsx", index=False)
+        file_name = f"{xlsx_destination_path}{str(file_name)}_raw"
+        fhdl.save_df(dataframe, file_name, file_ext)
 
 
 if __name__ == "__main__":

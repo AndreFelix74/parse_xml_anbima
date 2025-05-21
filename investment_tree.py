@@ -12,6 +12,7 @@ import networkx as nx
 import pandas as pd
 import util as utl
 import data_access as dta
+import file_handler as fhdl
 
 
 def _apply_calculations_to_new_rows(current, mask, deep):
@@ -33,7 +34,7 @@ def _apply_calculations_to_new_rows(current, mask, deep):
         * current.loc[mask, 'equity_stake'].fillna(1)
     )
 
-#    current.loc[mask, 'composicao'] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
+    current.loc[mask, 'composicao'] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
     current.loc[mask, 'isin'] = current.loc[mask, f"isin_nivel_{deep+1}"]
     current.loc[mask, 'classeoperacao'] = current.loc[mask, f"classeoperacao_nivel_{deep+1}"]
     current.loc[mask, 'dtvencimento'] = current.loc[mask, f"dtvencimento_nivel_{deep+1}"]
@@ -184,9 +185,10 @@ def main():
 
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
+    file_ext = config['Paths'].get('destination_file_extension', 'xlsx')
 
     cols_funds = ['cnpj', 'dtposicao', 'tipo', 'cnpjfundo', 'equity_stake',
-                  'valor_calc', 'isin', 'classeoperacao',
+                  'composicao', 'valor_calc', 'isin', 'classeoperacao',
                   'dtvencimento', 'dtvencativo', 'compromisso_dtretorno',
                   'NEW_TIPO', 'coupom', 'qtd', 'quantidade', 'fNUMERACA.DESCRICAO',
                   'fNUMERACA.TIPO_ATIVO', 'fEMISSOR.NOME_EMISSOR', 'DATA_VENC_TPF',
@@ -194,20 +196,21 @@ def main():
                   'dCadFI_CVM.CLASSE_ANBIMA', 'NEW_NOME_ATIVO', 'NEW_GESTOR']
  
     dtypes = dta.read("fundos_metadata")
-    funds = pd.read_excel(f"{xlsx_destination_path}fundos.xlsx",
-                          dtype=dtypes)
+    file_name = f"{xlsx_destination_path}fundos"
+    funds = fhdl.load_df(file_name, file_ext, dtypes)
 
     validate_fund_graph_is_acyclic(funds)
 
     funds = funds[funds['valor_serie'] == 0][cols_funds].copy()
 
     cols_port = ['cnpjcpf', 'codcart', 'cnpb', 'dtposicao', 'nome', 'tipo',
-                 'cnpjfundo', 'equity_stake', 'valor_calc', 'isin',
-                 'classeoperacao', 'dtvencimento', 'NEW_NOME_ATIVO', 'NEW_GESTOR']
+                 'cnpjfundo', 'equity_stake', 'composicao', 'valor_calc', 'isin',
+                 'classeoperacao', 'dtvencimento', 'NEW_TIPO', 'NEW_NOME_ATIVO',
+                 'NEW_GESTOR']
 
     dtypes = dta.read(f"carteiras_metadata")
-    portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras.xlsx",
-                               dtype=dtypes)
+    file_name = f"{xlsx_destination_path}carteiras"
+    portfolios = fhdl.load_df(file_name, file_ext, dtypes)
 
     portfolios = portfolios[(portfolios['flag_rateio'] == 0) &
                             (portfolios['valor_serie'] == 0)][cols_port].copy()
@@ -217,7 +220,8 @@ def main():
 
     tree = build_tree_horizontal(portfolios, funds)
 
-    tree.to_excel(f"{xlsx_destination_path}/arvore_carteiras.xlsx", index=False)
+    file_name = f"{xlsx_destination_path}/arvore_carteiras"
+    fhdl.save_df(tree, file_name, file_ext)
 
 
 if __name__ == "__main__":

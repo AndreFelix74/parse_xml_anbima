@@ -12,6 +12,7 @@ import inspect
 import pandas as pd
 import util as utl
 import data_access as dta
+import file_handler as fhdl
 
 
 def validate_required_columns(df: pd.DataFrame, required_columns: list):
@@ -157,23 +158,27 @@ def main():
 
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
+    file_ext = config['Paths'].get('destination_file_extension', 'xlsx')
 
     header_daily_values = dta.read('header_daily_values')
 
     keys_not_allocated = [key for key, value in header_daily_values.items() if value.get('serie', False)]
 
     dtypes = dta.read("fundos_metadata")
-    funds = pd.read_excel(f"{xlsx_destination_path}fundos_enriched.xlsx", dtype=dtypes)
+    file_name = f"{xlsx_destination_path}fundos_enriched"
+    funds = fhdl.load_df(file_name, file_ext, dtypes)
 
     equity_stake = compute_equity_stake(funds, funds)
     funds.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
+    funds['composicao'] = None
 
-    funds.to_excel(f"{xlsx_destination_path}fundos.xlsx", index=False)
+    file_name = f"{xlsx_destination_path}fundos"
+    fhdl.save_df(funds, file_name, file_ext)
 
     dtypes = dta.read(f"carteiras_metadata")
 
-    portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras_enriched.xlsx",
-                               dtype=dtypes)
+    src_file_name = f"{xlsx_destination_path}carteiras_enriched"
+    portfolios = fhdl.load_df(src_file_name, file_ext, dtypes)
 
     equity_stake = compute_equity_stake(portfolios, funds)
     portfolios.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
@@ -188,8 +193,10 @@ def main():
     ], ignore_index=True)
 
     portfolios['valor_calc'] = portfolios['valor_calc'].where(portfolios['flag_rateio'] != 1, 0)
+    portfolios['composicao'] = None
 
-    portfolios.to_excel(f"{xlsx_destination_path}/carteiras.xlsx", index=False)
+    file_name = f"{xlsx_destination_path}carteiras"
+    fhdl.save_df(portfolios, file_name, file_ext)
 
 
 if __name__ == "__main__":

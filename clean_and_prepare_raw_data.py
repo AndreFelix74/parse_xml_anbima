@@ -12,6 +12,7 @@ import inspect
 import pandas as pd
 import util as utl
 import data_access as dta
+import file_handler as fhdl
 
 
 DEBUG = False
@@ -149,6 +150,7 @@ def main():
 
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
+    file_ext = config['Paths'].get('destination_file_extension', 'xlsx')
 
     header_daily_values = dta.read('header_daily_values')
     types_to_exclude = dta.read('types_to_exclude')
@@ -162,7 +164,8 @@ def main():
     for entity_name in entities:
         dtypes = dta.read(f"{entity_name}_metadata")
 
-        entity = pd.read_excel(f"{xlsx_destination_path}{entity_name}_raw.xlsx", dtype=dtypes)
+        file_name = f"{xlsx_destination_path}{entity_name}_raw"
+        entity = fhdl.load_df(file_name, file_ext, dtypes)
 
         entity = entity[~entity['tipo'].isin(types_to_exclude)]
 
@@ -178,7 +181,8 @@ def main():
         )
         entity = entity[mask]
 
-        entity.to_excel(f"{xlsx_destination_path}{entity_name}_values_cleaned.xlsx", index=False)
+        file_name = f"{xlsx_destination_path}{entity_name}_values_cleaned"
+        fhdl.save_df(entity, file_name, file_ext)
 
 
 if __name__ == "__main__":
