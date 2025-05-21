@@ -189,10 +189,9 @@ def main():
                   'valor_calc', 'composicao', 'isin', 'classeoperacao',
                   'dtvencimento', 'dtvencativo', 'compromisso_dtretorno',
                   'NEW_TIPO', 'coupom', 'qtd', 'quantidade', 'fNUMERACA.DESCRICAO',
-                  'fNUMERACA.TIPO_ATIVO', 'fEMISSOR.NOME_EMISSOR', 'NEW_TIPO',
-                  'DATA_VENC_TPF', 'ANO_VENC_TPF', 'dCadFI_CVM.TP_FUNDO',
-                  'dCadFI_CVM.RENTAB_FUNDO', 'dCadFI_CVM.CLASSE_ANBIMA', 'NEW_NOME_ATIVO',
-                  'NEW_GESTOR']
+                  'fNUMERACA.TIPO_ATIVO', 'fEMISSOR.NOME_EMISSOR', 'DATA_VENC_TPF',
+                  'ANO_VENC_TPF', 'dCadFI_CVM.TP_FUNDO', 'dCadFI_CVM.RENTAB_FUNDO',
+                  'dCadFI_CVM.CLASSE_ANBIMA', 'NEW_NOME_ATIVO', 'NEW_GESTOR']
  
     dtypes = dta.read("fundos_metadata")
     funds = pd.read_excel(f"{xlsx_destination_path}fundos.xlsx",
