@@ -173,7 +173,7 @@ def main():
     funds['composicao'] = None
 
     file_name = f"{xlsx_destination_path}fundos"
-    fhdl.save_df(funds, file_name, file_ext)
+    fhdl.save_df(funds, file_name, 'xlsx')
 
     dtypes = dta.read(f"carteiras_metadata")
 
@@ -196,7 +196,7 @@ def main():
     portfolios['composicao'] = None
 
     file_name = f"{xlsx_destination_path}carteiras"
-    fhdl.save_df(portfolios, file_name, file_ext)
+    fhdl.save_df(portfolios, file_name, 'xlsx')
 
 
 if __name__ == "__main__":
