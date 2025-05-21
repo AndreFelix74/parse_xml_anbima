@@ -174,12 +174,12 @@ def build_tree_leaves(tree, funds):
 def main():
     """
     Main execution function for loading portfolio and fund data, constructing
-    the horizontal investment tree,
-    and exporting the final tree structure to an Excel file.
+    the horizontal investment tree, and exporting the final tree structure to
+    an Excel file.
     """
     config = utl.load_config('config.ini')
 
-    xlsx_aux_path = config['Paths']['xlsx_aux_path']
+    xlsx_aux_path = config['Paths']['data_aux_path']
     xlsx_aux_path = f"{os.path.dirname(utl.format_path(xlsx_aux_path))}/"
 
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
@@ -187,8 +187,13 @@ def main():
 
     cols_funds = ['cnpj', 'dtposicao', 'tipo', 'cnpjfundo', 'equity_stake',
                   'valor_calc', 'composicao', 'isin', 'classeoperacao',
-                  'dtvencimento', 'dtvencativo', 'compromisso_dtretorno']
-
+                  'dtvencimento', 'dtvencativo', 'compromisso_dtretorno',
+                  'NEW_TIPO', 'coupom', 'qtd', 'quantidade', 'fNUMERACA.DESCRICAO',
+                  'fNUMERACA.TIPO_ATIVO', 'fEMISSOR.NOME_EMISSOR', 'NEW_TIPO',
+                  'DATA_VENC_TPF', 'ANO_VENC_TPF', 'dCadFI_CVM.TP_FUNDO',
+                  'dCadFI_CVM.RENTAB_FUNDO', 'dCadFI_CVM.CLASSE_ANBIMA', 'NEW_NOME_ATIVO',
+                  'NEW_GESTOR']
+ 
     dtypes = dta.read("fundos_metadata")
     funds = pd.read_excel(f"{xlsx_destination_path}fundos.xlsx",
                           dtype=dtypes)
