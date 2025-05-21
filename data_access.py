@@ -79,5 +79,18 @@ def create(table_name, values):
     _save_json_file(table_name, values)
 
 
+def create_if_not_exists(table_name, values):
+    """
+    Creates a table (JSON file) only if it doesn't already exist.
+
+    Args:
+        table_name (str): The name of the table (file) to create.
+        values (dict): The data to be written to the JSON file.
+    """
+    file_path = os.path.join(DIR_SYS_DATA, f"{table_name}.json")
+    if not os.path.exists(file_path):
+        _save_json_file(table_name, values)
+
+
 # Initialization: Create the DIR_SYS_DATA directory when the module is loaded
 _create_sys_data()
