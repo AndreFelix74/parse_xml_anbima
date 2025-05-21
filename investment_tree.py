@@ -185,7 +185,7 @@ def main():
 
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
-    file_ext = 'xlsx' #config['Paths'].get('destination_file_extension', 'xlsx')
+    file_ext = config['Paths'].get('destination_file_extension', 'xlsx')
 
     cols_funds = ['cnpj', 'dtposicao', 'tipo', 'cnpjfundo', 'equity_stake',
                   'composicao', 'valor_calc', 'isin', 'classeoperacao',
