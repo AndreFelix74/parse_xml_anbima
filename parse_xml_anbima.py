@@ -299,7 +299,7 @@ def main():
 
         dtypes_dict = dataframe.dtypes.apply(lambda x: x.name).to_dict()
 
-        dta.create(f"{file_name}_metadata", dtypes_dict)
+        dta.create_if_not_exists(f"{file_name}_metadata", dtypes_dict)
 
         dataframe.to_excel(f"{xlsx_destination_path}{str(file_name)}_raw.xlsx", index=False)
 
