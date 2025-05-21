@@ -75,77 +75,6 @@ def compute_equity_stake(df_investor, df_invested):
     return equity_stake
 
 
-def explode_partplanprev_and_allocate(portfolios, types_to_exclude):
-    """
-    Decomposes aggregated allocations of type 'partplanprev' into proportional
-    entries based on real underlying assets in the 'portfolios' dataset.
-
-    This function is specific to portfolios that contain entries of type
-    'partplanprev', which represent consolidated participation (e.g., of
-    beneficiaries or plans). For each aggregated record, it generates new
-    rows representing proportional allocations across the actual portfolio
-    assets, using the 'percpart' percentage.
-
-    Parameters
-    ----------
-    portfolios : pandas.DataFrame
-        Must include ['percpart', 'valor_calc', 'codcart', 'nome', 'cnpb', 'dtposicao', 'tipo'].
-
-    types_to_exclude : list of str
-        A list of non-asset types that should be excluded from the allocation process.
-        Typically includes series-like records or auxiliary types.
-
-    Returns
-    -------
-    pandas.DataFrame
-        A DataFrame containing the newly generated rows, each representing a
-        proportional allocation from a 'partplanprev' entry. Includes:
-        - 'valor_calc': calculated based on the original percentage.
-        - 'flag_rateio': a flag set to 0, indicating generated allocation rows.
-
-    Raises
-    ------
-    ValueError
-        If any required columns are missing from the input DataFrame.
-
-    Notes
-    -----
-    - The function performs an inner join between 'partplanprev' entries and
-      the actual underlying assets of the portfolio to compute proportional values.
-    - This process effectively expands the data structure by creating new rows.
-    """
-    required_columns = ['percpart', 'valor_calc', 'codcart', 'nome', 'cnpb', 'dtposicao', 'tipo']
-    validate_required_columns(portfolios, required_columns)
-
-    partplanprev = portfolios[portfolios['tipo'] == 'partplanprev'][
-        ['codcart', 'nome', 'percpart', 'cnpb', 'dtposicao']
-    ]
-
-    assets_to_allocate = portfolios[
-        ~portfolios['tipo'].isin(types_to_exclude + ['partplanprev'])
-    ].drop(columns=['cnpb', 'percpart'])
-
-    assets_to_allocate = assets_to_allocate.copy()
-    assets_to_allocate['original_index'] = assets_to_allocate.index
-
-    allocated_assets = partplanprev.merge(
-        assets_to_allocate.dropna(subset=['valor_calc']),
-        on=['codcart', 'nome', 'dtposicao'],
-        how='inner'
-    )
-
-    allocated_assets['percpart'] = pd.to_numeric(allocated_assets['percpart'], errors='coerce')
-    allocated_assets['valor_calc'] = pd.to_numeric(allocated_assets['valor_calc'], errors='coerce')
-
-    allocated_assets['valor_calc'] = (
-        allocated_assets['percpart'] * allocated_assets['valor_calc'] / 100.0
-    )
-
-    allocated_assets['flag_rateio'] = 0
-
-    return allocated_assets
-
-
 def main():
     """
     Main function for processing fund and portfolio data:
@@ -160,10 +89,6 @@ def main():
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
     file_ext = config['Paths'].get('destination_file_extension', 'xlsx')
 
-    header_daily_values = dta.read('header_daily_values')
-
-    keys_not_allocated = [key for key, value in header_daily_values.items() if value.get('serie', False)]
-
     dtypes = dta.read("fundos_metadata")
     file_name = f"{xlsx_destination_path}fundos_enriched"
     funds = fhdl.load_df(file_name, file_ext, dtypes)
@@ -173,7 +98,7 @@ def main():
     funds['composicao'] = None
 
     file_name = f"{xlsx_destination_path}fundos"
-    fhdl.save_df(funds, file_name, 'xlsx')
+    fhdl.save_df(funds, file_name, file_ext)
 
     dtypes = dta.read(f"carteiras_metadata")
 
@@ -183,20 +108,10 @@ def main():
     equity_stake = compute_equity_stake(portfolios, funds)
     portfolios.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
 
-    allocated_partplanprev = explode_partplanprev_and_allocate(portfolios, keys_not_allocated)
-
-    portfolios['flag_rateio'] = portfolios.index.isin(allocated_partplanprev['original_index'].unique()).astype(int)
-
-    portfolios = pd.concat([
-        portfolios,
-        allocated_partplanprev
-    ], ignore_index=True)
-
-    portfolios['valor_calc'] = portfolios['valor_calc'].where(portfolios['flag_rateio'] != 1, 0)
     portfolios['composicao'] = None
 
     file_name = f"{xlsx_destination_path}carteiras"
-    fhdl.save_df(portfolios, file_name, 'xlsx')
+    fhdl.save_df(portfolios, file_name, file_ext)
 
 
 if __name__ == "__main__":

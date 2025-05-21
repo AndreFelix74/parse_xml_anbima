@@ -297,6 +297,86 @@ def clean_gestor_names_for_wordcloud(entity, stopwords=None):
     entity['NEW_GESTOR_WORD_CLOUD'] = entity['NEW_GESTOR'].apply(clean_text)
 
 
+def explode_partplanprev_and_allocate(portfolios, types_to_exclude):
+    """
+    Decomposes aggregated allocations of type 'partplanprev' into proportional
+    entries based on real underlying assets in the 'portfolios' dataset.
+
+    This function is specific to portfolios that contain entries of type
+    'partplanprev', which represent consolidated participation (e.g., of
+    beneficiaries or plans). For each aggregated record, it generates new
+    rows representing proportional allocations across the actual portfolio
+    assets, using the 'percpart' percentage.
+
+    Parameters
+    ----------
+    portfolios : pandas.DataFrame
+        Must include ['percpart', 'valor_calc', 'codcart', 'nome', 'cnpb', 'dtposicao', 'tipo'].
+
+    types_to_exclude : list of str
+        A list of non-asset types that should be excluded from the allocation process.
+        Typically includes series-like records or auxiliary types.
+
+    Returns
+    -------
+    pandas.DataFrame
+        A DataFrame containing the newly generated rows, each representing a
+        proportional allocation from a 'partplanprev' entry. Includes:
+        - 'valor_calc': calculated based on the original percentage.
+        - 'flag_rateio': a flag set to 0, indicating generated allocation rows.
+
+    Raises
+    ------
+    ValueError
+        If any required columns are missing from the input DataFrame.
+
+    Notes
+    -----
+    - The function performs an inner join between 'partplanprev' entries and
+      the actual underlying assets of the portfolio to compute proportional values.
+    - This process effectively expands the data structure by creating new rows.
+    """
+    if portfolios[portfolios['tipo'] == 'partplanprev'].empty:
+        return portfolios
+
+    partplanprev = portfolios[portfolios['tipo'] == 'partplanprev'][
+        ['codcart', 'nome', 'percpart', 'cnpb', 'dtposicao']
+    ]
+
+    assets_to_allocate = portfolios[
+        ~portfolios['tipo'].isin(types_to_exclude + ['partplanprev'])
+    ].drop(columns=['cnpb', 'percpart'])
+
+    assets_to_allocate = assets_to_allocate.copy()
+    assets_to_allocate['original_index'] = assets_to_allocate.index
+
+    allocated_assets = partplanprev.merge(
+        assets_to_allocate.dropna(subset=['valor_calc']),
+        on=['codcart', 'nome', 'dtposicao'],
+        how='inner'
+    )
+
+    allocated_assets['percpart'] = pd.to_numeric(allocated_assets['percpart'], errors='raise')
+    allocated_assets['valor_calc'] = pd.to_numeric(allocated_assets['valor_calc'], errors='raise')
+
+    allocated_assets['valor_calc'] = (
+        allocated_assets['percpart'] * allocated_assets['valor_calc'] / 100.0
+    )
+
+    allocated_assets['flag_rateio'] = 0
+
+    portfolios['flag_rateio'] = portfolios.index.isin(allocated_assets['original_index'].unique()).astype(int)
+
+    portfolios = pd.concat([
+        portfolios,
+        allocated_assets
+    ], ignore_index=True)
+
+    portfolios['valor_calc'] = portfolios['valor_calc'].where(portfolios['flag_rateio'] != 1, 0)
+
+    return portfolios
+
+
 def main():
     """
     Main function that orchestrates the enrichment of asset data for
@@ -333,6 +413,8 @@ def main():
         dtypes = dta.read(f"{entity_name}_metadata")
         file_name = f"{xlsx_destination_path}{entity_name}_values_cleaned"
         entity = fhdl.load_df(file_name, file_ext, dtypes)
+
+        entity = explode_partplanprev_and_allocate(entity, tipos_serie)
 
         entity['FLAG_SERIE'] = np.where(entity['tipo'].isin(tipos_serie), 'SIM', 'NAO')
 
