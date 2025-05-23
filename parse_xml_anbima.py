@@ -191,7 +191,7 @@ def read_data_from_parsed_data(xml_content):
     return [funds, portfolios]
 
 
-def split_header(header):
+def split_header(header, daily_keys):
     """
     Split the header into static fund information and daily financial information.
 
@@ -201,9 +201,6 @@ def split_header(header):
     Returns:
         tuple: Two dictionaries, one for fund info and one for daily info.
     """
-    header_daily_values = dta.read('header_daily_values')
-    daily_keys = header_daily_values.keys()
-
     fund_info = {}
     daily_info = {}
 
@@ -216,7 +213,7 @@ def split_header(header):
     return fund_info, daily_info
 
 
-def convert_to_dataframe(data_list):
+def convert_to_dataframe(data_list, daily_keys, non_propagated_header_keys):
     """
     Convert structured fund and portfolio data into a pandas DataFrame.
 
@@ -229,7 +226,10 @@ def convert_to_dataframe(data_list):
     all_rows = []
 
     for joined_data in data_list:
-        header_fixed_info, header_daily_values = split_header(joined_data['header'])
+        header_fixed_info, header_daily_values = split_header(joined_data['header'], daily_keys)
+
+        for key in non_propagated_header_keys:
+            header_fixed_info.pop(key, None)
 
         for daily_key, value in header_daily_values.items():
             row = {**header_fixed_info, 'tipo': daily_key, 'valor': value}
@@ -296,9 +296,12 @@ def main():
     lst_data = read_data_from_parsed_data(xml_content)
     print_elapsed_time('parse xml', time_start)
 
+    header_daily_values = dta.read('header_daily_values')
+    daily_keys = header_daily_values.keys()
+
     for idx, data in enumerate(lst_data):
         file_name = 'fundos' if idx % 2 == 0 else 'carteiras'
-        dataframe = convert_to_dataframe(data)
+        dataframe = convert_to_dataframe(data, daily_keys, ['isin'])
 
         dtypes_dict = dataframe.dtypes.apply(lambda x: x.name).to_dict()
 
