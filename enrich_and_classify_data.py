@@ -47,15 +47,19 @@ def add_nome_ativo(entity):
     """
     entity['NOME_ATIVO'] = entity['NEW_TIPO']
 
-    nome_emissor_nulo = entity['fEMISSOR.NOME_EMISSOR'].isna()
+    has_nome_emissor = ~entity['fEMISSOR.NOME_EMISSOR'].isna()
+
+    over = entity['NEW_TIPO'] == 'OVER'
+
     tipo_tpf = entity['NEW_TIPO'] == 'TPF'
 
-    entity.loc[~nome_emissor_nulo, 'NOME_ATIVO'] = entity['fEMISSOR.NOME_EMISSOR']
-    entity.loc[tipo_tpf & ~nome_emissor_nulo, 'NOME_ATIVO'] = (
+    entity.loc[has_nome_emissor & tipo_tpf & ~over, 'NOME_ATIVO'] = (
         entity['fNUMERACA.TIPO_ATIVO'].fillna('')
         + ' '
-        + entity['ANO_VENC_TPF'].fillna('').astype(str)
+        + entity['ANO_VENC_TPF']
     ).str.strip()
+    
+    entity.loc[has_nome_emissor & ~tipo_tpf & ~over, 'NOME_ATIVO'] = entity['fEMISSOR.NOME_EMISSOR']
 
 
 def add_vencimento_tpf(entity):
@@ -79,7 +83,7 @@ def add_vencimento_tpf(entity):
     dt_venc_indices = pd.Series(dt_venc_aux, index=entity.index)
 
     entity['DATA_VENC_TPF'] = pd.to_datetime(dt_venc_indices, errors='raise')
-    entity['ANO_VENC_TPF'] = entity['DATA_VENC_TPF'].dt.year
+    entity['ANO_VENC_TPF'] = entity['DATA_VENC_TPF'].dt.strftime('%Y')
 
 
 def classify_new_tipo(entity, config):
@@ -119,6 +123,7 @@ def classify_new_tipo(entity, config):
 
         for col, cond in conditions.items():
             if not col in entity.columns:
+                print(f"Coluna não encontrada:{col}")
                 continue
             if isinstance(cond, list):
                 mask &= entity[col].isin(cond)
