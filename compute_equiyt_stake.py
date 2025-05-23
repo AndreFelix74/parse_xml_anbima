@@ -76,14 +76,14 @@ def compute_composition(investor, group_keys, types_to_exclude):
     return composition
 
 
-def compute_equity_stake(df_investor, df_invested):
+def compute_equity_stake(investor, invested):
     """
     Calculate the equity stake of investors based on available quotas and fund values.
 
     Args:
-        df_investor (pd.DataFrame): DataFrame containing investor data with columns
+        investor (pd.DataFrame): DataFrame containing investor data with columns
                                     'cnpjfundo', 'qtdisponivel', and 'dtposicao'.
-        df_invested (pd.DataFrame): DataFrame containing fund data with columns
+        invested (pd.DataFrame): DataFrame containing fund data with columns
                                     'cnpj', 'valor', and 'dtposicao'.
 
     Returns:
@@ -91,21 +91,21 @@ def compute_equity_stake(df_investor, df_invested):
     """
     columns = ['cnpjfundo', 'qtdisponivel', 'dtposicao']
 
-    validate_required_columns(df_investor, columns)
+    validate_required_columns(investor, columns)
 
-    cotas = df_investor[df_investor['cnpjfundo'].notnull()][columns].copy()
+    cotas = investor[investor['cnpjfundo'].notnull()][columns].copy()
 
-    missing_cotas = cotas[~cotas['cnpjfundo'].isin(df_invested['cnpj'])]
+    missing_cotas = cotas[~cotas['cnpjfundo'].isin(invested['cnpj'])]
 
     if len(missing_cotas) != 0:
-        print(f"cnpjfundo nao encontrado:\n{missing_cotas['cnpjfundo'].unique()}")
+        print(f"cnpjfundo nao encontrado:\n{missing_cotas[['cnpjfundo', 'dtposicao']].drop_duplicates()}")
 
     cotas['original_index'] = cotas.index
 
     columns_invested = ['cnpj', 'valor', 'dtposicao']
 
     equity_stake = cotas.merge(
-        df_invested[df_invested['tipo'] == 'quantidade'][columns_invested],
+        invested[invested['tipo'] == 'quantidade'][columns_invested],
         left_on=['cnpjfundo', 'dtposicao'],
         right_on=['cnpj', 'dtposicao'],
         how='inner'
@@ -157,7 +157,8 @@ def main():
 
         if entity_name == 'fundos':
             invested = entity.copy()
-
+        
+        break
         equity_stake = compute_equity_stake(entity, invested)
 
         entity.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
