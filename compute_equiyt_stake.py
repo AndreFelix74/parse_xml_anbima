@@ -95,10 +95,11 @@ def compute_equity_stake(investor, invested):
 
     cotas = investor[investor['cnpjfundo'].notnull()][columns].copy()
 
-    missing_cotas = cotas[~cotas['cnpjfundo'].isin(invested['cnpj'])]
+    missing_cotas = cotas[~cotas['cnpjfundo'].isin(invested['cnpj'])].drop_duplicates()
 
     if len(missing_cotas) != 0:
-        print(f"cnpjfundo nao encontrado:\n{missing_cotas[['cnpjfundo', 'dtposicao']].drop_duplicates()}")
+        missing_cotas.to_csv('missing_cotas.csv')
+        print(f"{len(missing_cotas)} cnpjfundo nao encontrados. Verifique o arquivo missing_cotas.csv")
 
     cotas['original_index'] = cotas.index
 
