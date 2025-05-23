@@ -18,10 +18,10 @@
         "serie": false
     },
     "vlcotasemitir": {
-        "serie": true
+        "serie": false
     },
     "vlcotasresgatar": {
-        "serie": true
+        "serie": false
     },
     "tributos": {
         "serie": false

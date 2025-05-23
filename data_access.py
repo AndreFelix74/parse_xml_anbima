@@ -37,7 +37,7 @@ def _load_json_file(file_name):
     """
     file_path = os.path.join(DIR_SYS_DATA, f"{file_name}.json")
 
-    with open(file_path, "r") as file:
+    with open(file_path, "r", encoding='utf-8') as file:
         return json.load(file)
 
 

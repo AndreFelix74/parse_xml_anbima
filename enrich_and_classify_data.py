@@ -470,7 +470,7 @@ def main():
         entity['dCadFI_CVM.CLASSE_ANBIMA'] = entity['dCadFI_CVM.CLASSE_ANBIMA'].str.upper()
         entity['NEW_GESTOR'] = entity['dCadFI_CVM.GESTOR'].fillna('VIVEST')
         entity['NEW_GESTOR'] = entity['NEW_GESTOR'].replace('FUNDACAO CESP', 'VIVEST')
-        clean_gestor_names_for_wordcloud(entity, ['LTDA', 'A', 'DTVM', 'GESTAO',
+        clean_gestor_names_for_wordcloud(entity, ['S.A.', 'S.A', 'LTDA', 'LTDA.', 'A', 'DTVM', 'GESTAO',
                                                   'GESTÃO', 'S', 'RECURSOS',
                                                   'INVESTIMENTOS', 'LIMITADA',
                                                   'ASSET', 'BRASIL', 'UNIBANCO',
