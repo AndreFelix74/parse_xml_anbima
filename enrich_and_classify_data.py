@@ -58,7 +58,7 @@ def add_nome_ativo(entity):
         + ' '
         + entity['ANO_VENC_TPF']
     ).str.strip()
-    
+
     entity.loc[has_nome_emissor & ~tipo_tpf & ~over, 'NOME_ATIVO'] = entity['fEMISSOR.NOME_EMISSOR']
 
 
@@ -369,7 +369,7 @@ def explode_partplanprev_and_allocate(portfolios, types_to_exclude):
     )
 
     mask_cotas = allocated_assets['tipo'] == 'cotas'
-    
+
     allocated_assets.loc[mask_cotas, 'qtdisponivel'] = (
         allocated_assets.loc[mask_cotas, 'percpart'] *
         allocated_assets.loc[mask_cotas, 'qtdisponivel'] / 100.0
@@ -437,8 +437,7 @@ def main():
     cad_fi_cvm = load_db_cad_fi_cvm(data_aux_path)
     cad_fi_cvm = cad_fi_cvm.add_prefix('dCadFI_CVM.')
 
-    cnpjfundo = []
-    entities = ['carteiras', 'fundos']
+    entities = ['fundos', 'carteiras']
 
     for entity_name in entities:
         dtypes = dta.read(f"{entity_name}_metadata")
@@ -448,7 +447,6 @@ def main():
         if entity_name == 'carteiras':
             allocated_partplanprev = explode_partplanprev_and_allocate(entity, tipos_serie)
             entity = integrate_allocated_partplanprev(entity, allocated_partplanprev)
-            cnpjfundo = entity['cnpjfundo'].unique()
 
         entity['FLAG_SERIE'] = np.where(entity['tipo'].isin(tipos_serie), 'SIM', 'NAO')
 
@@ -477,16 +475,13 @@ def main():
         entity['dCadFI_CVM.CLASSE_ANBIMA'] = entity['dCadFI_CVM.CLASSE_ANBIMA'].str.upper()
         entity['NEW_GESTOR'] = entity['dCadFI_CVM.GESTOR'].fillna('VIVEST')
         entity['NEW_GESTOR'] = entity['NEW_GESTOR'].replace('FUNDACAO CESP', 'VIVEST')
-        clean_gestor_names_for_wordcloud(entity, ['S.A.', 'S.A', 'LTDA', 'LTDA.', 'A', 'DTVM', 'GESTAO',
-                                                  'GESTÃO', 'S', 'RECURSOS',
-                                                  'INVESTIMENTOS', 'LIMITADA',
-                                                  'ASSET', 'BRASIL', 'UNIBANCO',
-                                                  'DE', 'BANCO', 'PARIBAS', 'COMPANY',
-                                                  'MANAGEMENT', ])
+        clean_gestor_names_for_wordcloud(entity, ['S.A.', 'S.A', 'LTDA', 'LTDA.', 'A',
+                                                  'DTVM', 'GESTAO', 'GESTÃO', 'S',
+                                                  'RECURSOS', 'INVESTIMENTOS',
+                                                  'LIMITADA', 'ASSET', 'BRASIL',
+                                                  'UNIBANCO', 'DE', 'BANCO',
+                                                  'PARIBAS', 'COMPANY', 'MANAGEMENT', ])
 
-        if entity_name == 'fundos':
-            entity['PRIMEIRO_NIVEL'] = entity['cnpj'].isin(cnpjfundo)
-            
         file_name = f"{xlsx_destination_path}{entity_name}_enriched"
         fhdl.save_df(entity, file_name, file_ext)
 
