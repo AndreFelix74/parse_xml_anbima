@@ -38,7 +38,7 @@ def load_df(file_path, file_format, dtype=None):
     full_path = f"{file_path}.{file_format}"
 
     if file_format == 'csv':
-        return pd.read_csv(full_path, dtype=dtype, encoding='utf-8')
+        return pd.read_csv(full_path, dtype=dtype, sep=';', encoding='utf-8')
 
     if file_format == 'xlsx':
         return pd.read_excel(full_path, dtype=dtype)
@@ -73,7 +73,7 @@ def save_df(dtfrm, file_path, file_format):
     full_path = f"{file_path}.{file_format}"
 
     if file_format == 'csv':
-        dtfrm.to_csv(full_path, index=False, encoding='utf-8')
+        dtfrm.to_csv(full_path, index=False, sep=';', encoding='utf-8')
     elif file_format == 'xlsx':
         dtfrm.to_excel(full_path, index=False)
     else:
