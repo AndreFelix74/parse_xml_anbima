@@ -63,16 +63,44 @@ def get_xml_files(files_path):
     Returns:
         list: List of absolute paths to XML files.
     """
-    lst_files = sorted(
-        [
-            os.path.join(root, file)
+    lst_files = [
+            (os.path.join(root, file), os.path.getmtime(os.path.join(root, file)))
             for root, dirs, files in os.walk(files_path)
             for file in files
             if file.lower().endswith(".xml")
         ]
-    )
 
     return lst_files
+
+
+def get_latest_xml_by_cnpj(files_info):
+    """
+    Given a list of (file_path, mtime), retain only the most recent file
+    for each unique FD+CNPJ prefix (first 16 characters of the filename).
+
+    Args:
+        file_info (list of tuples): Each tuple is (file_path, mtime)
+
+    Returns:
+        list: List of file paths to the latest XML for each FD+CNPJ.
+    """
+    grouped = defaultdict(list)
+
+    for path, mtime in files_info:
+        filename = os.path.basename(path)
+        parts = filename.split('_')
+        if len(parts) < 2:
+            print(f"Nome de arquivo mal formado: {filename}. Não será processado.")
+            continue
+        key = f"{parts[0]}_{parts[1]}"
+        grouped[key].append((path, mtime))
+
+    latest_files = [
+        max(group, key=lambda x: x[1])[0]
+        for group in grouped.values()
+    ]
+
+    return latest_files
 
 
 def parse_files(str_file_name):
@@ -286,6 +314,7 @@ def main():
     setup_folders([xml_source_path, xlsx_destination_path])
 
     lst_files = get_xml_files(f"{xml_source_path}")
+    lst_files = get_latest_xml_by_cnpj(lst_files)
 
     pool = multiprocessing.Pool()
     time_start = time.time()
