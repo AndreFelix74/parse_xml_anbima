@@ -16,6 +16,7 @@ from collections import defaultdict
 import pandas as pd
 import util as utl
 import data_access as dta
+import file_handler as fhdl
 
 
 COUNT_PARSE = multiprocessing.Value('i', 0)
@@ -62,16 +63,46 @@ def get_xml_files(files_path):
     Returns:
         list: List of absolute paths to XML files.
     """
-    lst_files = sorted(
-        [
-            os.path.join(root, file)
+    lst_files = [
+            (os.path.join(root, file), os.path.getmtime(os.path.join(root, file)))
             for root, dirs, files in os.walk(files_path)
             for file in files
             if file.lower().endswith(".xml")
         ]
-    )
 
     return lst_files
+
+
+def get_latest_xml_by_cnpj(files_info):
+    """
+    Given a list of (file_path, mtime), retain only the most recent file
+    for each unique FD+CNPJ prefix (first 16 characters of the filename).
+
+    Args:
+        file_info (list of tuples): Each tuple is (file_path, mtime)
+
+    Returns:
+        list: List of file paths to the latest XML for each FD+CNPJ.
+    """
+    file_date_pattern = re.compile(r'^.+?_\d{8}(?!\d)')
+    grouped = defaultdict(list)
+
+    for path, mtime in files_info:
+        filename = os.path.basename(path)
+        match = file_date_pattern.search(filename)
+        key = match.group(0) if match else filename
+        grouped[key].append((path, mtime))
+
+    latest_files = []
+
+    for key, group in grouped.items():
+        group_sorted = sorted(group, key=lambda x: x[1], reverse=True)
+        latest = group_sorted[0][0]
+        latest_files.append(latest)
+        for discarded_path, _ in group_sorted[1:]:
+            print(f"[discarded] {discarded_path}")
+
+    return latest_files
 
 
 def parse_files(str_file_name):
@@ -190,7 +221,7 @@ def read_data_from_parsed_data(xml_content):
     return [funds, portfolios]
 
 
-def split_header(header):
+def split_header(header, daily_keys):
     """
     Split the header into static fund information and daily financial information.
 
@@ -200,9 +231,6 @@ def split_header(header):
     Returns:
         tuple: Two dictionaries, one for fund info and one for daily info.
     """
-    header_daily_values = dta.read('header_daily_values')
-    daily_keys = header_daily_values.keys()
-
     fund_info = {}
     daily_info = {}
 
@@ -215,7 +243,7 @@ def split_header(header):
     return fund_info, daily_info
 
 
-def convert_to_dataframe(data_list):
+def convert_to_dataframe(data_list, daily_keys, non_propagated_header_keys):
     """
     Convert structured fund and portfolio data into a pandas DataFrame.
 
@@ -228,7 +256,10 @@ def convert_to_dataframe(data_list):
     all_rows = []
 
     for joined_data in data_list:
-        header_fixed_info, header_daily_values = split_header(joined_data['header'])
+        header_fixed_info, header_daily_values = split_header(joined_data['header'], daily_keys)
+
+        for key in non_propagated_header_keys:
+            header_fixed_info.pop(key, None)
 
         for daily_key, value in header_daily_values.items():
             row = {**header_fixed_info, 'tipo': daily_key, 'valor': value}
@@ -280,9 +311,12 @@ def main():
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
 
+    file_ext = config['Paths'].get('destination_file_extension', 'xlsx')
+
     setup_folders([xml_source_path, xlsx_destination_path])
 
     lst_files = get_xml_files(f"{xml_source_path}")
+    lst_files = get_latest_xml_by_cnpj(lst_files)
 
     pool = multiprocessing.Pool()
     time_start = time.time()
@@ -293,15 +327,19 @@ def main():
     lst_data = read_data_from_parsed_data(xml_content)
     print_elapsed_time('parse xml', time_start)
 
+    header_daily_values = dta.read('header_daily_values')
+    daily_keys = header_daily_values.keys()
+
     for idx, data in enumerate(lst_data):
         file_name = 'fundos' if idx % 2 == 0 else 'carteiras'
-        dataframe = convert_to_dataframe(data)
+        dataframe = convert_to_dataframe(data, daily_keys, ['isin'])
 
         dtypes_dict = dataframe.dtypes.apply(lambda x: x.name).to_dict()
 
-        dta.create(f"{file_name}_metadata", dtypes_dict)
+        dta.create_if_not_exists(f"{file_name}_metadata", dtypes_dict)
 
-        dataframe.to_excel(f"{xlsx_destination_path}{str(file_name)}_raw.xlsx", index=False)
+        file_name = f"{xlsx_destination_path}{str(file_name)}_raw"
+        fhdl.save_df(dataframe, file_name, file_ext)
 
 
 if __name__ == "__main__":

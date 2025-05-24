@@ -12,6 +12,7 @@ import networkx as nx
 import pandas as pd
 import util as utl
 import data_access as dta
+import file_handler as fhdl
 
 
 def _apply_calculations_to_new_rows(current, mask, deep):
@@ -110,6 +111,33 @@ def build_tree_horizontal(portfolios, funds, deep=0):
     return build_tree_horizontal(current, funds, deep + 1)
 
 
+def build_assets_tree_horizontal(total_assets, tree_vertical, deep=0):
+    """
+    Recursively builds a horizontal investment tree by merging portfolio and
+    fund data across nested levels.
+
+    Args:
+        portfolios (pd.DataFrame): DataFrame containing portfolio information.
+        funds (pd.DataFrame): DataFrame containing fund composition data.
+        deep (int): Current level of recursion (depth in the investment chain).
+
+    Returns:
+        pd.DataFrame: A single wide-format DataFrame with expanded investment
+        layers and calculated stakes.
+    """
+    if deep == 0:
+        return total_assets
+
+    current = total_assets.merge(
+        tree_vertical[tree_vertical['nivel'] == deep],
+        on=['NEW_TIPO', 'NEW_NOME_ATIVO', 'dtposicao', 'dtposicao', 'codcart', 'nome', 'cnpb'],
+        how='left',
+        suffixes=('', f"_nivel_{deep}")
+    )
+
+    return build_assets_tree_horizontal(current, tree_vertical, deep - 1)
+
+
 def build_tree_branchs(portfolios, funds):
     """
     Recursively builds a list of vertically-stacked DataFrames representing
@@ -136,13 +164,14 @@ def build_tree_branchs(portfolios, funds):
     if current.empty:
         return []
 
-    current['deep'] += 1
-    current[f"equity_stake"] *= current['equity_stake_portfolio']
+    current['nivel'] += 1
+    current['equity_stake'] *= current['equity_stake_portfolio']
+    current['valor_calc'] = current['valor_calc'] * current['equity_stake_portfolio']
 
     return [current[portfolios.columns]] + build_tree_branchs(current[portfolios.columns], funds)
 
 
-def build_tree_leaves(tree, funds):
+def build_tree_leaves(tree_branchs, funds):
     """
     Extracts and processes leaf-level assets (non-fund investments) from the
     recursive investment tree.
@@ -157,7 +186,7 @@ def build_tree_leaves(tree, funds):
         pd.DataFrame: A DataFrame of leaf nodes with updated calculated values,
         saved to 'leaves.xlsx'.
     """
-    leaves = tree.merge(
+    leaves = tree_branchs.merge(
         funds[funds['tipo'] != 'cotas'],
         left_on=['cnpjfundo', 'dtposicao'],
         right_on=['cnpj', 'dtposicao'],
@@ -165,55 +194,87 @@ def build_tree_leaves(tree, funds):
         suffixes=('_tree', '')
     )
 
-    leaves['deep'] = leaves['deep'] + 1
-    leaves['valor_calc'] *= leaves['equity_stake']
+    leaves['nivel'] = leaves['nivel'] + 1
+    leaves['valor_calc'] *= leaves['equity_stake_tree']
 
-    return leaves[tree.columns]
+    return leaves[tree_branchs.columns]
+
+
+def create_column_based_on_levels(tree_hrzt, new_col, base_col, deep):
+    """
+    Preenche uma nova coluna com valores prioritários entre colunas base e níveis sucessivos.
+
+    Args:
+        tree_hrzt (pd.DataFrame): DataFrame de entrada.
+        new_col (str): Nome da nova coluna a ser criada.
+        base_col (str): Nome da coluna base.
+        deep (int): Número de níveis (sufixos _nivel_1 a _nivel_{deep}).
+
+    Returns:
+        pd.DataFrame: O DataFrame com a nova coluna preenchida.
+    """
+    priority_cols = [f"{base_col}_nivel_{i}" for i in range(deep, 0, -1)]
+    priority_cols.append(base_col)
+
+    tree_hrzt[new_col] = tree_hrzt[priority_cols].bfill(axis=1).iloc[:, 0]
 
 
 def main():
     """
     Main execution function for loading portfolio and fund data, constructing
-    the horizontal investment tree,
-    and exporting the final tree structure to an Excel file.
+    the horizontal investment tree, and exporting the final tree structure to
+    an Excel file.
     """
     config = utl.load_config('config.ini')
 
-    xlsx_aux_path = config['Paths']['xlsx_aux_path']
+    xlsx_aux_path = config['Paths']['data_aux_path']
     xlsx_aux_path = f"{os.path.dirname(utl.format_path(xlsx_aux_path))}/"
 
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
+    file_ext = 'xlsx' #config['Paths'].get('destination_file_extension', 'xlsx')
 
     cols_funds = ['cnpj', 'dtposicao', 'tipo', 'cnpjfundo', 'equity_stake',
-                  'valor_calc', 'composicao', 'isin', 'classeoperacao',
-                  'dtvencimento', 'dtvencativo', 'compromisso_dtretorno']
-
+                  'composicao', 'valor_calc', 'isin', 'classeoperacao',
+                  'dtvencimento', 'dtvencativo', 'compromisso_dtretorno',
+                  'NEW_TIPO', 'coupom', 'qtd', 'quantidade', 'fNUMERACA.DESCRICAO',
+                  'fNUMERACA.TIPO_ATIVO', 'fEMISSOR.NOME_EMISSOR', 'DATA_VENC_TPF',
+                  'ANO_VENC_TPF', 'dCadFI_CVM.TP_FUNDO', 'dCadFI_CVM.RENTAB_FUNDO',
+                  'dCadFI_CVM.CLASSE_ANBIMA', 'NEW_NOME_ATIVO', 'NEW_GESTOR',
+                  'NEW_GESTOR_WORD_CLOUD']
+ 
     dtypes = dta.read("fundos_metadata")
-    funds = pd.read_excel(f"{xlsx_destination_path}fundos.xlsx",
-                          dtype=dtypes)
+    file_name = f"{xlsx_destination_path}fundos"
+    funds = fhdl.load_df(file_name, file_ext, dtypes)
 
     validate_fund_graph_is_acyclic(funds)
 
     funds = funds[funds['valor_serie'] == 0][cols_funds].copy()
 
     cols_port = ['cnpjcpf', 'codcart', 'cnpb', 'dtposicao', 'nome', 'tipo',
-                 'cnpjfundo', 'equity_stake', 'valor_calc', 'composicao', 'isin',
-                 'classeoperacao', 'dtvencimento']
+                 'cnpjfundo', 'equity_stake', 'composicao', 'valor_calc', 'isin',
+                 'classeoperacao', 'dtvencimento', 'NEW_TIPO', 'NEW_NOME_ATIVO',
+                 'NEW_GESTOR', 'NEW_GESTOR_WORD_CLOUD']
 
     dtypes = dta.read(f"carteiras_metadata")
-    portfolios = pd.read_excel(f"{xlsx_destination_path}carteiras.xlsx",
-                               dtype=dtypes)
+    file_name = f"{xlsx_destination_path}carteiras"
+    portfolios = fhdl.load_df(file_name, file_ext, dtypes)
 
     portfolios = portfolios[(portfolios['flag_rateio'] == 0) &
                             (portfolios['valor_serie'] == 0)][cols_port].copy()
 
     portfolios['dtvencativo'] = ''
     portfolios['compromisso_dtretorno'] = ''
+    portfolios['nivel'] = 0
 
-    tree = build_tree_horizontal(portfolios, funds)
+    tree_horzt = build_tree_horizontal(portfolios.copy(), funds)
 
-    tree.to_excel(f"{xlsx_destination_path}/arvore_carteiras.xlsx", index=False)
+    max_deep = tree_horzt['nivel'].max()
+    create_column_based_on_levels(tree_horzt, 'NEW_NOME_ATIVO_REAL', 'NEW_NOME_ATIVO', max_deep)
+    create_column_based_on_levels(tree_horzt, 'TIPO_ATIVO_REAL', 'NEW_TIPO', max_deep)
+
+    file_name = f"{xlsx_destination_path}/arvore_carteiras"
+    fhdl.save_df(tree_horzt, file_name, 'xlsx')
 
 
 if __name__ == "__main__":

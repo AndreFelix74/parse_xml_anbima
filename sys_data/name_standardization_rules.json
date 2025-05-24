@@ -1,0 +1,106 @@
+{
+  "abbreviations": [
+    {
+      "prefix": "FUNDO DE INVESTIMENTO EM",
+      "abbrev": "FI"
+    },
+    {
+      "prefix": "FUNDO DE INVESTIMENTO",
+      "abbrev": "FI"
+    },
+    {
+      "prefix": "FUNDO INVESTIMENTOS",
+      "abbrev": "FI"
+    },
+    {
+      "prefix": "FUNDO INVEST",
+      "abbrev": "FI"
+    },
+    {
+      "prefix": "FUNDO INVEST COTAS FUNDOS INVEST",
+      "abbrev": "FIC"
+    },
+    {
+      "prefix": "FUNDO INVEST COTAS FUNDO INVEST",
+      "abbrev": "FIC"
+    },
+    {
+      "prefix": "FI MULTIMERCADO",
+      "abbrev": "FIM"
+    },
+    {
+      "prefix": "FI COTAS DE FUNDOS DE INVESTIMENTO",
+      "abbrev": "FIC"
+    },
+    {
+      "prefix": "FI COTAS FUNDOS INVEST",
+      "abbrev": "FIC"
+    },
+    {
+      "prefix": "FI COTA FUNDOS INVEST",
+      "abbrev": "FIC"
+    }
+  ],
+  "global_replacements": [
+    {
+      "old": "RENDA FIXA",
+      "new": "RF"
+    },
+    {
+      "old": "PREVIDENCIÁRIO",
+      "new": "PREV"
+    },
+    {
+      "old": "PREVIDENCIARIO",
+      "new": "PREV"
+    },
+    {
+      "old": "CRÉDITO PRIVADO",
+      "new": "CP"
+    },
+    {
+      "old": "MULTIMERCADO",
+      "new": "MM"
+    },
+    {
+      "old": "FUNDO INVEST MM",
+      "new": "FIM"
+    },
+    {
+      "old": "FUNDO DE INVESTIMENTO  FINANCEIRO MM",
+      "new": "FIM"
+    },
+    {
+      "old": " - RESPONSABILIDADE LIMITADA",
+      "new": ""
+    },
+    {
+      "old": "FUNDO DE INVESTIMENTO",
+      "new": "FI"
+    },
+    {
+      "old": "FUNDO INVEST",
+      "new": "FI"
+    },
+    {
+      "old": "REFERENCIADO DI BAIXO RISCO LIQUIDEZ",
+      "new": "DI BAIXO RISCO"
+    },
+    {
+      "old": "FI MM CREDITO PRIVADO",
+      "new": "FIM CP"
+    },
+    {
+      "old": " –",
+      "new": ""
+    },
+    {
+      "old": " -",
+      "new": ""
+    },
+    {
+      "old": ".0",
+      "new": ""
+    }
+  ]
+}

@@ -103,7 +103,7 @@
                 "value": "operpart"
             }
         ],
-        "formula": " vlavencer + vlvencido - ( (vlavencer + vlvencido) * percprovcred/100 )"
+        "formula": "vlavencer + vlvencido - ( (vlavencer + vlvencido) * percprovcred/100 )"
     },
     "IMOVEIS": {
         "filters": [
@@ -113,5 +113,23 @@
             }
         ],
         "formula": "valorcontabil"
+    },
+    "VLCOTASRESGATAR": {
+        "filters": [
+            {
+                "column": "tipo",
+                "value": "vlcotasresgatar"
+            }
+        ],
+        "formula": "valor * -1"
+    },
+    "VLCOTASEMITIR": {
+        "filters": [
+            {
+                "column": "tipo",
+                "value": "vlcotasemitir"
+            }
+        ],
+        "formula": "valor"
     }
 }

@@ -1,0 +1,11 @@
+{
+    "DT_GERACAO": "date",
+    "DT_EMISSAO": "date",
+    "DT_EXPIRACAO": "date",
+    "VALOR_NOMINAL": "number",
+    "PRECO_EXERCICIO": "number",
+    "PERCENT_INDEXADOR": "number",
+    "DT_BASE": "date",
+    "DT_PRIMEIRO_PG_ JUROS": "date"
+  }
+  
