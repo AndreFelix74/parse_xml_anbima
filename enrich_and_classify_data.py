@@ -123,8 +123,8 @@ def classify_new_tipo(entity, config):
 
         for col, cond in conditions.items():
             if not col in entity.columns:
-                print(f"Coluna não encontrada:{col}")
-                continue
+                print(f"[AVISO] Coluna '{col}' não encontrada. Regra '{rule_name}' não será aplicada.")
+                break
             if isinstance(cond, list):
                 mask &= entity[col].isin(cond)
             elif cond == 'NOT_NULL':
@@ -132,8 +132,8 @@ def classify_new_tipo(entity, config):
             else:
                 raise ValueError(f"""Condição inválida na regra {rule_name}
                     para coluna '{col}': {cond}""")
-
-        entity.loc[mask, 'NEW_TIPO'] = new_value
+        else:
+            entity.loc[mask, 'NEW_TIPO'] = new_value
 
 
 def standardize_asset_names(entity, rules):
