@@ -162,6 +162,7 @@ def main():
     entities = ['fundos', 'carteiras']
 
     for entity_name in entities:
+        utl.log_message(f"Início processamento {entity_name}.")
         dtypes = dta.read(f"{entity_name}_metadata")
 
         file_name = f"{xlsx_destination_path}{entity_name}_raw"
@@ -183,6 +184,7 @@ def main():
 
         file_name = f"{xlsx_destination_path}{entity_name}_values_cleaned"
         fhdl.save_df(entity, file_name, file_ext)
+        utl.log_message(f"Fim processamento {entity_name}. Arquivo {file_name}.{file_ext}")
 
 
 if __name__ == "__main__":
