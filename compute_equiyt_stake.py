@@ -167,7 +167,7 @@ def main():
         entity.loc[composition.index, 'composicao'] = composition['composicao']
 
         file_name = f"{xlsx_destination_path}{entity_name}"
-        fhdl.save_df(entity, file_name, file_ext)
+        fhdl.save_df(entity, file_name, 'xlsx')
 
 
 if __name__ == "__main__":

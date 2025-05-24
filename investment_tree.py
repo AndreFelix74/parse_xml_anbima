@@ -165,7 +165,8 @@ def build_tree_branchs(portfolios, funds):
         return []
 
     current['nivel'] += 1
-    current[f"equity_stake"] *= current['equity_stake_portfolio']
+    current['equity_stake'] *= current['equity_stake_portfolio']
+    current['valor_calc'] = current['valor_calc'] * current['equity_stake_portfolio']
 
     return [current[portfolios.columns]] + build_tree_branchs(current[portfolios.columns], funds)
 
@@ -231,7 +232,7 @@ def main():
 
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
-    file_ext = config['Paths'].get('destination_file_extension', 'xlsx')
+    file_ext = 'xlsx' #config['Paths'].get('destination_file_extension', 'xlsx')
 
     cols_funds = ['cnpj', 'dtposicao', 'tipo', 'cnpjfundo', 'equity_stake',
                   'composicao', 'valor_calc', 'isin', 'classeoperacao',
@@ -266,14 +267,14 @@ def main():
     portfolios['compromisso_dtretorno'] = ''
     portfolios['nivel'] = 0
 
-    tree_horzt = build_tree_horizontal(portfolios, funds)
+    tree_horzt = build_tree_horizontal(portfolios.copy(), funds)
 
     max_deep = tree_horzt['nivel'].max()
     create_column_based_on_levels(tree_horzt, 'NEW_NOME_ATIVO_REAL', 'NEW_NOME_ATIVO', max_deep)
     create_column_based_on_levels(tree_horzt, 'TIPO_ATIVO_REAL', 'NEW_TIPO', max_deep)
 
     file_name = f"{xlsx_destination_path}/arvore_carteiras"
-    fhdl.save_df(tree_horzt, file_name, file_ext)
+    fhdl.save_df(tree_horzt, file_name, 'xlsx')
 
 
 if __name__ == "__main__":
