@@ -123,7 +123,10 @@ def classify_new_tipo(entity, config):
 
         for col, cond in conditions.items():
             if not col in entity.columns:
-                print(f"[AVISO] Coluna '{col}' não encontrada. Regra '{rule_name}' não será aplicada.")
+                utl.log_message(
+                    f"Coluna '{col}' não encontrada."
+                    f"Regra '{rule_name}' não será aplicada.",
+                    'warn')
                 break
             if isinstance(cond, list):
                 mask &= entity[col].isin(cond)
@@ -440,6 +443,7 @@ def main():
     entities = ['fundos', 'carteiras']
 
     for entity_name in entities:
+        utl.log_message(f"Inicio processamento {entity_name}")
         dtypes = dta.read(f"{entity_name}_metadata")
         file_name = f"{xlsx_destination_path}{entity_name}_values_cleaned"
         entity = fhdl.load_df(file_name, file_ext, dtypes)
@@ -484,7 +488,7 @@ def main():
 
         file_name = f"{xlsx_destination_path}{entity_name}_enriched"
         fhdl.save_df(entity, file_name, file_ext)
-
+        utl.log_message(f"Fim processamento {entity_name}. Arquivo em {file_name}.{file_ext}")
 
 if __name__ == "__main__":
     main()
