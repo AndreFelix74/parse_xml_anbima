@@ -485,7 +485,7 @@ def main():
                                                   'MANAGEMENT', ])
 
         if entity_name == 'fundos':
-            entity['PRIMEIRO_NIVEL'] = entity['cnpjfundo'].isin(cnpjfundo)
+            entity['PRIMEIRO_NIVEL'] = entity['cnpj'].isin(cnpjfundo)
             
         file_name = f"{xlsx_destination_path}{entity_name}_enriched"
         fhdl.save_df(entity, file_name, file_ext)
