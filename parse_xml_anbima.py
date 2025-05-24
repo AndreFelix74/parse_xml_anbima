@@ -84,21 +84,26 @@ def get_latest_xml_by_cnpj(files_info):
     Returns:
         list: List of file paths to the latest XML for each FD+CNPJ.
     """
+    split_on_date = re.compile(r'_(\d{8})(?!\d)')
     grouped = defaultdict(list)
 
     for path, mtime in files_info:
         filename = os.path.basename(path)
-        parts = filename.split('_')
+        parts = split_on_date.split(filename)
         if len(parts) < 2:
             print(f"Nome de arquivo mal formado: {filename}. Não será processado.")
             continue
         key = f"{parts[0]}_{parts[1]}"
         grouped[key].append((path, mtime))
 
-    latest_files = [
-        max(group, key=lambda x: x[1])[0]
-        for group in grouped.values()
-    ]
+    latest_files = []
+
+    for key, group in grouped.items():
+        group_sorted = sorted(group, key=lambda x: x[1], reverse=True)
+        latest = group_sorted[0][0]
+        latest_files.append(latest)
+        for discarded_path, _ in group_sorted[1:]:
+            print(f"[discarded] {discarded_path}")
 
     return latest_files
 
