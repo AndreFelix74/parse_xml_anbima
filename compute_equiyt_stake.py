@@ -99,7 +99,9 @@ def compute_equity_stake(investor, invested):
 
     if len(missing_cotas) != 0:
         missing_cotas.to_csv('missing_cotas.csv')
-        print(f"{len(missing_cotas)} cnpjfundo nao encontrados. Verifique o arquivo missing_cotas.csv")
+        utl.log_message(f"{len(missing_cotas)} cnpjfundo nao encontrados. "
+                        "Verifique o arquivo missing_cotas.csv",
+                        'warn')
 
     cotas['original_index'] = cotas.index
 
@@ -150,6 +152,7 @@ def main():
     for entity_cfg in entities:
         entity_name = entity_cfg['name']
         group_keys = entity_cfg['group_keys']
+        utl.log_message(f"Início processamento {entity_name}.")
 
         dtypes = dta.read(f"{entity_name}_metadata")
 
@@ -168,6 +171,7 @@ def main():
 
         file_name = f"{xlsx_destination_path}{entity_name}"
         fhdl.save_df(entity, file_name, 'xlsx')
+        utl.log_message(f"Fim processamento {entity_name}. Arquivo {file_name}.{file_ext}")
 
 
 if __name__ == "__main__":

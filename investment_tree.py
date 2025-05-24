@@ -242,7 +242,8 @@ def main():
                   'ANO_VENC_TPF', 'dCadFI_CVM.TP_FUNDO', 'dCadFI_CVM.RENTAB_FUNDO',
                   'dCadFI_CVM.CLASSE_ANBIMA', 'NEW_NOME_ATIVO', 'NEW_GESTOR',
                   'NEW_GESTOR_WORD_CLOUD']
- 
+
+    utl.log_message('Carregando arquivo de fundos.')
     dtypes = dta.read("fundos_metadata")
     file_name = f"{xlsx_destination_path}fundos"
     funds = fhdl.load_df(file_name, file_ext, dtypes)
@@ -256,6 +257,7 @@ def main():
                  'classeoperacao', 'dtvencimento', 'NEW_TIPO', 'NEW_NOME_ATIVO',
                  'NEW_GESTOR', 'NEW_GESTOR_WORD_CLOUD']
 
+    utl.log_message('Carregando arquivo de carteiras.')
     dtypes = dta.read(f"carteiras_metadata")
     file_name = f"{xlsx_destination_path}carteiras"
     portfolios = fhdl.load_df(file_name, file_ext, dtypes)
@@ -267,14 +269,18 @@ def main():
     portfolios['compromisso_dtretorno'] = ''
     portfolios['nivel'] = 0
 
+    utl.log_message('Início processamento árvore.')
     tree_horzt = build_tree_horizontal(portfolios.copy(), funds)
 
     max_deep = tree_horzt['nivel'].max()
     create_column_based_on_levels(tree_horzt, 'NEW_NOME_ATIVO_REAL', 'NEW_NOME_ATIVO', max_deep)
     create_column_based_on_levels(tree_horzt, 'TIPO_ATIVO_REAL', 'NEW_TIPO', max_deep)
+    utl.log_message('Fim processamento árvore.')
 
+    utl.log_message('Salvando dados')
     file_name = f"{xlsx_destination_path}/arvore_carteiras"
     fhdl.save_df(tree_horzt, file_name, 'xlsx')
+    utl.log_message(f"Fim processamento árvore. Arquivo {file_name}.{file_ext}")
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ Created on Wed Jan  8 17:34:44 2025
 """
 
 
+import time
 import os
 import warnings
 from configparser import ConfigParser
@@ -83,3 +84,15 @@ def log_message(msg, level='info'):
         print(Fore.RED + '[ERROR]\n  ' + msg)
     else:
         warnings.warn('[UNKNOWN]\n  ' + msg)
+
+
+def print_elapsed_time(step, start_time):
+    """
+    Print the time elapsed for a specific processing step.
+
+    Args:
+        step (str): Description of the processing step.
+        start_time (float): Start time of the process.
+    """
+    elapsed_time = time.time() - start_time
+    log_message(f"{round(elapsed_time, 3)} secs to {step}")

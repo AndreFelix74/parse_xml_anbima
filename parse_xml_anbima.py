@@ -100,7 +100,7 @@ def get_latest_xml_by_cnpj(files_info):
         latest = group_sorted[0][0]
         latest_files.append(latest)
         for discarded_path, _ in group_sorted[1:]:
-            print(f"[discarded] {discarded_path}")
+            utl.log_message(f"Chave {key} duplicada. Arquivo {discarded_path} descartado.", 'warn')
 
     return latest_files
 
@@ -275,18 +275,6 @@ def convert_to_dataframe(data_list, daily_keys, non_propagated_header_keys):
     return pd.DataFrame(all_rows)
 
 
-def print_elapsed_time(step, start_time):
-    """
-    Print the time elapsed for a specific processing step.
-
-    Args:
-        step (str): Description of the processing step.
-        start_time (float): Start time of the process.
-    """
-    elapsed_time = time.time() - start_time
-    print(f"{round(elapsed_time, 3)} secs to {step}")
-
-
 def setup_folders(paths):
     """
     Create directories if they do not already exist.
@@ -315,31 +303,32 @@ def main():
 
     setup_folders([xml_source_path, xlsx_destination_path])
 
+    utl.log_message(f"Início leitura dos arquivos XML na pasta {xml_source_path}")
     lst_files = get_xml_files(f"{xml_source_path}")
     lst_files = get_latest_xml_by_cnpj(lst_files)
 
     pool = multiprocessing.Pool()
     time_start = time.time()
     xml_content = pool.map(parse_files, lst_files)
-    print_elapsed_time('load xml', time_start)
+    utl.print_elapsed_time(f"parse {len(lst_files)} xml files", time_start)
 
-    time_start = time.time()
     lst_data = read_data_from_parsed_data(xml_content)
-    print_elapsed_time('parse xml', time_start)
 
     header_daily_values = dta.read('header_daily_values')
     daily_keys = header_daily_values.keys()
 
     for idx, data in enumerate(lst_data):
-        file_name = 'fundos' if idx % 2 == 0 else 'carteiras'
+        entity_name = 'fundos' if idx % 2 == 0 else 'carteiras'
+        utl.log_message(f"Início conversão dos dados de {entity_name} para dataframe")
         dataframe = convert_to_dataframe(data, daily_keys, ['isin'])
 
         dtypes_dict = dataframe.dtypes.apply(lambda x: x.name).to_dict()
 
-        dta.create_if_not_exists(f"{file_name}_metadata", dtypes_dict)
+        dta.create_if_not_exists(f"{entity_name}_metadata", dtypes_dict)
 
-        file_name = f"{xlsx_destination_path}{str(file_name)}_raw"
+        file_name = f"{xlsx_destination_path}{str(entity_name)}_raw"
         fhdl.save_df(dataframe, file_name, file_ext)
+        utl.log_message(f"Fim processamento {entity_name}. Arquivo {file_name}.{file_ext}")
 
 
 if __name__ == "__main__":
