@@ -437,7 +437,8 @@ def main():
     cad_fi_cvm = load_db_cad_fi_cvm(data_aux_path)
     cad_fi_cvm = cad_fi_cvm.add_prefix('dCadFI_CVM.')
 
-    entities = ['fundos', 'carteiras']
+    cnpjfundo = []
+    entities = ['carteiras', 'fundos']
 
     for entity_name in entities:
         dtypes = dta.read(f"{entity_name}_metadata")
@@ -447,6 +448,7 @@ def main():
         if entity_name == 'carteiras':
             allocated_partplanprev = explode_partplanprev_and_allocate(entity, tipos_serie)
             entity = integrate_allocated_partplanprev(entity, allocated_partplanprev)
+            cnpjfundo = entity['cnpjfundo'].unique()
 
         entity['FLAG_SERIE'] = np.where(entity['tipo'].isin(tipos_serie), 'SIM', 'NAO')
 
@@ -482,6 +484,9 @@ def main():
                                                   'DE', 'BANCO', 'PARIBAS', 'COMPANY',
                                                   'MANAGEMENT', ])
 
+        if entity_name == 'fundos':
+            entity['PRIMEIRO_NIVEL'] = entity['cnpjfundo'].isin(cnpjfundo)
+            
         file_name = f"{xlsx_destination_path}{entity_name}_enriched"
         fhdl.save_df(entity, file_name, file_ext)
 
