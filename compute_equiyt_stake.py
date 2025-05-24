@@ -158,7 +158,7 @@ def main():
 
         if entity_name == 'fundos':
             invested = entity.copy()
-        
+
         equity_stake = compute_equity_stake(entity, invested)
 
         entity.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
