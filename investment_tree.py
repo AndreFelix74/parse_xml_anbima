@@ -268,10 +268,13 @@ def main():
     create_column_based_on_levels(tree_horzt, 'NEW_NOME_ATIVO_FINAL', 'NEW_NOME_ATIVO', max_deep)
     create_column_based_on_levels(tree_horzt, 'NEW_GESTOR_WORD_CLOUD_FINAL', 'NEW_GESTOR_WORD_CLOUD', max_deep)
     create_column_based_on_levels(tree_horzt, 'fEMISSOR.NOME_EMISSOR_FINAL', 'fEMISSOR.NOME_EMISSOR', max_deep)
+    create_column_based_on_levels(tree_horzt, 'PARENT_FUNDO_FINAL', 'NEW_NOME_ATIVO', max_deep-1)
+
     tree_horzt['SEARCH'] = (
-        tree_horzt['NEW_NOME_ATIVO_FINAL'].fillna('').astype(str)
-        + ' ' + tree_horzt['NEW_GESTOR_WORD_CLOUD_FINAL'].fillna('').astype(str)
-        + ' ' + tree_horzt['fEMISSOR.NOME_EMISSOR_FINAL'].fillna('').astype(str)
+        tree_horzt['NEW_NOME_ATIVO_FINAL']
+        + ' ' + tree_horzt['NEW_GESTOR_WORD_CLOUD_FINAL']
+        + ' ' + tree_horzt['fEMISSOR.NOME_EMISSOR_FINAL']
+        + ' ' + tree_horzt['PARENT_FUNDO_FINAL']
     )
     utl.log_message('Fim processamento árvore.')
 
