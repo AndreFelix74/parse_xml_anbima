@@ -278,7 +278,7 @@ def main():
     utl.log_message('Fim processamento árvore.')
 
     utl.log_message('Salvando dados')
-    file_name = f"{xlsx_destination_path}/arvore_carteiras"
+    file_name = f"{xlsx_destination_path}arvore_carteiras"
     fhdl.save_df(tree_horzt, file_name, 'xlsx')
     utl.log_message(f"Fim processamento árvore. Arquivo {file_name}.{file_ext}")
 

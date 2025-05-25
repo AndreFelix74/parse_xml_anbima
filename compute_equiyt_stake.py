@@ -95,14 +95,6 @@ def compute_equity_stake(investor, invested):
 
     cotas = investor[investor['cnpjfundo'].notnull()][columns].copy()
 
-    missing_cotas = cotas[~cotas['cnpjfundo'].isin(invested['cnpj'])].drop_duplicates()
-
-    if len(missing_cotas) != 0:
-        missing_cotas.to_csv('missing_cotas.csv')
-        utl.log_message(f"{len(missing_cotas)} cnpjfundo nao encontrados. "
-                        "Verifique o arquivo missing_cotas.csv",
-                        'warn')
-
     cotas['original_index'] = cotas.index
 
     columns_invested = ['cnpj', 'valor', 'dtposicao']
@@ -149,6 +141,8 @@ def main():
         }
     ]
 
+    investor_holdings_cols = ['cnpjfundo', 'qtdisponivel', 'dtposicao', 'isin', 'NOME_ATIVO']
+
     for entity_cfg in entities:
         entity_name = entity_cfg['name']
         group_keys = entity_cfg['group_keys']
@@ -162,9 +156,19 @@ def main():
         if entity_name == 'fundos':
             invested = entity.copy()
 
-        equity_stake = compute_equity_stake(entity, invested)
+        investor_holdings = entity[entity['cnpjfundo'].notnull()][investor_holdings_cols].copy()
 
+        equity_stake = compute_equity_stake(investor_holdings, invested)
         entity.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
+
+        unmatched_idx = investor_holdings.index.difference(equity_stake.index)
+        if not unmatched_idx.empty:
+            missing_holdings = investor_holdings.loc[unmatched_idx].drop(columns='qtdisponivel').drop_duplicates()
+            missing_holdings_file = f"{xlsx_destination_path}{entity_name}_fundos_sem_xml"
+            utl.log_message(f"{len(missing_holdings)} cnpjfundo não encontrados, que afetam {len(unmatched_idx)} posições. "
+                            f"Verifique o arquivo {missing_holdings_file}.xlsx",
+                            'warn')
+            fhdl.save_df(missing_holdings, missing_holdings_file, 'xlsx')
 
         composition = compute_composition(entity, group_keys, types_series)
         entity.loc[composition.index, 'composicao'] = composition['composicao']
