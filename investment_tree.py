@@ -36,10 +36,10 @@ def _apply_calculations_to_new_rows(current, mask, deep):
 
     current.loc[mask, 'composicao'] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
     current.loc[mask, 'isin'] = current.loc[mask, f"isin_nivel_{deep+1}"]
-    if deep == 0:
-        current.loc[mask, 'PARENT_FUNDO'] = current.loc[mask, f"NEW_NOME_ATIVO"]
-    else:
-        current.loc[mask, 'PARENT_FUNDO'] = current.loc[mask, f"NEW_NOME_ATIVO_nivel_{deep}"]
+
+    sufix = '' if deep == 0 else f"_nivel_{deep}"
+    current.loc[mask, 'PARENT_FUNDO'] = current.loc[mask, f"NEW_NOME_ATIVO{sufix}"]
+    current.loc[mask, 'PARENT_FUNDO_GESTOR'] = current.loc[mask, f"NEW_GESTOR{sufix}"]
 
 
 def validate_fund_graph_is_acyclic(funds):
@@ -275,6 +275,7 @@ def main():
         + ' ' + tree_horzt['NEW_GESTOR_WORD_CLOUD_FINAL']
         + ' ' + tree_horzt['fEMISSOR.NOME_EMISSOR_FINAL']
         + ' ' + tree_horzt['PARENT_FUNDO']
+        + ' ' + tree_horzt['PARENT_FUNDO_GESTOR']
     )
     utl.log_message('Fim processamento árvore.')
 
