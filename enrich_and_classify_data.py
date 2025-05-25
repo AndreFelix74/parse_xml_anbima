@@ -149,6 +149,13 @@ def standardize_asset_names(entity, rules):
     """
     entity['NEW_NOME_ATIVO'] = entity['NOME_ATIVO'].fillna('').str.strip().str.upper()
 
+    for replacement in rules['global_replacements']:
+        entity['NEW_NOME_ATIVO'] = entity['NEW_NOME_ATIVO'].str.replace(
+            replacement['old'],
+            replacement['new'],
+            regex=False
+        )
+        
     for rule in rules['abbreviations']:
         prefix, abbrev = rule['prefix'], rule['abbrev']
         mask = entity['NEW_NOME_ATIVO'].str.startswith(prefix, na=False)
@@ -157,14 +164,6 @@ def standardize_asset_names(entity, rules):
             + ' '
             + entity.loc[mask, 'NEW_NOME_ATIVO'].str[len(prefix):].str.strip()
         )
-
-    for replacement in rules['global_replacements']:
-        entity['NEW_NOME_ATIVO'] = entity['NEW_NOME_ATIVO'].str.replace(
-            replacement['old'],
-            replacement['new'],
-            regex=False
-        )
-
 
 def merge_cad_plano(entity, dcadplano):
     """
