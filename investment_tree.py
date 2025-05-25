@@ -36,10 +36,6 @@ def _apply_calculations_to_new_rows(current, mask, deep):
 
     current.loc[mask, 'composicao'] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
     current.loc[mask, 'isin'] = current.loc[mask, f"isin_nivel_{deep+1}"]
-    current.loc[mask, 'classeoperacao'] = current.loc[mask, f"classeoperacao_nivel_{deep+1}"]
-    current.loc[mask, 'dtvencimento'] = current.loc[mask, f"dtvencimento_nivel_{deep+1}"]
-    current.loc[mask, 'dtvencativo'] = current.loc[mask, f"dtvencativo_nivel_{deep+1}"]
-    current.loc[mask, 'compromisso_dtretorno'] = current.loc[mask, f"compromisso_dtretorno_nivel_{deep+1}"]
 
 
 def validate_fund_graph_is_acyclic(funds):
@@ -234,13 +230,9 @@ def main():
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
     file_ext = 'xlsx' #config['Paths'].get('destination_file_extension', 'xlsx')
 
-    cols_funds = ['cnpj', 'dtposicao', 'tipo', 'cnpjfundo', 'equity_stake',
-                  'composicao', 'valor_calc', 'isin', 'classeoperacao',
-                  'dtvencimento', 'dtvencativo', 'compromisso_dtretorno',
-                  'NEW_TIPO', 'coupom', 'qtd', 'quantidade', 'fNUMERACA.DESCRICAO',
-                  'fNUMERACA.TIPO_ATIVO', 'fEMISSOR.NOME_EMISSOR', 'DATA_VENC_TPF',
-                  'ANO_VENC_TPF', 'dCadFI_CVM.TP_FUNDO', 'dCadFI_CVM.RENTAB_FUNDO',
-                  'dCadFI_CVM.CLASSE_ANBIMA', 'NEW_NOME_ATIVO', 'NEW_GESTOR',
+    cols_funds = ['cnpj', 'dtposicao', 'cnpjfundo', 'equity_stake', 'composicao',
+                  'valor_calc', 'isin', 'NEW_TIPO', 'fNUMERACA.DESCRICAO',
+                  'fEMISSOR.NOME_EMISSOR', 'NEW_NOME_ATIVO', 'NEW_GESTOR',
                   'NEW_GESTOR_WORD_CLOUD']
 
     utl.log_message('Carregando arquivo de fundos.')
@@ -252,10 +244,10 @@ def main():
 
     funds = funds[funds['valor_serie'] == 0][cols_funds].copy()
 
-    cols_port = ['cnpjcpf', 'codcart', 'cnpb', 'dtposicao', 'nome', 'tipo',
-                 'cnpjfundo', 'equity_stake', 'composicao', 'valor_calc', 'isin',
-                 'classeoperacao', 'dtvencimento', 'NEW_TIPO', 'NEW_NOME_ATIVO',
-                 'NEW_GESTOR', 'NEW_GESTOR_WORD_CLOUD']
+    cols_port = ['cnpjcpf', 'codcart', 'cnpb', 'dtposicao', 'nome', 'cnpjfundo',
+                 'equity_stake', 'composicao', 'valor_calc', 'isin',
+                 'NEW_TIPO', 'NEW_NOME_ATIVO', 'fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR',
+                 'NEW_GESTOR_WORD_CLOUD']
 
     utl.log_message('Carregando arquivo de carteiras.')
     dtypes = dta.read(f"carteiras_metadata")
@@ -265,16 +257,22 @@ def main():
     portfolios = portfolios[(portfolios['flag_rateio'] == 0) &
                             (portfolios['valor_serie'] == 0)][cols_port].copy()
 
-    portfolios['dtvencativo'] = ''
-    portfolios['compromisso_dtretorno'] = ''
     portfolios['nivel'] = 0
+    portfolios['fNUMERACA.DESCRICAO'] = ''
 
     utl.log_message('Início processamento árvore.')
     tree_horzt = build_tree_horizontal(portfolios.copy(), funds)
 
     max_deep = tree_horzt['nivel'].max()
-    create_column_based_on_levels(tree_horzt, 'NEW_NOME_ATIVO_REAL', 'NEW_NOME_ATIVO', max_deep)
-    create_column_based_on_levels(tree_horzt, 'TIPO_ATIVO_REAL', 'NEW_TIPO', max_deep)
+    create_column_based_on_levels(tree_horzt, 'NEW_TIPO_ATIVO_FINAL', 'NEW_TIPO', max_deep)
+    create_column_based_on_levels(tree_horzt, 'NEW_NOME_ATIVO_FINAL', 'NEW_NOME_ATIVO', max_deep)
+    create_column_based_on_levels(tree_horzt, 'NEW_GESTOR_WORD_CLOUD_FINAL', 'NEW_GESTOR_WORD_CLOUD', max_deep)
+    create_column_based_on_levels(tree_horzt, 'fEMISSOR.NOME_EMISSOR_FINAL', 'fEMISSOR.NOME_EMISSOR', max_deep)
+    tree_horzt['SEARCH'] = (
+        tree_horzt['NEW_NOME_ATIVO_FINAL'].fillna('').astype(str)
+        + ' ' + tree_horzt['NEW_GESTOR_WORD_CLOUD_FINAL'].fillna('').astype(str)
+        + ' ' + tree_horzt['fEMISSOR.NOME_EMISSOR_FINAL'].fillna('').astype(str)
+    )
     utl.log_message('Fim processamento árvore.')
 
     utl.log_message('Salvando dados')
