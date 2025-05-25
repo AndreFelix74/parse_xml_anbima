@@ -81,15 +81,14 @@ def build_tree_horizontal(portfolios, funds, deep=0):
         pd.DataFrame: A single wide-format DataFrame with expanded investment
         layers and calculated stakes.
     """
-    if 'cnpjfundo' in portfolios.columns:
-        portfolios.rename(columns={'cnpjfundo': f"cnpjfundo_nivel_{deep}"}, inplace=True)
+    left_col = 'cnpjfundo' if deep == 0 else f"cnpjfundo_nivel_{deep}"
 
-    if portfolios[f"cnpjfundo_nivel_{deep}"].notna().sum() == 0:
+    if portfolios[left_col].notna().sum() == 0:
         return portfolios
 
     current = portfolios.merge(
         funds,
-        left_on=[f"cnpjfundo_nivel_{deep}", 'dtposicao'],
+        left_on=[left_col, 'dtposicao'],
         right_on=['cnpj', 'dtposicao'],
         how='left',
         suffixes=('', f"_nivel_{deep+1}"),
@@ -101,8 +100,6 @@ def build_tree_horizontal(portfolios, funds, deep=0):
     _apply_calculations_to_new_rows(current, mask, deep)
 
     current.drop(columns=['_merge'], inplace=True)
-
-    current.rename(columns={'cnpjfundo': f"cnpjfundo_nivel_{deep+1}"}, inplace=True)
 
     return build_tree_horizontal(current, funds, deep + 1)
 
