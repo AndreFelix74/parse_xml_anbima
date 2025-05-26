@@ -38,7 +38,7 @@ def _apply_calculations_to_new_rows(current, mask, deep):
     current.loc[mask, 'isin'] = current.loc[mask, f"isin_nivel_{deep+1}"]
 
     mask_estrutura = mask & current[f"IS_CNPJFUNDO_ESTRUTURA_GERENCIAL_nivel_{deep+1}"]
-    current.loc[mask_estrutura, 'CNPJFUNDO_ESTRUTURA_GERENCIAL'] = current.loc[mask_estrutura, f"cnpj_nivel_{deep+1}"]
+    current.loc[mask_estrutura, 'CNPJFUNDO_ESTRUTURA_GERENCIAL'] = current.loc[mask_estrutura, f"cnpjfundo_nivel_{deep+1}"]
 
     sufix = '' if deep == 0 else f"_nivel_{deep}"
     current.loc[mask, 'PARENT_FUNDO'] = current.loc[mask, f"NEW_NOME_ATIVO{sufix}"]
@@ -271,6 +271,9 @@ def main():
     portfolios['fNUMERACA.DESCRICAO'] = ''
     portfolios['IS_CNPJFUNDO_ESTRUTURA_GERENCIAL'] = False
     portfolios['cnpj'] = ''
+
+    mask_estrutura = portfolios['cnpjfundo'].isin(cnpjs_estrutura_gerencial)
+    portfolios.loc[mask_estrutura, 'CNPJFUNDO_ESTRUTURA_GERENCIAL'] = portfolios.loc[mask_estrutura, 'cnpjfundo']
 
     utl.log_message('Início processamento árvore.')
     tree_horzt = build_tree_horizontal(portfolios.copy(), funds)
