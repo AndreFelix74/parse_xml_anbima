@@ -224,8 +224,10 @@ def main():
     """
     config = utl.load_config('config.ini')
 
-    xlsx_aux_path = config['Paths']['data_aux_path']
-    xlsx_aux_path = f"{os.path.dirname(utl.format_path(xlsx_aux_path))}/"
+    data_aux_path = config['Paths']['data_aux_path']
+    data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
+    dbaux_path = f"{data_aux_path}dbAux.xlsx"
+    estrutura_gerencial = pd.read_excel(f"{dbaux_path}", sheet_name='dEstruturaGerencial', dtype=str)
 
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
@@ -269,13 +271,20 @@ def main():
     create_column_based_on_levels(tree_horzt, 'NEW_NOME_ATIVO_FINAL', 'NEW_NOME_ATIVO', max_deep)
     create_column_based_on_levels(tree_horzt, 'NEW_GESTOR_WORD_CLOUD_FINAL', 'NEW_GESTOR_WORD_CLOUD', max_deep)
     create_column_based_on_levels(tree_horzt, 'fEMISSOR.NOME_EMISSOR_FINAL', 'fEMISSOR.NOME_EMISSOR', max_deep)
+    create_column_based_on_levels(tree_horzt, 'CNPJFUNDO_FINAL', 'cnpjfundo', max_deep)
 
     tree_horzt['SEARCH'] = (
         tree_horzt['NEW_NOME_ATIVO_FINAL']
         + ' ' + tree_horzt['NEW_GESTOR_WORD_CLOUD_FINAL']
         + ' ' + tree_horzt['fEMISSOR.NOME_EMISSOR_FINAL']
         + ' ' + tree_horzt['PARENT_FUNDO']
-        + ' ' + tree_horzt['PARENT_FUNDO_GESTOR']
+    )
+
+    tree_horzt = tree_horzt.merge(
+        estrutura_gerencial,
+        left_on='CNPJFUNDO_FINAL',
+        right_on='CNPJ_VEICULO',
+        how='left'
     )
     utl.log_message('Fim processamento árvore.')
 
