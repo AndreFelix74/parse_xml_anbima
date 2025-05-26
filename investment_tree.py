@@ -37,6 +37,9 @@ def _apply_calculations_to_new_rows(current, mask, deep):
     current.loc[mask, 'composicao'] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
     current.loc[mask, 'isin'] = current.loc[mask, f"isin_nivel_{deep+1}"]
 
+    mask_estrutura = mask & current[f"IS_CNPJFUNDO_ESTRUTURA_GERENCIAL_nivel_{deep+1}"]
+    current.loc[mask_estrutura, 'CNPJFUNDO_ESTRUTURA_GERENCIAL'] = current.loc[mask_estrutura, f"cnpj_nivel_{deep+1}"]
+
     sufix = '' if deep == 0 else f"_nivel_{deep}"
     current.loc[mask, 'PARENT_FUNDO'] = current.loc[mask, f"NEW_NOME_ATIVO{sufix}"]
     current.loc[mask, 'PARENT_FUNDO_GESTOR'] = current.loc[mask, f"NEW_GESTOR{sufix}"]
@@ -229,6 +232,7 @@ def main():
     dbaux_path = f"{data_aux_path}dbAux.xlsx"
     estrutura_gerencial = pd.read_excel(f"{dbaux_path}", sheet_name='dEstruturaGerencial', dtype=str)
     estrutura_gerencial = estrutura_gerencial[estrutura_gerencial['CNPJ_VEICULO'].notna()]
+    cnpjs_estrutura_gerencial = estrutura_gerencial['CNPJ_VEICULO'].dropna().unique()
 
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
@@ -237,12 +241,14 @@ def main():
     cols_funds = ['cnpj', 'dtposicao', 'cnpjfundo', 'equity_stake', 'composicao',
                   'valor_calc', 'isin', 'NEW_TIPO', 'fNUMERACA.DESCRICAO',
                   'fEMISSOR.NOME_EMISSOR', 'NEW_NOME_ATIVO', 'NEW_GESTOR',
-                  'NEW_GESTOR_WORD_CLOUD']
+                  'NEW_GESTOR_WORD_CLOUD', 'IS_CNPJFUNDO_ESTRUTURA_GERENCIAL']
 
     utl.log_message('Carregando arquivo de fundos.')
     dtypes = dta.read("fundos_metadata")
     file_name = f"{xlsx_destination_path}fundos"
     funds = fhdl.load_df(file_name, file_ext, dtypes)
+
+    funds['IS_CNPJFUNDO_ESTRUTURA_GERENCIAL'] = funds['cnpj'].isin(cnpjs_estrutura_gerencial)
 
     validate_fund_graph_is_acyclic(funds)
 
@@ -263,6 +269,8 @@ def main():
 
     portfolios['nivel'] = 0
     portfolios['fNUMERACA.DESCRICAO'] = ''
+    portfolios['IS_CNPJFUNDO_ESTRUTURA_GERENCIAL'] = False
+    portfolios['cnpj'] = ''
 
     utl.log_message('Início processamento árvore.')
     tree_horzt = build_tree_horizontal(portfolios.copy(), funds)
@@ -272,7 +280,6 @@ def main():
     create_column_based_on_levels(tree_horzt, 'NEW_NOME_ATIVO_FINAL', 'NEW_NOME_ATIVO', max_deep)
     create_column_based_on_levels(tree_horzt, 'NEW_GESTOR_WORD_CLOUD_FINAL', 'NEW_GESTOR_WORD_CLOUD', max_deep)
     create_column_based_on_levels(tree_horzt, 'fEMISSOR.NOME_EMISSOR_FINAL', 'fEMISSOR.NOME_EMISSOR', max_deep)
-    create_column_based_on_levels(tree_horzt, 'CNPJFUNDO_FINAL', 'cnpjfundo', max_deep)
 
     tree_horzt['SEARCH'] = (
         tree_horzt['NEW_NOME_ATIVO_FINAL']
