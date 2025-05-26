@@ -228,6 +228,7 @@ def main():
     data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
     dbaux_path = f"{data_aux_path}dbAux.xlsx"
     estrutura_gerencial = pd.read_excel(f"{dbaux_path}", sheet_name='dEstruturaGerencial', dtype=str)
+    estrutura_gerencial = estrutura_gerencial[estrutura_gerencial['CNPJ_VEICULO'].notna()]
 
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
@@ -280,12 +281,6 @@ def main():
         + ' ' + tree_horzt['PARENT_FUNDO']
     )
 
-    tree_horzt = tree_horzt.merge(
-        estrutura_gerencial,
-        left_on='CNPJFUNDO_FINAL',
-        right_on='CNPJ_VEICULO',
-        how='left'
-    )
     utl.log_message('Fim processamento árvore.')
 
     utl.log_message('Salvando dados')
