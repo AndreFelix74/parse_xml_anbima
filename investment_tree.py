@@ -40,6 +40,7 @@ def _apply_calculations_to_new_rows(current, mask, deep):
     mask_estrutura = mask & current[f"IS_CNPJFUNDO_ESTRUTURA_GERENCIAL_nivel_{deep+1}"]
 
     current.loc[mask_estrutura, 'CNPJFUNDO_ESTRUTURA_GERENCIAL'] = current.loc[mask_estrutura, f"cnpj_nivel_{deep+1}"]
+    current.loc[mask_estrutura, 'NEW_TIPO_ESTRUTURA_GERENCIAL'] = current.loc[mask_estrutura, f"NEW_TIPO_nivel_{deep+1}"]
 
     sufix = '' if deep == 0 else f"_nivel_{deep}"
     current.loc[mask, 'PARENT_FUNDO'] = current.loc[mask, f"NEW_NOME_ATIVO{sufix}"]
@@ -250,6 +251,7 @@ def main():
     funds = fhdl.load_df(file_name, file_ext, dtypes)
 
     funds['IS_CNPJFUNDO_ESTRUTURA_GERENCIAL'] = funds['cnpj'].isin(cnpjs_estrutura_gerencial)
+    funds['NEW_TIPO_ESTRUTURA_GERENCIAL'] = funds['NEW_TIPO']
 
     validate_fund_graph_is_acyclic(funds)
 
@@ -271,6 +273,7 @@ def main():
     portfolios['nivel'] = 0
     portfolios['fNUMERACA.DESCRICAO'] = ''
     portfolios['cnpj'] = ''
+    portfolios['NEW_TIPO_ESTRUTURA_GERENCIAL'] = portfolios['NEW_TIPO']
 
     mask_estrutura = portfolios['cnpjfundo'].isin(cnpjs_estrutura_gerencial)
     portfolios['IS_CNPJFUNDO_ESTRUTURA_GERENCIAL'] = portfolios['cnpjfundo'].isin(cnpjs_estrutura_gerencial)
