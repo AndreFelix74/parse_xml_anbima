@@ -228,6 +228,27 @@ def create_column_based_on_levels(tree_hrzt, new_col, base_col, deep):
     tree_hrzt[new_col] = tree_hrzt[priority_cols].bfill(axis=1).iloc[:, 0]
 
 
+def fill_level_columns_forward(tree_hrzt, base_col, deep):
+    """
+    Forward-fills missing values in level columns by cascading values from higher to lower levels.
+
+    Args:
+        tree_hrzt (pd.DataFrame): The DataFrame with hierarchical level columns.
+        base_col (str): Base name of the columns (e.g., 'estrutura').
+        deep (int): Number of levels (e.g., 4 means columns from _nivel_1 to _nivel_4).
+
+    Returns:
+        pd.DataFrame: The modified DataFrame with levels filled hierarchically.
+    """
+    for i in range(0, deep):
+        curr_level_suffix = f"_nivel_{i}" if i > 0 else ''
+        current_col = f"{base_col}{curr_level_suffix}"
+        next_col = f"{base_col}_nivel_{i+1}"
+
+        mask = tree_hrzt[next_col].isna() | (tree_hrzt[next_col] == '')
+        tree_hrzt.loc[mask, next_col] = tree_hrzt.loc[mask, current_col]
+
+
 def generate_final_columns(tree_horzt):
     """
     Generate final columns based on hierarchical levels in the 'tree_horzt' DataFrame.
@@ -361,6 +382,8 @@ def main():
     tree_horzt = build_tree_horizontal(portfolios.copy(), funds)
 
     generate_final_columns(tree_horzt)
+    max_deep = tree_horzt['nivel'].max()
+    fill_level_columns_forward(tree_horzt, 'NEW_NOME_ATIVO', max_deep)
 
     tree_horzt['SEARCH'] = (
         tree_horzt['NEW_NOME_ATIVO_FINAL'].fillna('')
