@@ -10,6 +10,7 @@ Created on Wed May 14 16:55:27 2025
 import os
 import networkx as nx
 import pandas as pd
+import numpy as np
 import util as utl
 import data_access as dta
 import file_handler as fhdl
@@ -293,6 +294,13 @@ def main():
         + ' ' + tree_horzt['NEW_GESTOR_WORD_CLOUD_FINAL']
         + ' ' + tree_horzt['fEMISSOR.NOME_EMISSOR_FINAL']
         + ' ' + tree_horzt['PARENT_FUNDO']
+    )
+
+    sem_estrutura = tree_horzt['CNPJFUNDO_ESTRUTURA_GERENCIAL'].isna() | (tree_horzt['CNPJFUNDO_ESTRUTURA_GERENCIAL'] == '')
+    tree_horzt.loc[sem_estrutura, 'CNPJFUNDO_ESTRUTURA_GERENCIAL'] = np.where(
+        tree_horzt.loc[sem_estrutura, 'NEW_TIPO_ESTRUTURA_GERENCIAL'] == 'COTAS',
+        '#CLASSIFICAR',
+        tree_horzt.loc[sem_estrutura, 'codcart']
     )
 
     utl.log_message('Fim processamento árvore.')
