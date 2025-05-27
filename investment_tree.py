@@ -10,6 +10,7 @@ Created on Wed May 14 16:55:27 2025
 import os
 import networkx as nx
 import pandas as pd
+import numpy as np
 import util as utl
 import data_access as dta
 import file_handler as fhdl
@@ -36,10 +37,21 @@ def _apply_calculations_to_new_rows(current, mask, deep):
 
     current.loc[mask, 'composicao'] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
     current.loc[mask, 'isin'] = current.loc[mask, f"isin_nivel_{deep+1}"]
-    current.loc[mask, 'classeoperacao'] = current.loc[mask, f"classeoperacao_nivel_{deep+1}"]
-    current.loc[mask, 'dtvencimento'] = current.loc[mask, f"dtvencimento_nivel_{deep+1}"]
-    current.loc[mask, 'dtvencativo'] = current.loc[mask, f"dtvencativo_nivel_{deep+1}"]
-    current.loc[mask, 'compromisso_dtretorno'] = current.loc[mask, f"compromisso_dtretorno_nivel_{deep+1}"]
+
+    mask_estrutura = mask & current[f"IS_CNPJFUNDO_ESTRUTURA_GERENCIAL_nivel_{deep+1}"]
+
+    current.loc[mask_estrutura, 'KEY_ESTRUTURA_GERENCIAL'] = current.loc[
+        mask_estrutura,
+        f"cnpj_nivel_{deep+1}"
+    ]
+    current.loc[mask_estrutura, 'NEW_TIPO_ESTRUTURA_GERENCIAL'] = current.loc[
+        mask_estrutura,
+        f"NEW_TIPO_nivel_{deep+1}"
+    ]
+
+    sufix = '' if deep == 0 else f"_nivel_{deep}"
+    current.loc[mask, 'PARENT_FUNDO'] = current.loc[mask, f"NEW_NOME_ATIVO{sufix}"]
+    current.loc[mask, 'PARENT_FUNDO_GESTOR'] = current.loc[mask, f"NEW_GESTOR{sufix}"]
 
 
 def validate_fund_graph_is_acyclic(funds):
@@ -85,15 +97,14 @@ def build_tree_horizontal(portfolios, funds, deep=0):
         pd.DataFrame: A single wide-format DataFrame with expanded investment
         layers and calculated stakes.
     """
-    if 'cnpjfundo' in portfolios.columns:
-        portfolios.rename(columns={'cnpjfundo': f"cnpjfundo_nivel_{deep}"}, inplace=True)
+    left_col = 'cnpjfundo' if deep == 0 else f"cnpjfundo_nivel_{deep}"
 
-    if portfolios[f"cnpjfundo_nivel_{deep}"].notna().sum() == 0:
+    if portfolios[left_col].notna().sum() == 0:
         return portfolios
 
     current = portfolios.merge(
         funds,
-        left_on=[f"cnpjfundo_nivel_{deep}", 'dtposicao'],
+        left_on=[left_col, 'dtposicao'],
         right_on=['cnpj', 'dtposicao'],
         how='left',
         suffixes=('', f"_nivel_{deep+1}"),
@@ -105,8 +116,6 @@ def build_tree_horizontal(portfolios, funds, deep=0):
     _apply_calculations_to_new_rows(current, mask, deep)
 
     current.drop(columns=['_merge'], inplace=True)
-
-    current.rename(columns={'cnpjfundo': f"cnpjfundo_nivel_{deep+1}"}, inplace=True)
 
     return build_tree_horizontal(current, funds, deep + 1)
 
@@ -219,6 +228,90 @@ def create_column_based_on_levels(tree_hrzt, new_col, base_col, deep):
     tree_hrzt[new_col] = tree_hrzt[priority_cols].bfill(axis=1).iloc[:, 0]
 
 
+def fill_level_columns_forward(tree_hrzt, base_col, deep):
+    """
+    Forward-fills missing values in level columns by cascading values from higher to lower levels.
+
+    Args:
+        tree_hrzt (pd.DataFrame): The DataFrame with hierarchical level columns.
+        base_col (str): Base name of the columns (e.g., 'estrutura').
+        deep (int): Number of levels (e.g., 4 means columns from _nivel_1 to _nivel_4).
+
+    Returns:
+        pd.DataFrame: The modified DataFrame with levels filled hierarchically.
+    """
+    for i in range(0, deep):
+        curr_level_suffix = f"_nivel_{i}" if i > 0 else ''
+        current_col = f"{base_col}{curr_level_suffix}"
+        next_col = f"{base_col}_nivel_{i+1}"
+
+        mask = tree_hrzt[next_col].isna() | (tree_hrzt[next_col] == '')
+        tree_hrzt.loc[mask, next_col] = tree_hrzt.loc[mask, current_col]
+
+
+def generate_final_columns(tree_horzt):
+    """
+    Generate final columns based on hierarchical levels in the 'tree_horzt' DataFrame.
+
+    This function calculates the maximum depth of the hierarchy using the 'nivel' column
+    and uses it to generate final versions of multiple columns by aggregating or selecting
+    values based on that depth.
+
+    Parameters:
+    ----------
+    tree_horzt : pandas.DataFrame
+        The hierarchical tree DataFrame containing the 'nivel' column and intermediate
+        columns used to compute final columns.
+
+    Returns:
+    -------
+    None
+        The function modifies the input DataFrame in place, adding new final columns.
+    """
+    max_deep = tree_horzt['nivel'].max()
+
+    columns_to_generate = [
+        'NEW_TIPO', 'NEW_NOME_ATIVO', 'NEW_GESTOR_WORD_CLOUD', 'fEMISSOR.NOME_EMISSOR'
+    ]
+
+    for base_col in columns_to_generate:
+        create_column_based_on_levels(tree_horzt, f"{base_col}_FINAL", base_col, max_deep)
+
+
+def fill_missing_estrutura_gerencial(tree_horzt, key_veiculo_estrutura_gerencial):
+    """
+    Fills missing values in the 'KEY_ESTRUTURA_GERENCIAL' column based on whether
+    the corresponding 'codcart' value exists in a reference list of valid keys.
+
+    Only rows where 'KEY_ESTRUTURA_GERENCIAL' is null or an empty string are modified.
+
+    Rules:
+        - If 'codcart' is in 'key_veiculo_estrutura_gerencial', assign 'codcart'
+        - Otherwise, assign '#OUTROS'
+
+    Parameters:
+        tree_horzt (pd.DataFrame): DataFrame containing the columns:
+            - 'KEY_ESTRUTURA_GERENCIAL'
+            - 'codcart'
+
+        key_veiculo_estrutura_gerencial (Iterable): List or set of valid 'codcart' keys.
+
+    Returns:
+        None: Modifies the DataFrame in place.
+    """
+    sem_estrutura = (
+        tree_horzt['KEY_ESTRUTURA_GERENCIAL'].isna() |
+        (tree_horzt['KEY_ESTRUTURA_GERENCIAL'] == '')
+    )
+
+    codcart = tree_horzt['codcart'].isin(key_veiculo_estrutura_gerencial)
+
+    tree_horzt.loc[sem_estrutura & codcart, 'KEY_ESTRUTURA_GERENCIAL'] = \
+        tree_horzt.loc[sem_estrutura & codcart, 'codcart']
+
+    tree_horzt.loc[sem_estrutura & ~codcart, 'KEY_ESTRUTURA_GERENCIAL'] = '#OUTROS'
+
+
 def main():
     """
     Main execution function for loading portfolio and fund data, constructing
@@ -227,35 +320,42 @@ def main():
     """
     config = utl.load_config('config.ini')
 
-    xlsx_aux_path = config['Paths']['data_aux_path']
-    xlsx_aux_path = f"{os.path.dirname(utl.format_path(xlsx_aux_path))}/"
+    data_aux_path = config['Paths']['data_aux_path']
+    data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
+    dbaux_path = f"{data_aux_path}dbAux.xlsx"
+    estrutura_gerencial = pd.read_excel(
+        f"{dbaux_path}",
+        sheet_name='dEstruturaGerencial',
+        dtype=str
+    )
+    estrutura_gerencial = estrutura_gerencial[estrutura_gerencial['KEY_VEICULO'].notna()]
+    key_veiculo_estrutura_gerencial = estrutura_gerencial['KEY_VEICULO'].dropna().unique()
 
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
     file_ext = 'xlsx' #config['Paths'].get('destination_file_extension', 'xlsx')
 
-    cols_funds = ['cnpj', 'dtposicao', 'tipo', 'cnpjfundo', 'equity_stake',
-                  'composicao', 'valor_calc', 'isin', 'classeoperacao',
-                  'dtvencimento', 'dtvencativo', 'compromisso_dtretorno',
-                  'NEW_TIPO', 'coupom', 'qtd', 'quantidade', 'fNUMERACA.DESCRICAO',
-                  'fNUMERACA.TIPO_ATIVO', 'fEMISSOR.NOME_EMISSOR', 'DATA_VENC_TPF',
-                  'ANO_VENC_TPF', 'dCadFI_CVM.TP_FUNDO', 'dCadFI_CVM.RENTAB_FUNDO',
-                  'dCadFI_CVM.CLASSE_ANBIMA', 'NEW_NOME_ATIVO', 'NEW_GESTOR',
-                  'NEW_GESTOR_WORD_CLOUD']
+    cols_funds = ['cnpj', 'dtposicao', 'cnpjfundo', 'equity_stake', 'composicao',
+                  'valor_calc', 'isin', 'NEW_TIPO', 'fNUMERACA.DESCRICAO',
+                  'fEMISSOR.NOME_EMISSOR', 'NEW_NOME_ATIVO', 'NEW_GESTOR',
+                  'NEW_GESTOR_WORD_CLOUD', 'IS_CNPJFUNDO_ESTRUTURA_GERENCIAL']
 
     utl.log_message('Carregando arquivo de fundos.')
     dtypes = dta.read("fundos_metadata")
     file_name = f"{xlsx_destination_path}fundos"
     funds = fhdl.load_df(file_name, file_ext, dtypes)
 
+    funds['IS_CNPJFUNDO_ESTRUTURA_GERENCIAL'] = funds['cnpj'].isin(key_veiculo_estrutura_gerencial)
+    funds['NEW_TIPO_ESTRUTURA_GERENCIAL'] = funds['NEW_TIPO']
+
     validate_fund_graph_is_acyclic(funds)
 
     funds = funds[funds['valor_serie'] == 0][cols_funds].copy()
 
-    cols_port = ['cnpjcpf', 'codcart', 'cnpb', 'dtposicao', 'nome', 'tipo',
-                 'cnpjfundo', 'equity_stake', 'composicao', 'valor_calc', 'isin',
-                 'classeoperacao', 'dtvencimento', 'NEW_TIPO', 'NEW_NOME_ATIVO',
-                 'NEW_GESTOR', 'NEW_GESTOR_WORD_CLOUD']
+    cols_port = ['cnpjcpf', 'codcart', 'cnpb', 'dtposicao', 'nome', 'cnpjfundo',
+                 'equity_stake', 'composicao', 'valor_calc', 'isin',
+                 'NEW_TIPO', 'NEW_NOME_ATIVO', 'fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR',
+                 'NEW_GESTOR_WORD_CLOUD']
 
     utl.log_message('Carregando arquivo de carteiras.')
     dtypes = dta.read(f"carteiras_metadata")
@@ -265,16 +365,35 @@ def main():
     portfolios = portfolios[(portfolios['flag_rateio'] == 0) &
                             (portfolios['valor_serie'] == 0)][cols_port].copy()
 
-    portfolios['dtvencativo'] = ''
-    portfolios['compromisso_dtretorno'] = ''
     portfolios['nivel'] = 0
+    portfolios['fNUMERACA.DESCRICAO'] = ''
+    portfolios['cnpj'] = ''
+    portfolios['NEW_TIPO_ESTRUTURA_GERENCIAL'] = portfolios['NEW_TIPO']
+
+    mask_estrutura = portfolios['cnpjfundo'].isin(key_veiculo_estrutura_gerencial)
+    portfolios['IS_CNPJFUNDO_ESTRUTURA_GERENCIAL'] = portfolios['cnpjfundo'].isin(
+        key_veiculo_estrutura_gerencial
+    )
+    portfolios.loc[mask_estrutura, 'KEY_ESTRUTURA_GERENCIAL'] = (
+        portfolios.loc[mask_estrutura, 'cnpjfundo']
+    )
 
     utl.log_message('Início processamento árvore.')
     tree_horzt = build_tree_horizontal(portfolios.copy(), funds)
 
+    generate_final_columns(tree_horzt)
     max_deep = tree_horzt['nivel'].max()
-    create_column_based_on_levels(tree_horzt, 'NEW_NOME_ATIVO_REAL', 'NEW_NOME_ATIVO', max_deep)
-    create_column_based_on_levels(tree_horzt, 'TIPO_ATIVO_REAL', 'NEW_TIPO', max_deep)
+    fill_level_columns_forward(tree_horzt, 'NEW_NOME_ATIVO', max_deep)
+
+    tree_horzt['SEARCH'] = (
+        tree_horzt['NEW_NOME_ATIVO_FINAL'].fillna('')
+        + ' ' + tree_horzt['NEW_GESTOR_WORD_CLOUD_FINAL'].fillna('')
+        + ' ' + tree_horzt['fEMISSOR.NOME_EMISSOR_FINAL'].fillna('')
+        + ' ' + tree_horzt['PARENT_FUNDO'].fillna('')
+    )
+
+    fill_missing_estrutura_gerencial(tree_horzt, key_veiculo_estrutura_gerencial)
+
     utl.log_message('Fim processamento árvore.')
 
     utl.log_message('Salvando dados')
