@@ -40,8 +40,14 @@ def _apply_calculations_to_new_rows(current, mask, deep):
 
     mask_estrutura = mask & current[f"IS_CNPJFUNDO_ESTRUTURA_GERENCIAL_nivel_{deep+1}"]
 
-    current.loc[mask_estrutura, 'CNPJFUNDO_ESTRUTURA_GERENCIAL'] = current.loc[mask_estrutura, f"cnpj_nivel_{deep+1}"]
-    current.loc[mask_estrutura, 'NEW_TIPO_ESTRUTURA_GERENCIAL'] = current.loc[mask_estrutura, f"NEW_TIPO_nivel_{deep+1}"]
+    current.loc[mask_estrutura, 'CNPJFUNDO_ESTRUTURA_GERENCIAL'] = current.loc[
+        mask_estrutura,
+        f"cnpj_nivel_{deep+1}"
+    ]
+    current.loc[mask_estrutura, 'NEW_TIPO_ESTRUTURA_GERENCIAL'] = current.loc[
+        mask_estrutura,
+        f"NEW_TIPO_nivel_{deep+1}"
+    ]
 
     sufix = '' if deep == 0 else f"_nivel_{deep}"
     current.loc[mask, 'PARENT_FUNDO'] = current.loc[mask, f"NEW_NOME_ATIVO{sufix}"]
@@ -222,6 +228,69 @@ def create_column_based_on_levels(tree_hrzt, new_col, base_col, deep):
     tree_hrzt[new_col] = tree_hrzt[priority_cols].bfill(axis=1).iloc[:, 0]
 
 
+def generate_final_columns(tree_horzt):
+    """
+    Generate final columns based on hierarchical levels in the 'tree_horzt' DataFrame.
+
+    This function calculates the maximum depth of the hierarchy using the 'nivel' column
+    and uses it to generate final versions of multiple columns by aggregating or selecting
+    values based on that depth.
+
+    Parameters:
+    ----------
+    tree_horzt : pandas.DataFrame
+        The hierarchical tree DataFrame containing the 'nivel' column and intermediate
+        columns used to compute final columns.
+
+    Returns:
+    -------
+    None
+        The function modifies the input DataFrame in place, adding new final columns.
+    """
+    max_deep = tree_horzt['nivel'].max()
+
+    columns_to_generate = [
+        'NEW_TIPO', 'NEW_NOME_ATIVO', 'NEW_GESTOR_WORD_CLOUD', 'fEMISSOR.NOME_EMISSOR'
+    ]
+
+    for base_col in columns_to_generate:
+        create_column_based_on_levels(tree_horzt, f"{base_col}_FINAL", base_col, max_deep)
+
+
+def fill_missing_estrutura_gerencial(tree_horzt):
+    """
+    Fill missing values in the 'CNPJFUNDO_ESTRUTURA_GERENCIAL' column based on structure type.
+
+    This function identifies rows where 'CNPJFUNDO_ESTRUTURA_GERENCIAL' is empty
+    (NaN or empty string)
+    and fills them based on the value in 'NEW_TIPO_ESTRUTURA_GERENCIAL':
+
+    - If the type is 'COTAS', it sets the value to '#CLASSIFICAR'.
+    - Otherwise, it sets the value to the corresponding 'codcart'.
+
+    Parameters:
+    ----------
+    tree_horzt : pandas.DataFrame
+        The DataFrame containing the columns 'CNPJFUNDO_ESTRUTURA_GERENCIAL',
+        'NEW_TIPO_ESTRUTURA_GERENCIAL', and 'codcart'.
+
+    Returns:
+    -------
+    None
+        The function modifies the input DataFrame in place.
+    """
+    sem_estrutura = (
+        tree_horzt['CNPJFUNDO_ESTRUTURA_GERENCIAL'].isna() |
+        (tree_horzt['CNPJFUNDO_ESTRUTURA_GERENCIAL'] == '')
+    )
+
+    tree_horzt.loc[sem_estrutura, 'CNPJFUNDO_ESTRUTURA_GERENCIAL'] = np.where(
+        tree_horzt.loc[sem_estrutura, 'NEW_TIPO_ESTRUTURA_GERENCIAL'] == 'COTAS',
+        '#CLASSIFICAR',
+        tree_horzt.loc[sem_estrutura, 'codcart']
+    )
+
+
 def main():
     """
     Main execution function for loading portfolio and fund data, constructing
@@ -233,7 +302,11 @@ def main():
     data_aux_path = config['Paths']['data_aux_path']
     data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
     dbaux_path = f"{data_aux_path}dbAux.xlsx"
-    estrutura_gerencial = pd.read_excel(f"{dbaux_path}", sheet_name='dEstruturaGerencial', dtype=str)
+    estrutura_gerencial = pd.read_excel(
+        f"{dbaux_path}",
+        sheet_name='dEstruturaGerencial',
+        dtype=str
+    )
     estrutura_gerencial = estrutura_gerencial[estrutura_gerencial['CNPJ_VEICULO'].notna()]
     cnpjs_estrutura_gerencial = estrutura_gerencial['CNPJ_VEICULO'].dropna().unique()
 
@@ -277,17 +350,17 @@ def main():
     portfolios['NEW_TIPO_ESTRUTURA_GERENCIAL'] = portfolios['NEW_TIPO']
 
     mask_estrutura = portfolios['cnpjfundo'].isin(cnpjs_estrutura_gerencial)
-    portfolios['IS_CNPJFUNDO_ESTRUTURA_GERENCIAL'] = portfolios['cnpjfundo'].isin(cnpjs_estrutura_gerencial)
-    portfolios.loc[mask_estrutura, 'CNPJFUNDO_ESTRUTURA_GERENCIAL'] = portfolios.loc[mask_estrutura, 'cnpjfundo']
+    portfolios['IS_CNPJFUNDO_ESTRUTURA_GERENCIAL'] = portfolios['cnpjfundo'].isin(
+        cnpjs_estrutura_gerencial
+    )
+    portfolios.loc[mask_estrutura, 'CNPJFUNDO_ESTRUTURA_GERENCIAL'] = (
+        portfolios.loc[mask_estrutura, 'cnpjfundo']
+    )
 
     utl.log_message('Início processamento árvore.')
     tree_horzt = build_tree_horizontal(portfolios.copy(), funds)
 
-    max_deep = tree_horzt['nivel'].max()
-    create_column_based_on_levels(tree_horzt, 'NEW_TIPO_ATIVO_FINAL', 'NEW_TIPO', max_deep)
-    create_column_based_on_levels(tree_horzt, 'NEW_NOME_ATIVO_FINAL', 'NEW_NOME_ATIVO', max_deep)
-    create_column_based_on_levels(tree_horzt, 'NEW_GESTOR_WORD_CLOUD_FINAL', 'NEW_GESTOR_WORD_CLOUD', max_deep)
-    create_column_based_on_levels(tree_horzt, 'fEMISSOR.NOME_EMISSOR_FINAL', 'fEMISSOR.NOME_EMISSOR', max_deep)
+    generate_final_columns(tree_horzt)
 
     tree_horzt['SEARCH'] = (
         tree_horzt['NEW_NOME_ATIVO_FINAL']
@@ -296,12 +369,7 @@ def main():
         + ' ' + tree_horzt['PARENT_FUNDO']
     )
 
-    sem_estrutura = tree_horzt['CNPJFUNDO_ESTRUTURA_GERENCIAL'].isna() | (tree_horzt['CNPJFUNDO_ESTRUTURA_GERENCIAL'] == '')
-    tree_horzt.loc[sem_estrutura, 'CNPJFUNDO_ESTRUTURA_GERENCIAL'] = np.where(
-        tree_horzt.loc[sem_estrutura, 'NEW_TIPO_ESTRUTURA_GERENCIAL'] == 'COTAS',
-        '#CLASSIFICAR',
-        tree_horzt.loc[sem_estrutura, 'codcart']
-    )
+    fill_missing_estrutura_gerencial(tree_horzt)
 
     utl.log_message('Fim processamento árvore.')
 
