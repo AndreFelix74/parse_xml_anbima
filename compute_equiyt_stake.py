@@ -76,30 +76,30 @@ def compute_composition(investor, group_keys, types_to_exclude):
     return composition
 
 
-def compute_equity_stake(investor, invested):
+def compute_equity_stake(investor_holdings, invested):
     """
     Calculate the equity stake of investors based on available quotas and fund values.
 
     Args:
-        investor (pd.DataFrame): DataFrame containing investor data with columns
-                                    'cnpjfundo', 'qtdisponivel', and 'dtposicao'.
-        invested (pd.DataFrame): DataFrame containing fund data with columns
-                                    'cnpj', 'valor', and 'dtposicao'.
+        investor_holdings (pd.DataFrame): DataFrame containing investor positions,
+            with required columns: 'cnpjfundo', 'qtdisponivel', and 'dtposicao'.
+        invested (pd.DataFrame): DataFrame containing fund value data,
+            with required columns: 'cnpj', 'valor', 'dtposicao' and a 'tipo' column
+            (must be equal to 'quantidade' for inclusion).
 
     Returns:
-        pd.DataFrame: A DataFrame with the calculated equity stake for each investor.
+        pd.DataFrame: A DataFrame with the calculated 'equity_stake' per investor position,
+            indexed by the original investor_holdings index.
     """
     columns = ['cnpjfundo', 'qtdisponivel', 'dtposicao']
 
-    validate_required_columns(investor, columns)
+    validate_required_columns(investor_holdings, columns)
 
-    cotas = investor[investor['cnpjfundo'].notnull()][columns].copy()
-
-    cotas['original_index'] = cotas.index
+    investor_holdings['original_index'] = investor_holdings.index
 
     columns_invested = ['cnpj', 'valor', 'dtposicao']
 
-    equity_stake = cotas.merge(
+    equity_stake = investor_holdings.merge(
         invested[invested['tipo'] == 'quantidade'][columns_invested],
         left_on=['cnpjfundo', 'dtposicao'],
         right_on=['cnpj', 'dtposicao'],
