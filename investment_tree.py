@@ -40,7 +40,7 @@ def _apply_calculations_to_new_rows(current, mask, deep):
 
     mask_estrutura = mask & current[f"IS_CNPJFUNDO_ESTRUTURA_GERENCIAL_nivel_{deep+1}"]
 
-    current.loc[mask_estrutura, 'CNPJFUNDO_ESTRUTURA_GERENCIAL'] = current.loc[
+    current.loc[mask_estrutura, 'KEY_ESTRUTURA_GERENCIAL'] = current.loc[
         mask_estrutura,
         f"cnpj_nivel_{deep+1}"
     ]
@@ -257,38 +257,38 @@ def generate_final_columns(tree_horzt):
         create_column_based_on_levels(tree_horzt, f"{base_col}_FINAL", base_col, max_deep)
 
 
-def fill_missing_estrutura_gerencial(tree_horzt):
+def fill_missing_estrutura_gerencial(tree_horzt, key_veiculo_estrutura_gerencial):
     """
-    Fill missing values in the 'CNPJFUNDO_ESTRUTURA_GERENCIAL' column based on structure type.
+    Fills missing values in the 'KEY_ESTRUTURA_GERENCIAL' column based on whether
+    the corresponding 'codcart' value exists in a reference list of valid keys.
 
-    This function identifies rows where 'CNPJFUNDO_ESTRUTURA_GERENCIAL' is empty
-    (NaN or empty string)
-    and fills them based on the value in 'NEW_TIPO_ESTRUTURA_GERENCIAL':
+    Only rows where 'KEY_ESTRUTURA_GERENCIAL' is null or an empty string are modified.
 
-    - If the type is 'COTAS', it sets the value to '#CLASSIFICAR'.
-    - Otherwise, it sets the value to the corresponding 'codcart'.
+    Rules:
+        - If 'codcart' is in 'key_veiculo_estrutura_gerencial', assign 'codcart'
+        - Otherwise, assign '#OUTROS'
 
     Parameters:
-    ----------
-    tree_horzt : pandas.DataFrame
-        The DataFrame containing the columns 'CNPJFUNDO_ESTRUTURA_GERENCIAL',
-        'NEW_TIPO_ESTRUTURA_GERENCIAL', and 'codcart'.
+        tree_horzt (pd.DataFrame): DataFrame containing the columns:
+            - 'KEY_ESTRUTURA_GERENCIAL'
+            - 'codcart'
+
+        key_veiculo_estrutura_gerencial (Iterable): List or set of valid 'codcart' keys.
 
     Returns:
-    -------
-    None
-        The function modifies the input DataFrame in place.
+        None: Modifies the DataFrame in place.
     """
     sem_estrutura = (
-        tree_horzt['CNPJFUNDO_ESTRUTURA_GERENCIAL'].isna() |
-        (tree_horzt['CNPJFUNDO_ESTRUTURA_GERENCIAL'] == '')
+        tree_horzt['KEY_ESTRUTURA_GERENCIAL'].isna() |
+        (tree_horzt['KEY_ESTRUTURA_GERENCIAL'] == '')
     )
 
-    tree_horzt.loc[sem_estrutura, 'CNPJFUNDO_ESTRUTURA_GERENCIAL'] = np.where(
-        tree_horzt.loc[sem_estrutura, 'NEW_TIPO_ESTRUTURA_GERENCIAL'] == 'COTAS',
-        '#CLASSIFICAR',
-        tree_horzt.loc[sem_estrutura, 'codcart']
-    )
+    codcart = tree_horzt['codcart'].isin(key_veiculo_estrutura_gerencial)
+
+    tree_horzt.loc[sem_estrutura & codcart, 'KEY_ESTRUTURA_GERENCIAL'] = \
+        tree_horzt.loc[sem_estrutura & codcart, 'codcart']
+
+    tree_horzt.loc[sem_estrutura & ~codcart, 'KEY_ESTRUTURA_GERENCIAL'] = '#OUTROS'
 
 
 def main():
@@ -307,8 +307,8 @@ def main():
         sheet_name='dEstruturaGerencial',
         dtype=str
     )
-    estrutura_gerencial = estrutura_gerencial[estrutura_gerencial['CNPJ_VEICULO'].notna()]
-    cnpjs_estrutura_gerencial = estrutura_gerencial['CNPJ_VEICULO'].dropna().unique()
+    estrutura_gerencial = estrutura_gerencial[estrutura_gerencial['KEY_VEICULO'].notna()]
+    key_veiculo_estrutura_gerencial = estrutura_gerencial['KEY_VEICULO'].dropna().unique()
 
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
@@ -324,7 +324,7 @@ def main():
     file_name = f"{xlsx_destination_path}fundos"
     funds = fhdl.load_df(file_name, file_ext, dtypes)
 
-    funds['IS_CNPJFUNDO_ESTRUTURA_GERENCIAL'] = funds['cnpj'].isin(cnpjs_estrutura_gerencial)
+    funds['IS_CNPJFUNDO_ESTRUTURA_GERENCIAL'] = funds['cnpj'].isin(key_veiculo_estrutura_gerencial)
     funds['NEW_TIPO_ESTRUTURA_GERENCIAL'] = funds['NEW_TIPO']
 
     validate_fund_graph_is_acyclic(funds)
@@ -349,11 +349,11 @@ def main():
     portfolios['cnpj'] = ''
     portfolios['NEW_TIPO_ESTRUTURA_GERENCIAL'] = portfolios['NEW_TIPO']
 
-    mask_estrutura = portfolios['cnpjfundo'].isin(cnpjs_estrutura_gerencial)
+    mask_estrutura = portfolios['cnpjfundo'].isin(key_veiculo_estrutura_gerencial)
     portfolios['IS_CNPJFUNDO_ESTRUTURA_GERENCIAL'] = portfolios['cnpjfundo'].isin(
-        cnpjs_estrutura_gerencial
+        key_veiculo_estrutura_gerencial
     )
-    portfolios.loc[mask_estrutura, 'CNPJFUNDO_ESTRUTURA_GERENCIAL'] = (
+    portfolios.loc[mask_estrutura, 'KEY_ESTRUTURA_GERENCIAL'] = (
         portfolios.loc[mask_estrutura, 'cnpjfundo']
     )
 
@@ -363,13 +363,13 @@ def main():
     generate_final_columns(tree_horzt)
 
     tree_horzt['SEARCH'] = (
-        tree_horzt['NEW_NOME_ATIVO_FINAL']
-        + ' ' + tree_horzt['NEW_GESTOR_WORD_CLOUD_FINAL']
-        + ' ' + tree_horzt['fEMISSOR.NOME_EMISSOR_FINAL']
-        + ' ' + tree_horzt['PARENT_FUNDO']
+        tree_horzt['NEW_NOME_ATIVO_FINAL'].fillna('')
+        + ' ' + tree_horzt['NEW_GESTOR_WORD_CLOUD_FINAL'].fillna('')
+        + ' ' + tree_horzt['fEMISSOR.NOME_EMISSOR_FINAL'].fillna('')
+        + ' ' + tree_horzt['PARENT_FUNDO'].fillna('')
     )
 
-    fill_missing_estrutura_gerencial(tree_horzt)
+    fill_missing_estrutura_gerencial(tree_horzt, key_veiculo_estrutura_gerencial)
 
     utl.log_message('Fim processamento árvore.')
 
