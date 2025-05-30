@@ -76,6 +76,54 @@ def compute_composition(investor, group_keys, types_to_exclude):
     return composition
 
 
+def check_puposicao(investor_holdings, invested):
+    """
+    Compares the 'puposicao' field in investor holdings with the 'valor' field 
+    from invested data where 'tipo' is 'valorcota', for matching fund CNPJs and dates.
+
+    Parameters:
+    ----------
+    investor_holdings : pandas.DataFrame
+        DataFrame containing investor fund holdings with at least the columns:
+        'cnpjfundo', 'dtposicao', and 'puposicao'.
+
+    invested : pandas.DataFrame
+        DataFrame containing invested values with at least the columns:
+        'cnpj', 'valor', 'dtposicao', and 'tipo'. Only rows where 'tipo' == 'valorcota' 
+        are used for comparison.
+
+    Returns:
+    -------
+    pandas.DataFrame
+        A merged DataFrame including a boolean column 'puposicao_igual_valor' that 
+        indicates whether 'puposicao' and 'valor' are equal for each matched row.
+    """
+    columns = ['cnpjfundo', 'dtposicao', 'puposicao']
+    validate_required_columns(investor_holdings, columns)
+
+    investor_holdings['original_index'] = investor_holdings.index
+
+    cols_invested = ['cnpj', 'valor', 'dtposicao']
+
+    compare_puposicao = investor_holdings.merge(
+        invested[invested['tipo'] == 'valorcota'][cols_invested],
+        left_on=['cnpjfundo', 'dtposicao'],
+        right_on=['cnpj', 'dtposicao'],
+        how='inner'
+    )
+
+    compare_puposicao.set_index('original_index', inplace=True)
+
+    decimal_places = 8
+
+    mask_diff = (
+        round(compare_puposicao['puposicao'], decimal_places)
+        != round(compare_puposicao['valor'], decimal_places)
+    )
+
+    return compare_puposicao.loc[mask_diff]
+
+
 def compute_equity_stake(investor_holdings, invested):
     """
     Calculate the equity stake of investors based on available quotas and fund values.
@@ -88,8 +136,8 @@ def compute_equity_stake(investor_holdings, invested):
             (must be equal to 'quantidade' for inclusion).
 
     Returns:
-        pd.DataFrame: A DataFrame with the calculated 'equity_stake' per investor position,
-            indexed by the original investor_holdings index.
+        pd.DataFrame: A DataFrame with the calculated 'equity_stake' per investor
+            position, indexed by the original investor_holdings index.
     """
     columns = ['cnpjfundo', 'qtdisponivel', 'dtposicao']
 
@@ -141,7 +189,8 @@ def main():
         }
     ]
 
-    investor_holdings_cols = ['cnpjfundo', 'qtdisponivel', 'dtposicao', 'isin', 'NOME_ATIVO']
+    investor_holdings_cols = ['cnpjfundo', 'qtdisponivel', 'dtposicao', 'isin',
+                              'NOME_ATIVO', 'puposicao']
 
     for entity_cfg in entities:
         entity_name = entity_cfg['name']
@@ -158,12 +207,24 @@ def main():
 
         investor_holdings = entity[entity['cnpjfundo'].notnull()][investor_holdings_cols].copy()
 
+        divergent_puposicao = check_puposicao(investor_holdings, invested)
+
+        if not divergent_puposicao.empty:
+            divergent_puposicao = divergent_puposicao.drop(columns='qtdisponivel')
+            divergent_file = f"{xlsx_destination_path}{entity_name}_puposicao_divergente"
+            utl.log_message(
+                f"{len(divergent_puposicao)} registros com puposicao divergente. "
+                f"Verifique o arquivo {divergent_file}.xlsx.",
+                'warn'
+            )
+            fhdl.save_df(divergent_puposicao, divergent_file, 'xlsx')
+
         equity_stake = compute_equity_stake(investor_holdings, invested)
         entity.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
 
         unmatched_idx = investor_holdings.index.difference(equity_stake.index)
         if not unmatched_idx.empty:
-            missing_holdings = investor_holdings.loc[unmatched_idx].drop(columns='qtdisponivel').drop_duplicates()
+            missing_holdings = investor_holdings.loc[unmatched_idx].drop(columns=['original_index', 'qtdisponivel']).drop_duplicates()
             missing_holdings_file = f"{xlsx_destination_path}{entity_name}_fundos_sem_xml"
             utl.log_message(f"{len(missing_holdings)} cnpjfundo não encontrados, que afetam {len(unmatched_idx)} posições. "
                             f"Verifique o arquivo {missing_holdings_file}.xlsx",
