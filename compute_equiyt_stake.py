@@ -136,8 +136,8 @@ def compute_equity_stake(investor_holdings, invested):
             (must be equal to 'quantidade' for inclusion).
 
     Returns:
-        pd.DataFrame: A DataFrame with the calculated 'equity_stake' per investor position,
-            indexed by the original investor_holdings index.
+        pd.DataFrame: A DataFrame with the calculated 'equity_stake' per investor
+            position, indexed by the original investor_holdings index.
     """
     columns = ['cnpjfundo', 'qtdisponivel', 'dtposicao']
 
@@ -210,6 +210,7 @@ def main():
         divergent_puposicao = check_puposicao(investor_holdings, invested)
 
         if not divergent_puposicao.empty:
+            divergent_puposicao = divergent_puposicao.drop(columns='qtdisponivel')
             divergent_file = f"{xlsx_destination_path}{entity_name}_puposicao_divergente"
             utl.log_message(
                 f"{len(divergent_puposicao)} registros com puposicao divergente. "
@@ -223,7 +224,7 @@ def main():
 
         unmatched_idx = investor_holdings.index.difference(equity_stake.index)
         if not unmatched_idx.empty:
-            missing_holdings = investor_holdings.loc[unmatched_idx].drop(columns='qtdisponivel').drop_duplicates()
+            missing_holdings = investor_holdings.loc[unmatched_idx].drop(columns=['original_index', 'qtdisponivel']).drop_duplicates()
             missing_holdings_file = f"{xlsx_destination_path}{entity_name}_fundos_sem_xml"
             utl.log_message(f"{len(missing_holdings)} cnpjfundo não encontrados, que afetam {len(unmatched_idx)} posições. "
                             f"Verifique o arquivo {missing_holdings_file}.xlsx",
