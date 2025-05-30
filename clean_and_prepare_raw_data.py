@@ -7,34 +7,8 @@ Created on Fri Jan  3 16:31:03 2025
 """
 
 
-import os
 import inspect
 import pandas as pd
-import util as utl
-import data_access as dta
-import file_handler as fhdl
-
-
-DEBUG = False
-
-
-def print_debug(msg):
-    """
-    Prints the given message if debugging is enabled.
-
-    Parameters:
-    msg (str): The message to be printed.
-
-    This function only prints the message when the global DEBUG variable is set to True.
-    If DEBUG is False, the function does nothing.
-
-    Example:
-    >>> DEBUG = True
-    >>> print_debug("This is a debug message.")
-    This is a debug message.
-    """
-    if DEBUG:
-        print(msg)
 
 
 def harmonize_values(dtfr, harmonization_rules):
@@ -95,32 +69,36 @@ def harmonize_values(dtfr, harmonization_rules):
     dtfr['valor_calc'] = None
 
     for key, value in harmonization_rules.items():
-        print_debug(f"{key} harmonization rule")
-        filters = value["filters"]
-        formula = value["formula"]
+        try:
+            filters = value["filters"]
+            formula = value["formula"]
 
-        filter_columns = [filter_item['column'] for filter_item in filters]
+            filter_columns = [filter_item['column'] for filter_item in filters]
 
-        validate_required_columns(dtfr, filter_columns)
+            validate_required_columns(dtfr, filter_columns)
 
-        mask = pd.Series(True, index=dtfr.index)
-        for filter_item in filters:
-            column, filter_value = filter_item['column'], filter_item['value']
-            mask &= (dtfr[column] == filter_value)
+            mask = pd.Series(True, index=dtfr.index)
+            for filter_item in filters:
+                column, filter_value = filter_item['column'], filter_item['value']
+                mask &= (dtfr[column] == filter_value)
 
-        if sum(mask) == 0:
-            continue
+            if sum(mask) == 0:
+                continue
 
-        if isinstance(formula, str):
-            formula_expr = formula
-            dtfr.loc[mask, 'valor_calc'] = dtfr.loc[mask].eval(formula_expr)
-        elif isinstance(formula, list):
-            dtfr.loc[mask, 'valor_calc'] = dtfr.loc[mask, formula].sum(axis=1)
-        else:
-            dtfr.loc[mask, 'valor_calc'] = formula
+            if isinstance(formula, str):
+                formula_expr = formula
+                dtfr.loc[mask, 'valor_calc'] = dtfr.loc[mask].eval(formula_expr)
+            elif isinstance(formula, list):
+                dtfr.loc[mask, 'valor_calc'] = dtfr.loc[mask, formula].sum(axis=1)
+            else:
+                dtfr.loc[mask, 'valor_calc'] = formula
+        except Exception as excpt:
+            raise ValueError(
+                f"[harmonize_values] Erro ao aplicar fórmula na regra '{key}': {excpt}"
+            ) from excpt
 
 
-def validate_required_columns(df: pd.DataFrame, required_columns: list):
+def validate_required_columns(dtfrm: pd.DataFrame, required_columns: list):
     """
     Validates that all required columns are present in the given DataFrame.
     Automatically identifies the name of the calling function to include in error messages.
@@ -132,60 +110,40 @@ def validate_required_columns(df: pd.DataFrame, required_columns: list):
     Raises:
         ValueError: If one or more required columns are missing.
     """
-    missing_columns = [col for col in required_columns if col not in df.columns]
+    missing_columns = [col for col in required_columns if col not in dtfrm.columns]
     if missing_columns:
         caller_name = inspect.stack()[1].function
         raise ValueError(f"[{caller_name}] Missing required columns: {', '.join(missing_columns)}")
 
 
-def main():
+def clean_data(raw, dtypes, types_to_exclude, types_series, harmonization_rules):
     """
-    Main function for processing fund and portfolio data:
-    - Reads configuration settings.
-    - Loads raw fund and portfolio data from Excel files.
-    - Computes equity stake and real state equity values.
-    - Saves processed data back to Excel files.
+    Aplica limpeza e harmonização aos dados de uma entidade (fundos ou carteiras).
+
+    Args:
+        df (pd.DataFrame): DataFrame bruto.
+        types_to_exclude (list): Lista de tipos a descartar.
+        harmonization_rules (dict): Regras de harmonização para cálculo de valor.
+        types_series (list): Tipos considerados como séries diárias.
+
+    Returns:
+        pd.DataFrame: DataFrame limpo e harmonizado.
     """
-    config = utl.load_config('config.ini')
+    valid_dtypes = {col: dtype for col, dtype in dtypes.items() if col in raw.columns}
 
-    xlsx_destination_path = config['Paths']['xlsx_destination_path']
-    xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
-    file_ext = config['Paths'].get('destination_file_extension', 'xlsx')
+    raw = raw.astype(valid_dtypes, errors='raise')
 
-    header_daily_values = dta.read('header_daily_values')
-    types_to_exclude = dta.read('types_to_exclude')
+    raw = raw[~raw['tipo'].isin(types_to_exclude)]
 
-    types_series = [key for key, value in header_daily_values.items() if value.get('serie', True)]
+    harmonize_values(raw, harmonization_rules)
 
-    harmonization_rules = dta.read('harmonization_values_rules')
+    raw['valor_serie'] = raw['valor'].where(raw['tipo'].isin(types_series), 0)
+    raw['valor_calc'] = raw['valor_calc'].where(~raw['tipo'].isin(types_series), 0)
 
-    entities = ['fundos', 'carteiras']
+    mask = (
+        (raw['valor_serie'] != 0)
+        | (raw['valor_calc'] != 0)
+        | (raw['tipo'] == 'partplanprev')
+    )
 
-    for entity_name in entities:
-        utl.log_message(f"Início processamento {entity_name}.")
-        dtypes = dta.read(f"{entity_name}_metadata")
-
-        file_name = f"{xlsx_destination_path}{entity_name}_raw"
-        entity = fhdl.load_df(file_name, file_ext, dtypes)
-
-        entity = entity[~entity['tipo'].isin(types_to_exclude)]
-
-        harmonize_values(entity, harmonization_rules)
-
-        entity['valor_serie'] = entity['valor'].where(entity['tipo'].isin(types_series), 0)
-        entity['valor_calc'] = entity['valor_calc'].where(~entity['tipo'].isin(types_series), 0)
-
-        mask = (
-            (entity['valor_serie'] != 0)
-            | (entity['valor_calc'] != 0)
-            | (entity['tipo'] == 'partplanprev')
-        )
-        entity = entity[mask]
-
-        file_name = f"{xlsx_destination_path}{entity_name}_values_cleaned"
-        fhdl.save_df(entity, file_name, file_ext)
-        utl.log_message(f"Fim processamento {entity_name}. Arquivo {file_name}.{file_ext}")
-
-
-if __name__ == "__main__":
-    main()
+    return raw[mask]

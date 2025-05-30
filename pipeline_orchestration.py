@@ -12,8 +12,8 @@ import time
 import multiprocessing
 from collections import defaultdict
 
-import parse_xml_anbima as parse
-
+import parse_xml_anbima as parser
+import clean_and_prepare_raw_data as cleaner
 import util as utl
 import data_access as dta
 
@@ -98,7 +98,7 @@ def convert_entity_to_dataframe(entity_data, entity_name, daily_keys):
     """
     utl.log_message(f"Início conversão dos dados de {entity_name} para dataframe")
     non_propagated_header_keys = ['isin']
-    dataframe = parse.convert_to_dataframe(entity_data, daily_keys, non_propagated_header_keys)
+    dataframe = parser.convert_to_dataframe(entity_data, daily_keys, non_propagated_header_keys)
 
     dtypes_dict = dataframe.dtypes.apply(lambda x: x.name).to_dict()
     dta.create_if_not_exists(f"{entity_name}_metadata", dtypes_dict)
@@ -128,10 +128,21 @@ def run_pipeline():
     time_start = time.time()
     processes = min(8, multiprocessing.cpu_count())
     with multiprocessing.Pool(processes=processes) as pool:
-        parsed_content = pool.map(parse.parse_file, xml_files_to_process)
+        parsed_content = pool.map(parser.parse_file, xml_files_to_process)
     utl.print_elapsed_time(f"parse {len(xml_files_to_process)} xml files", time_start)
     utl.log_message(f"{len(xml_files_to_process)} arquivos processados")
-    funds_list, portfolios_list = parse.split_funds_and_portfolios(parsed_content)
+    funds_list, portfolios_list = parser.split_funds_and_portfolios(parsed_content)
+
     funds = convert_entity_to_dataframe(funds_list, 'fundos', daily_keys)
     portfolios = convert_entity_to_dataframe(portfolios_list, 'carteiras', daily_keys)
+
+    types_to_exclude = dta.read('types_to_exclude')
+    types_series = [key for key, value in header_daily_values.items() if value.get('serie', True)]
+    harmonization_rules = dta.read('harmonization_values_rules')
+
+    funds_dtypes = dta.read('fundos_metadata')
+    port_dtypes = dta.read('carteiras_metadata')
+
+    funds = cleaner.clean_data(funds, funds_dtypes, types_to_exclude, types_series, harmonization_rules)
+    portfolios = cleaner.clean_data(portfolios, port_dtypes, types_to_exclude, types_series, harmonization_rules)
 
