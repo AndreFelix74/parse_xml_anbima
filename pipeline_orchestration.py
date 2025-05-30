@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Fri May 30 11:33:22 2025
+
+@author: andrefelix
+"""
+
+import os
+import re
+import time
+import multiprocessing
+from collections import defaultdict
+
+import parse_xml_anbima as parse
+
+import util as utl
+import data_access as dta
+
+
+
+def setup_folders(paths):
+    """
+    Create directories if they do not already exist.
+
+    Args:
+        paths (list): List of directory paths to create.
+    """
+    for path in paths:
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+
+def find_xml_files(files_path):
+    """
+    Retrieve and sort all XML files in a given directory and its subdirectories.
+
+    Args:
+        files_path (str): Path to the directory containing XML files.
+
+    Returns:
+        list: List of absolute paths to XML files.
+    """
+    lst_files = [
+            (os.path.join(root, file), os.path.getmtime(os.path.join(root, file)))
+            for root, dirs, files in os.walk(files_path)
+            for file in files
+            if file.lower().endswith(".xml")
+        ]
+
+    return lst_files
+
+
+def select_latest_xml_by_cnpj_and_date(files_info):
+    """
+    Given a list of (file_path, mtime), retain only the most recent file
+    for each unique FD+CNPJ prefix (first 16 characters of the filename).
+
+    Args:
+        file_info (list of tuples): Each tuple is (file_path, mtime)
+
+    Returns:
+        list: List of file paths to the latest XML for each FD+CNPJ.
+    """
+    file_date_pattern = re.compile(r'^.+?_\d{8}(?!\d)')
+    grouped = defaultdict(list)
+
+    for path, mtime in files_info:
+        filename = os.path.basename(path)
+        match = file_date_pattern.search(filename)
+        key = match.group(0) if match else filename
+        grouped[key].append((path, mtime))
+
+    latest_files = []
+
+    for key, group in grouped.items():
+        group_sorted = sorted(group, key=lambda x: x[1], reverse=True)
+        latest = group_sorted[0][0]
+        latest_files.append(latest)
+        for discarded_path, _ in group_sorted[1:]:
+            utl.log_message(f"Chave {key} duplicada. Arquivo {discarded_path} descartado.", 'warn')
+
+    return latest_files
+
+
+def convert_entity_to_dataframe(entity_data, entity_name, daily_keys):
+    """
+    Converte a lista de dados de uma entidade (fundos ou carteiras) em DataFrame.
+    Registra os dtypes no repositório de metadados.
+
+    Args:
+        entity_data (list): Lista de dicionários extraídos dos XMLs.
+        entity_name (str): Nome da entidade ('fundos' ou 'carteiras').
+        daily_keys (iterable): Chaves diárias para separação do cabeçalho.
+
+    Returns:
+        pd.DataFrame: DataFrame convertido.
+    """
+    utl.log_message(f"Início conversão dos dados de {entity_name} para dataframe")
+    non_propagated_header_keys = ['isin']
+    dataframe = parse.convert_to_dataframe(entity_data, daily_keys, non_propagated_header_keys)
+
+    dtypes_dict = dataframe.dtypes.apply(lambda x: x.name).to_dict()
+    dta.create_if_not_exists(f"{entity_name}_metadata", dtypes_dict)
+
+    return dataframe
+
+
+def run_pipeline():
+    config = utl.load_config('config.ini')
+
+    xml_source_path = config['Paths']['xml_source_path']
+    xml_source_path = f"{os.path.dirname(utl.format_path(xml_source_path))}/"
+
+    xlsx_destination_path = config['Paths']['xlsx_destination_path']
+    xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
+
+    setup_folders([xml_source_path, xlsx_destination_path])
+
+    header_daily_values = dta.read('header_daily_values')
+    daily_keys = header_daily_values.keys()
+
+    utl.log_message(f"Início leitura dos arquivos XML na pasta {xml_source_path}")
+    all_xml_files = find_xml_files(xml_source_path)
+    xml_files_to_process = select_latest_xml_by_cnpj_and_date(all_xml_files)
+
+    utl.log_message(f"{len(xml_files_to_process)} arquivos encontrados")
+    time_start = time.time()
+    processes = min(8, multiprocessing.cpu_count())
+    with multiprocessing.Pool(processes=processes) as pool:
+        parsed_content = pool.map(parse.parse_file, xml_files_to_process)
+    utl.print_elapsed_time(f"parse {len(xml_files_to_process)} xml files", time_start)
+    utl.log_message(f"{len(xml_files_to_process)} arquivos processados")
+    funds_list, portfolios_list = parse.split_funds_and_portfolios(parsed_content)
+    funds = convert_entity_to_dataframe(funds_list, 'fundos', daily_keys)
+    portfolios = convert_entity_to_dataframe(portfolios_list, 'carteiras', daily_keys)
+
