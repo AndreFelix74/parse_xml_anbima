@@ -146,4 +146,4 @@ def clean_data(raw, dtypes, types_to_exclude, types_series, harmonization_rules)
         | (raw['tipo'] == 'partplanprev')
     )
 
-    return raw[mask]
+    return raw[mask].copy()
