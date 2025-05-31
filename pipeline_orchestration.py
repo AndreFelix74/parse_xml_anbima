@@ -6,6 +6,7 @@ Created on Fri May 30 11:33:22 2025
 @author: andrefelix
 """
 
+
 import os
 import re
 import time
@@ -33,56 +34,65 @@ def setup_folders(paths):
             os.makedirs(path)
 
 
-def find_xml_files(files_path):
+def find_all_files(files_path, file_ext):
     """
-    Retrieve and sort all XML files in a given directory and its subdirectories.
+    Recursively finds all files with the given extension and returns metadata.
 
     Args:
-        files_path (str): Path to the directory containing XML files.
+        files_path (str): Root directory.
+        file_ext (str): File extension (e.g., '.xml').
 
     Returns:
-        list: List of absolute paths to XML files.
+        dict: {
+            full_path (str): {
+                'filename': str,
+                'mtime': float
+            }
+        }
     """
-    lst_files = [
-            (os.path.join(root, file), os.path.getmtime(os.path.join(root, file)))
-            for root, dirs, files in os.walk(files_path)
-            for file in files
-            if file.lower().endswith(".xml")
-        ]
-
-    return lst_files
+    return {
+        os.path.join(root, file): {
+            'filename': file,
+            'mtime': os.path.getmtime(os.path.join(root, file))
+        }
+        for root, _, files in os.walk(files_path)
+        for file in files
+        if file.lower().endswith(file_ext.lower())
+    }
 
 
 def select_latest_xml_by_cnpj_and_date(files_info):
     """
-    Given a list of (file_path, mtime), retain only the most recent file
-    for each unique FD+CNPJ prefix (first 16 characters of the filename).
+    Given a dict of {file_path: {'filename': str, 'mtime': float}}, return the most recent
+    file per unique FD+CNPJ key, and list of discarded (older) duplicates.
+
+    The key is extracted using the first pattern that ends in _YYYYMMDD.
 
     Args:
-        file_info (list of tuples): Each tuple is (file_path, mtime)
+        files_info (dict): Mapping of full file path to metadata.
 
     Returns:
-        list: List of file paths to the latest XML for each FD+CNPJ.
+        tuple:
+            - latest_files (list of str): Full paths to the latest XMLs.
+            - discarded_files (list of str): Full paths of older duplicates.
     """
     file_date_pattern = re.compile(r'^.+?_\d{8}(?!\d)')
     grouped = defaultdict(list)
 
-    for path, mtime in files_info:
-        filename = os.path.basename(path)
-        match = file_date_pattern.search(filename)
-        key = match.group(0) if match else filename
-        grouped[key].append((path, mtime))
+    for path, meta in files_info.items():
+        key = file_date_pattern.search(meta['filename'])
+        key = key.group(0) if key else meta['filename']
+        grouped[key].append((path, meta['mtime']))
 
     latest_files = []
+    discarded_files = []
 
     for key, group in grouped.items():
-        group_sorted = sorted(group, key=lambda x: x[1], reverse=True)
-        latest = group_sorted[0][0]
-        latest_files.append(latest)
-        for discarded_path, _ in group_sorted[1:]:
-            utl.log_message(f"Chave {key} duplicada. Arquivo {discarded_path} descartado.", 'warn')
+        group.sort(key=lambda x: x[1], reverse=True)
+        latest_files.append(group[0][0])
+        discarded_files.extend(path for path, _ in group[1:])
 
-    return latest_files
+    return latest_files, discarded_files
 
 
 def convert_entity_to_dataframe(entity_data, entity_name, daily_keys):
@@ -167,8 +177,8 @@ def run_pipeline():
     tipos_serie = [key for key, value in header_daily_values.items() if value.get('serie', False)]
 
     utl.log_message(f"Início leitura dos arquivos XML na pasta {xml_source_path}")
-    all_xml_files = find_xml_files(xml_source_path)
-    xml_files_to_process = select_latest_xml_by_cnpj_and_date(all_xml_files)
+    all_xml_files = find_all_files(xml_source_path, '.xml')
+    xml_files_to_process, xml_discarted = select_latest_xml_by_cnpj_and_date(all_xml_files)
 
     utl.log_message(f"{len(xml_files_to_process)} arquivos encontrados")
     time_start = time.time()
