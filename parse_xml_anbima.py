@@ -44,12 +44,12 @@ def parse_decimal_value(value):
     return value
 
 
-def parse_file(str_file_name):
+def parse_file(file_name):
     """
     Parse the contents of an XML file and extract its structured data.
 
     Args:
-        str_file_name (str): Path to the XML file.
+        file_name (str): Path to the XML file.
 
     Returns:
         defaultdict: Parsed data grouped by XML tags.
@@ -59,18 +59,18 @@ def parse_file(str_file_name):
     root = None
 
     try:
-        root = ET.parse(str_file_name).getroot()
+        root = ET.parse(file_name).getroot()
     except KeyboardInterrupt:
         return []
     except Exception as excpt:
         print(excpt)
 
     if root is None or len(root) == 0:
-        print(f"{str_file_name} without root node.")
+        print(f"{file_name} without root node.")
         return data
 
     if root.find('.//header') is None:
-        print(f"{str_file_name} is missing a 'header' node.")
+        print(f"{file_name} is missing a 'header' node.")
         raise ValueError('header not found')
 
     return extract_node_data(root)
