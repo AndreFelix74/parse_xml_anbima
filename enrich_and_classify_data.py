@@ -7,34 +7,9 @@ Created on Mon May 19 13:51:44 2025
 """
 
 
-import os
 import pandas as pd
 import numpy as np
 import util as utl
-import data_access as dta
-import file_handler as fhdl
-
-
-def convert_column_types(dtfrm, dtype_map):
-    """
-    Converts specified columns in a DataFrame to their target data types
-    ('date' or 'number').
-
-    Args:
-        dtfrm (pd.DataFrame): The DataFrame to modify.
-        dtype_map (dict): A mapping of column names to type strings
-        ('date' or 'number').
-
-    Raises:
-        ValueError: If an unsupported type is provided in the map.
-    """
-    for col, tipo in dtype_map.items():
-        if tipo == 'date':
-            dtfrm[col] = pd.to_datetime(dtfrm[col], errors='coerce')
-        elif tipo == 'number':
-            dtfrm[col] = pd.to_numeric(dtfrm[col], errors='coerce')
-        else:
-            raise ValueError(f"Tipo não suportado: {tipo}")
 
 
 def add_nome_ativo(entity):
@@ -86,7 +61,7 @@ def add_vencimento_tpf(entity):
     entity['ANO_VENC_TPF'] = entity['DATA_VENC_TPF'].dt.strftime('%Y')
 
 
-def classify_new_tipo(entity, config):
+def classify_new_tipo(entity, new_tipo_rules):
     """
     Classifica a coluna NEW_TIPO com base em regras declaradas em um dicionário JSON.
     A chave do dicionário é o nome da regra usado como descrição.
@@ -108,14 +83,14 @@ def classify_new_tipo(entity, config):
 
     Args:
         entity (pd.DataFrame): DataFrame de entrada.
-        config (dict): Regras de classificação.
+        new_tipo_rules (dict): Regras de classificação.
 
     Returns:
         pd.DataFrame com a coluna NEW_TIPO modificada.
     """
     entity['NEW_TIPO'] = entity['tipo'].str.upper()
 
-    for rule_name, rule in config.items():
+    for rule_name, rule in new_tipo_rules.items():
         conditions = rule.get('conditions', {})
         new_value = rule.get('new_value')
 
@@ -165,116 +140,6 @@ def standardize_asset_names(entity, rules):
             + entity.loc[mask, 'NEW_NOME_ATIVO'].str[len(prefix):].str.strip()
         )
 
-def merge_cad_plano(entity, dcadplano):
-    """
-    Merges the input entity DataFrame with dCadPlano on 'cnpb', if it exists.
-
-    Args:
-        entity (pd.DataFrame): The entity DataFrame with a potential 'cnpb' column.
-        dcadplano (pd.DataFrame): The dCadPlano DataFrame.
-
-    Returns:
-        pd.DataFrame: Merged DataFrame if applicable, otherwise the original.
-    """
-    if 'cnpb' in entity.columns:
-        return entity.merge(
-            dcadplano.add_prefix('dCadPlano.'),
-            left_on='cnpb',
-            right_on='dCadPlano.CNPB',
-            how='left'
-        )
-
-    return entity
-
-
-def load_assets_aux(data_aux_path):
-    """
-    Loads auxiliary tables for asset identification (numeraca and emissor) and
-    merges them.
-
-    Args:
-        data_aux_path (str): Path to the auxiliary data directory.
-
-    Returns:
-        pd.DataFrame: Merged DataFrame with prefix 'fNUMERACA.' and 'fEMISSOR.'
-        on columns.
-    """
-    aux_tables = []
-    tables_aux = [
-        {'name': 'numeraca',
-         'cols': ['COD_ISIN', 'COD_EMISSOR', 'DESCRICAO', 'TIPO_ATIVO']
-         },
-        {'name': 'emissor',
-         'cols': ['COD_EMISSOR', 'NOME_EMISSOR', 'CNPJ_EMISSOR']
-         }
-    ]
-
-    for table in tables_aux:
-        table_name = table['name']
-        cols = table['cols']
-
-        cols_names = dta.read(f"{table_name}_columns")
-        dtypes = dta.read(f"{table_name}_dtypes")
-
-        table_aux = pd.read_csv(f"{data_aux_path}{table_name.upper()}.TXT",
-                                header=None,
-                                names=cols_names,
-                                encoding='utf-8',
-                                dtype=str)
-        convert_column_types(table_aux, dtypes)
-        aux_tables.append(table_aux[cols])
-
-    numeraca, emissor = aux_tables
-
-    return numeraca.add_prefix('fNUMERACA.').merge(
-        emissor.add_prefix('fEMISSOR.'),
-        left_on='fNUMERACA.COD_EMISSOR',
-        right_on='fEMISSOR.COD_EMISSOR',
-        how='left'
-    )
-
-
-def load_db_cad_fi_cvm(data_aux_path):
-    """
-    Loads and cleans the CVM fund registration database.
-
-    Args:
-        data_aux_path (str): Path to the CSV file 'dbCadFI_CVM.csv'.
-
-    Returns:
-        pd.DataFrame: Cleaned and typed DataFrame filtered by operational funds.
-    """
-    db_cad_fi_cvm = pd.read_csv(f"{data_aux_path}dbCadFI_CVM.csv",
-                                sep=';',
-                                encoding='latin1',
-                                dtype=str)
-
-    db_cad_fi_cvm = db_cad_fi_cvm[db_cad_fi_cvm['SIT'] == 'EM FUNCIONAMENTO NORMAL']
-
-    db_cad_fi_cvm['CNPJ_FUNDO'] = (
-        db_cad_fi_cvm['CNPJ_FUNDO']
-        .str.replace('.', '', regex=False)
-        .str.replace('/', '', regex=False)
-        .str.replace('-', '', regex=False)
-    )
-
-    cols_date = ['DT_REG', 'DT_CONST', 'DT_CANCEL', 'DT_INI_SIT', 'DT_INI_ATIV',
-                 'DT_INI_EXERC', 'DT_FIM_EXERC', 'DT_PATRIM_LIQ']
-    for col in cols_date:
-        db_cad_fi_cvm[col] = pd.to_datetime(db_cad_fi_cvm[col], errors='raise')
-
-    db_cad_fi_cvm['CD_CVM'] = pd.to_numeric(
-        db_cad_fi_cvm['CD_CVM'],
-        errors='raise',
-        downcast='integer'
-    )
-    db_cad_fi_cvm['VL_PATRIM_LIQ'] = pd.to_numeric(
-        db_cad_fi_cvm['VL_PATRIM_LIQ'],
-        errors='raise'
-    ) / 100
-
-    return db_cad_fi_cvm
-
 
 def clean_gestor_names_for_wordcloud(entity, stopwords=None):
     """
@@ -304,190 +169,22 @@ def clean_gestor_names_for_wordcloud(entity, stopwords=None):
     entity['NEW_GESTOR_WORD_CLOUD'] = entity['NEW_GESTOR'].apply(clean_text)
 
 
-def explode_partplanprev_and_allocate(portfolios, types_to_exclude):
-    """
-    Decomposes aggregated allocations of type 'partplanprev' into proportional
-    entries based on real underlying assets in the 'portfolios' dataset.
-
-    This function is specific to portfolios that contain entries of type
-    'partplanprev', which represent consolidated participation (e.g., of
-    beneficiaries or plans). For each aggregated record, it generates new
-    rows representing proportional allocations across the actual portfolio
-    assets, using the 'percpart' percentage.
-
-    Parameters
-    ----------
-    portfolios : pandas.DataFrame
-        Must include ['percpart', 'valor_calc', 'codcart', 'nome', 'cnpb', 'dtposicao', 'tipo'].
-
-    types_to_exclude : list of str
-        A list of non-asset types that should be excluded from the allocation process.
-        Typically includes series-like records or auxiliary types.
-
-    Returns
-    -------
-    pandas.DataFrame
-        A DataFrame containing the newly generated rows, each representing a
-        proportional allocation from a 'partplanprev' entry. Includes:
-        - 'valor_calc': calculated based on the original percentage.
-        - 'flag_rateio': a flag set to 0, indicating generated allocation rows.
-
-    Raises
-    ------
-    ValueError
-        If any required columns are missing from the input DataFrame.
-
-    Notes
-    -----
-    - The function performs an inner join between 'partplanprev' entries and
-      the actual underlying assets of the portfolio to compute proportional values.
-    - This process effectively expands the data structure by creating new rows.
-    """
-    if portfolios[portfolios['tipo'] == 'partplanprev'].empty:
-        return portfolios
-
-    partplanprev = portfolios[portfolios['tipo'] == 'partplanprev'][
-        ['codcart', 'nome', 'percpart', 'cnpb', 'dtposicao']
-    ]
-
-    assets_to_allocate = portfolios[
-        ~portfolios['tipo'].isin(types_to_exclude + ['partplanprev'])
-    ].drop(columns=['cnpb', 'percpart'])
-
-    assets_to_allocate = assets_to_allocate.copy()
-    assets_to_allocate['original_index'] = assets_to_allocate.index
-
-    allocated_assets = partplanprev.merge(
-        assets_to_allocate.dropna(subset=['valor_calc']),
-        on=['codcart', 'nome', 'dtposicao'],
-        how='inner'
-    )
-
-    allocated_assets['percpart'] = pd.to_numeric(allocated_assets['percpart'], errors='raise')
-    allocated_assets['valor_calc'] = pd.to_numeric(allocated_assets['valor_calc'], errors='raise')
-
-    allocated_assets['valor_calc'] = (
-        allocated_assets['percpart'] * allocated_assets['valor_calc'] / 100.0
-    )
-
-    mask_cotas = allocated_assets['tipo'] == 'cotas'
-
-    allocated_assets.loc[mask_cotas, 'qtdisponivel'] = (
-        allocated_assets.loc[mask_cotas, 'percpart'] *
-        allocated_assets.loc[mask_cotas, 'qtdisponivel'] / 100.0
-    )
-
-    allocated_assets['flag_rateio'] = 0
-
-    return allocated_assets
-
-
-def integrate_allocated_partplanprev(entity, allocated_partplanprev):
-    """
-    Integrates allocated partplanprev rows into the original 'carteiras' DataFrame.
-
-    This includes:
-    - Flagging original rows that were used in the allocation.
-    - Appending the newly allocated rows.
-    - Zeroing out 'valor_calc' for original rows that were split.
-
-    Args:
-        entity (pd.DataFrame): Original carteiras DataFrame.
-        allocated_partplanprev (pd.DataFrame): Rows generated by
-        explode_partplanprev_and_allocate().
-
-    Returns:
-        pd.DataFrame: The updated DataFrame with new rows and adjusted flags/values.
-    """
-    entity['flag_rateio'] = entity.index.isin(
-        allocated_partplanprev['original_index'].unique()
-    ).astype(int)
-
-    entity = pd.concat([entity, allocated_partplanprev], ignore_index=True)
-    entity['valor_calc'] = entity['valor_calc'].where(entity['flag_rateio'] != 1, 0)
-
-    return entity
-
-
-def main():
+def enrich_and_classify(joined, tipos_serie, name_standardization_rules,
+                        new_tipo_rules, gestor_name_stopwords):
     """
     Main function that orchestrates the enrichment of asset data for
     'fundos' and 'carteiras':
-    - Loads configurations and metadata.
-    - Loads and merges auxiliary and CVM data.
     - Applies classification, naming, and enrichment rules.
-    - Outputs enriched Excel files.
     """
-    config = utl.load_config('config.ini')
+    joined['FLAG_SERIE'] = np.where(joined['tipo'].isin(tipos_serie), 'SIM', 'NAO')
 
-    xlsx_destination_path = config['Paths']['xlsx_destination_path']
-    xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
-    file_ext = config['Paths'].get('destination_file_extension', 'xlsx')
+    classify_new_tipo(joined, new_tipo_rules)
+    add_vencimento_tpf(joined)
+    add_nome_ativo(joined)
 
-    data_aux_path = config['Paths']['data_aux_path']
-    data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
-    dbaux_path = f"{data_aux_path}dbAux.xlsx"
+    standardize_asset_names(joined, name_standardization_rules)
 
-    header_daily_values = dta.read('header_daily_values')
-    tipos_serie = [key for key, value in header_daily_values.items() if value.get('serie', False)]
-
-    name_standardization_rules = dta.read('name_standardization_rules')
-    new_tipo_rules = dta.read('enrich_de_para_tipos')
-
-    dcadplano = pd.read_excel(f"{dbaux_path}", sheet_name='dCadPlano', dtype=str)
-    aux_asset = load_assets_aux(data_aux_path)
-    cad_fi_cvm = load_db_cad_fi_cvm(data_aux_path)
-    cad_fi_cvm = cad_fi_cvm.add_prefix('dCadFI_CVM.')
-
-    entities = ['fundos', 'carteiras']
-
-    for entity_name in entities:
-        utl.log_message(f"Início processamento {entity_name}.")
-        dtypes = dta.read(f"{entity_name}_metadata")
-        file_name = f"{xlsx_destination_path}{entity_name}_values_cleaned"
-        entity = fhdl.load_df(file_name, file_ext, dtypes)
-
-        if entity_name == 'carteiras':
-            allocated_partplanprev = explode_partplanprev_and_allocate(entity, tipos_serie)
-            entity = integrate_allocated_partplanprev(entity, allocated_partplanprev)
-
-        entity['FLAG_SERIE'] = np.where(entity['tipo'].isin(tipos_serie), 'SIM', 'NAO')
-
-        entity = entity.merge(
-            aux_asset,
-            left_on='isin',
-            right_on='fNUMERACA.COD_ISIN',
-            how='left'
-        )
-
-        entity = merge_cad_plano(entity, dcadplano)
-        classify_new_tipo(entity, new_tipo_rules)
-        add_vencimento_tpf(entity)
-        add_nome_ativo(entity)
-
-        left_col = 'cnpj' if entity_name == 'fundos' else 'fEMISSOR.CNPJ_EMISSOR'
-        entity = entity.merge(
-            cad_fi_cvm,
-            left_on=left_col,
-            right_on='dCadFI_CVM.CNPJ_FUNDO',
-            how='left'
-        )
-
-        standardize_asset_names(entity, name_standardization_rules)
-
-        entity['dCadFI_CVM.CLASSE_ANBIMA'] = entity['dCadFI_CVM.CLASSE_ANBIMA'].str.upper()
-        entity['NEW_GESTOR'] = entity['dCadFI_CVM.GESTOR'].fillna('VIVEST')
-        entity['NEW_GESTOR'] = entity['NEW_GESTOR'].replace('FUNDACAO CESP', 'VIVEST')
-        clean_gestor_names_for_wordcloud(entity, ['S.A.', 'S.A', 'LTDA', 'LTDA.', 'A',
-                                                  'DTVM', 'GESTAO', 'GESTÃO', 'S',
-                                                  'RECURSOS', 'INVESTIMENTOS',
-                                                  'LIMITADA', 'ASSET', 'BRASIL',
-                                                  'UNIBANCO', 'DE', 'BANCO',
-                                                  'PARIBAS', 'COMPANY', 'MANAGEMENT', ])
-
-        file_name = f"{xlsx_destination_path}{entity_name}_enriched"
-        fhdl.save_df(entity, file_name, file_ext)
-        utl.log_message(f"Fim processamento {entity_name}. Arquivo {file_name}.{file_ext}")
-
-if __name__ == "__main__":
-    main()
+    joined['dCadFI_CVM.CLASSE_ANBIMA'] = joined['dCadFI_CVM.CLASSE_ANBIMA'].str.upper()
+    joined['NEW_GESTOR'] = joined['dCadFI_CVM.GESTOR'].fillna('VIVEST')
+    joined['NEW_GESTOR'] = joined['NEW_GESTOR'].replace('FUNDACAO CESP', 'VIVEST')
+    clean_gestor_names_for_wordcloud(joined, gestor_name_stopwords)

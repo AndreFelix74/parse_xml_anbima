@@ -12,11 +12,13 @@ import time
 import multiprocessing
 from collections import defaultdict
 
+import auxiliary_loaders as aux_loader
 import parse_xml_anbima as parser
 import clean_and_prepare_raw_data as cleaner
+import carteiras_operations as crt
+import enrich_and_classify_data as enricher
 import util as utl
 import data_access as dta
-
 
 
 def setup_folders(paths):
@@ -106,6 +108,46 @@ def convert_entity_to_dataframe(entity_data, entity_name, daily_keys):
     return dataframe
 
 
+def merge_aux_data(cleaned, dcadplano, aux_asset, cad_fi_cvm, col_join_cad_fi_cvm):
+    """
+    Combina os dados principais (fundos ou carteiras) com tabelas auxiliares:
+    - ativos (numeraca + emissor)
+    - dCadPlano
+    - CVM
+
+    Args:
+        cleaned (pd.DataFrame): DataFrame base a ser enriquecido.
+        dcadplano (pd.DataFrame): Tabela dCadPlano.
+        aux_asset (pd.DataFrame): Tabela de ativos.
+        cad_fi_cvm (pd.DataFrame): Base da CVM com prefixo 'dCadFI_CVM.'.
+        col_join_cad_fi_cvm (str): Coluna base para o join com a CVM.
+
+    Returns:
+        pd.DataFrame enriquecido.
+    """
+    cleaned = cleaned.merge(
+        aux_asset,
+        left_on='isin',
+        right_on='fNUMERACA.COD_ISIN',
+        how='left'
+    )
+
+    if 'cnpb' in cleaned.columns:
+        cleaned = cleaned.merge(
+            dcadplano.add_prefix('dCadPlano.'),
+            left_on='cnpb',
+            right_on='dCadPlano.CNPB',
+            how='left'
+        )
+
+    return cleaned.merge(
+        cad_fi_cvm,
+        left_on=col_join_cad_fi_cvm,
+        right_on='dCadFI_CVM.CNPJ_FUNDO',
+        how='left'
+    )
+
+
 def run_pipeline():
     config = utl.load_config('config.ini')
 
@@ -117,8 +159,12 @@ def run_pipeline():
 
     setup_folders([xml_source_path, xlsx_destination_path])
 
+    data_aux_path = config['Paths']['data_aux_path']
+    data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
+
     header_daily_values = dta.read('header_daily_values')
     daily_keys = header_daily_values.keys()
+    tipos_serie = [key for key, value in header_daily_values.items() if value.get('serie', False)]
 
     utl.log_message(f"Início leitura dos arquivos XML na pasta {xml_source_path}")
     all_xml_files = find_xml_files(xml_source_path)
@@ -146,3 +192,33 @@ def run_pipeline():
     funds = cleaner.clean_data(funds, funds_dtypes, types_to_exclude, types_series, harmonization_rules)
     portfolios = cleaner.clean_data(portfolios, port_dtypes, types_to_exclude, types_series, harmonization_rules)
 
+    allocated_partplanprev = crt.explode_partplanprev_and_allocate(portfolios, tipos_serie)
+    portfolios = crt.integrate_allocated_partplanprev(portfolios, allocated_partplanprev)
+
+    aux_data = aux_loader.load_all_auxiliary_data(data_aux_path)
+
+    portfolios = merge_aux_data(
+        portfolios,
+        aux_data['dcadplano'],
+        aux_data['assets'],
+        aux_data['cad_fi_cvm'],
+        'fEMISSOR.CNPJ_EMISSOR'
+    )
+
+    funds = merge_aux_data(
+        funds,
+        aux_data['dcadplano'],
+        aux_data['assets'],
+        aux_data['cad_fi_cvm'],
+        'cnpj'
+    )
+
+    name_standardization_rules = dta.read('name_standardization_rules')
+    new_tipo_rules = dta.read('enrich_de_para_tipos')
+    gestor_name_stopwords = dta.read('gestor_name_stopwords')
+
+    enricher.enrich_and_classify(portfolios, tipos_serie, name_standardization_rules,
+                                 new_tipo_rules, gestor_name_stopwords)
+
+    enricher.enrich_and_classify(funds, tipos_serie, name_standardization_rules,
+                                 new_tipo_rules, gestor_name_stopwords)
