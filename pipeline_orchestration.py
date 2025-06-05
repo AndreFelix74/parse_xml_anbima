@@ -222,8 +222,8 @@ def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys):
 
     if intermediate_cfg['save']:
         with log_timing('parse', 'save_parsed_raw_data') as log:
-            save_intermediate(funds, 'funds-raw', intermediate_cfg, log)
-            save_intermediate(portfolios, 'portfolios-raw', intermediate_cfg, log)
+            save_intermediate(funds, 'fundos-raw', intermediate_cfg, log)
+            save_intermediate(portfolios, 'carteiras-raw', intermediate_cfg, log)
 
     return [funds, portfolios]
 
@@ -240,8 +240,8 @@ def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
 
     if intermediate_cfg['save']:
         with log_timing('clean', 'save_cleaned_data') as log:
-            save_intermediate(funds, 'funds-cleaned', intermediate_cfg, log)
-            save_intermediate(portfolios, 'portfolios-cleaned', intermediate_cfg, log)
+            save_intermediate(funds, 'fundos-cleaned', intermediate_cfg, log)
+            save_intermediate(portfolios, 'carteiras-cleaned', intermediate_cfg, log)
 
     return [funds, portfolios]
 
@@ -273,17 +273,17 @@ def explode_partplanprev(intermediate_cfg, portfolios):
     with log_timing('enrich', 'explode_partplanprev') as log:
         allocated_partplanprev = crt.explode_partplanprev_and_allocate(portfolios)
         if allocated_partplanprev is None:
-            return
+            return portfolios
 
     portfolios = crt.integrate_allocated_partplanprev(portfolios, allocated_partplanprev)
 
     if intermediate_cfg['save']:
         with log_timing('enrich', 'save_exploded_partplanprev') as log:
-            save_intermediate(portfolios, 'portfolios-exploded', intermediate_cfg, log)
+            save_intermediate(portfolios, 'carterias-exploded', intermediate_cfg, log)
 
     mask = portfolios['tipo'] == 'partplanprev'
-    mask &= portfolios['flag_rateio'] == 1
-    portfolios = portfolios[mask]
+    mask |= portfolios['flag_rateio'] == 1
+    return portfolios[~mask]
 
 
 def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
@@ -325,8 +325,8 @@ def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
 
     if intermediate_cfg['save']:
         with log_timing('enrich', 'save_enriched_data') as log:
-            save_intermediate(funds, 'funds-enriched', intermediate_cfg, log)
-            save_intermediate(portfolios, 'portfolios-enriched', intermediate_cfg, log)
+            save_intermediate(funds, 'fundos-enriched', intermediate_cfg, log)
+            save_intermediate(portfolios, 'carteiras-enriched', intermediate_cfg, log)
 
     return [funds, portfolios]
 
@@ -373,7 +373,7 @@ def build_horizontal_tree(funds, portfolios, data_aux_path):
         governance_struct = governance_struct[governance_struct['KEY_VEICULO'].notna()]
 
         tree_horzt = tree.build_tree(funds, portfolios, governance_struct)
-        #tree.enrich_tree(tree_horzt, governance_struct)
+        tree.enrich_tree(tree_horzt, governance_struct)
         return tree_horzt
 
 
@@ -429,7 +429,7 @@ def run_pipeline():
     new_tipo_rules = dta.read('enrich_de_para_tipos')
     gestor_name_stopwords = dta.read('gestor_name_stopwords')
 
-    explode_partplanprev(intermediate_cfg, portfolios)
+    portfolios = explode_partplanprev(intermediate_cfg, portfolios)
 
     funds, portfolios = enrich(intermediate_cfg, funds, portfolios, types_series,
                                data_aux_path, new_tipo_rules, gestor_name_stopwords,
@@ -442,12 +442,12 @@ def run_pipeline():
 
     validate_fund_graph_is_acyclic(funds)
 
-    build_horizontal_tree(funds, portfolios, data_aux_path)
+    tree = build_horizontal_tree(funds, portfolios, data_aux_path)
 
     with log_timing('finish', 'save_final_files'):
-        save_df(funds,f"{xlsx_destination_path}fundos", 'xlsx')
-        save_df(funds,f"{xlsx_destination_path}carteiras", 'xlsx')
-        save_df(funds,f"{xlsx_destination_path}arvore_carteiras", 'xlsx')
+        save_df(funds, f"{xlsx_destination_path}fundos", 'xlsx')
+        save_df(portfolios, f"{xlsx_destination_path}carteiras", 'xlsx')
+        save_df(tree, f"{xlsx_destination_path}arvore_carteiras", 'xlsx')
 
 
 if __name__ == "__main__":
