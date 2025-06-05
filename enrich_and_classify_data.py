@@ -9,7 +9,6 @@ Created on Mon May 19 13:51:44 2025
 
 import pandas as pd
 import numpy as np
-import util as utl
 
 
 def add_nome_ativo(entity):
@@ -86,8 +85,11 @@ def classify_new_tipo(entity, new_tipo_rules):
         new_tipo_rules (dict): Regras de classificação.
 
     Returns:
-        pd.DataFrame com a coluna NEW_TIPO modificada.
+        tuple:
+            - pd.DataFrame com a coluna NEW_TIPO modificada.
+            - lista de mensagens de erro encontradas.
     """
+    alerts = []
     entity['NEW_TIPO'] = entity['tipo'].str.upper()
 
     for rule_name, rule in new_tipo_rules.items():
@@ -97,21 +99,24 @@ def classify_new_tipo(entity, new_tipo_rules):
         mask = pd.Series(True, index=entity.index)
 
         for col, cond in conditions.items():
-            if not col in entity.columns:
-                utl.log_message(
-                    f"Regra '{rule_name}' descartada. "
-                    f"Coluna '{col}' não encontrada.",
-                    'warn')
+            if col not in entity.columns:
+                alerts.append(
+                    f"Regra '{rule_name}' descartada. Coluna '{col}' não encontrada."
+                )
                 break
             if isinstance(cond, list):
                 mask &= entity[col].isin(cond)
             elif cond == 'NOT_NULL':
                 mask &= entity[col].notna()
             else:
-                raise ValueError(f"""Condição inválida na regra {rule_name}
-                    para coluna '{col}': {cond}""")
+                alerts.append(
+                    f"Condição inválida na regra '{rule_name}' "
+                    f"para coluna '{col}': {cond}")
+                break
         else:
             entity.loc[mask, 'NEW_TIPO'] = new_value
+
+    return alerts
 
 
 def standardize_asset_names(entity, rules):
@@ -172,13 +177,31 @@ def clean_gestor_names_for_wordcloud(entity, stopwords=None):
 def enrich_and_classify(joined, tipos_serie, name_standardization_rules,
                         new_tipo_rules, gestor_name_stopwords):
     """
-    Main function that orchestrates the enrichment of asset data for
-    'fundos' and 'carteiras':
-    - Applies classification, naming, and enrichment rules.
+    Enriches and standardizes asset data in a combined DataFrame
+    containing both fund and portfolio records.
+
+    Operations performed:
+    - Creates the 'FLAG_SERIE' column based on predefined types.
+    - Classifies the 'NEW_TIPO' column according to defined rules.
+    - Computes TPF maturity dates.
+    - Generates and standardizes asset names.
+    - Standardizes manager names, including replacing specific cases.
+    - Converts the 'CLASSE_ANBIMA' field to uppercase.
+    - Cleans manager names for use in word clouds.
+
+    Args:
+        joined (pd.DataFrame): Combined DataFrame containing fund and portfolio data.
+        tipos_serie (list): List of types to be marked as 'SIM' in the 'FLAG_SERIE' column.
+        name_standardization_rules (dict): Rules used to standardize asset names.
+        new_tipo_rules (dict): Rules for classifying the 'NEW_TIPO' column.
+        gestor_name_stopwords (list): List of stopwords to remove from manager names for word cloud generation.
+
+    Returns:
+        list: A list of warning or error messages generated during the 'NEW_TIPO' classification process.
     """
     joined['FLAG_SERIE'] = np.where(joined['tipo'].isin(tipos_serie), 'SIM', 'NAO')
 
-    classify_new_tipo(joined, new_tipo_rules)
+    alerts = classify_new_tipo(joined, new_tipo_rules)
     add_vencimento_tpf(joined)
     add_nome_ativo(joined)
 
@@ -188,3 +211,5 @@ def enrich_and_classify(joined, tipos_serie, name_standardization_rules,
     joined['NEW_GESTOR'] = joined['dCadFI_CVM.GESTOR'].fillna('VIVEST')
     joined['NEW_GESTOR'] = joined['NEW_GESTOR'].replace('FUNDACAO CESP', 'VIVEST')
     clean_gestor_names_for_wordcloud(joined, gestor_name_stopwords)
+
+    return alerts

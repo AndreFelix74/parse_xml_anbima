@@ -11,7 +11,7 @@ import os
 import re
 import multiprocessing
 from collections import defaultdict
-
+import networkx as nx
 from logger import log_timing, RUN_ID
 
 import auxiliary_loaders as aux_loader
@@ -20,6 +20,8 @@ import clean_and_prepare_raw_data as cleaner
 import integrity_checks as checker
 import carteiras_operations as crt
 import enrich_and_classify_data as enricher
+import compute_metrics as metrics
+import investment_tree as tree
 import util as utl
 import data_access as dta
 from file_handler import save_df
@@ -70,7 +72,7 @@ def save_intermediate(dtfrm, filename, config, log):
     full_path = os.path.join(run_folder, filename)
     save_df(dtfrm, full_path, config['file_format'])
 
-    log.info("intermediate_files_saved", arquivo=f"{full_path}.{config['file_format']}")
+    log.info('intermediate_files_saved', arquivo=f"{full_path}.{config['file_format']}")
 
 
 def find_all_files(files_path, file_ext):
@@ -197,29 +199,29 @@ def merge_aux_data(cleaned, dcadplano, aux_asset, cad_fi_cvm, col_join_cad_fi_cv
 
 
 def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys):
-    with log_timing("parsing", "load_xml_files") as log:
+    with log_timing('parse', 'load_xml_files') as log:
         all_xml_files = find_all_files(xml_source_path, '.xml')
         xml_files_to_process, xml_discarted = select_latest_xml_by_cnpj_and_date(all_xml_files)
 
         log.info(
-            "arquivos_xml_encontrados",
+            'arquivos_xml_encontrados',
             total=len(all_xml_files),
             processados=len(xml_files_to_process),
             descartados=len(xml_discarted),
             arquivos_descartados=xml_discarted
         )
 
-    with log_timing("parsing", "paser_xml_content") as log:
+    with log_timing('parse', 'paser_xml_content') as log:
         with multiprocessing.Pool(processes=processes) as pool:
             parsed_content = pool.map(parser.parse_file, xml_files_to_process)
 
-    with log_timing("parsing", "convert_to_pandas") as log:
+    with log_timing('parse', 'convert_to_pandas') as log:
         funds_list, portfolios_list = parser.split_funds_and_portfolios(parsed_content)
         funds = convert_entity_to_dataframe(funds_list, 'fundos', daily_keys)
         portfolios = convert_entity_to_dataframe(portfolios_list, 'carteiras', daily_keys)
 
     if intermediate_cfg['save']:
-        with log_timing("parsing", "saving_parsed_raw_data") as log:
+        with log_timing('parse', 'save_parsed_raw_data') as log:
             save_intermediate(funds, 'funds-raw', intermediate_cfg, log)
             save_intermediate(portfolios, 'portfolios-raw', intermediate_cfg, log)
 
@@ -237,7 +239,7 @@ def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
                                     types_series, harmonization_rules)
 
     if intermediate_cfg['save']:
-        with log_timing("cleaning", "saving_cleaned_data") as log:
+        with log_timing('clean', 'save_cleaned_data') as log:
             save_intermediate(funds, 'funds-cleaned', intermediate_cfg, log)
             save_intermediate(portfolios, 'portfolios-cleaned', intermediate_cfg, log)
 
@@ -248,17 +250,17 @@ def check_values_integrity(intermediate_cfg, entity, entity_name, invested, grou
     investor_holdings_cols = ['cnpjfundo', 'qtdisponivel', 'dtposicao', 'isin',
                               'NOME_ATIVO', 'puposicao']
 
-    with log_timing("checking", "check_puposicao") as log:
+    with log_timing('check', f"check_puposicao_consistency_{entity_name}") as log:
         investor_holdings = entity[entity['cnpjfundo'].notnull()][investor_holdings_cols].copy()
         divergent_puposicao = checker.check_puposicao(investor_holdings, invested)
 
         if not divergent_puposicao.empty:
             log.warn('check', dados=divergent_puposicao.to_json())
-            save_intermediate(divergent_puposicao, 
+            save_intermediate(divergent_puposicao,
                               f"{entity_name}_puposicao_divergente",
                               intermediate_cfg, log)
 
-    with log_timing("checking", "check_pl_consistency") as log:
+    with log_timing('check', f"check_pl_consistency_{entity_name}") as log:
         divergent_pl = checker.check_composition_consistency(entity, group_keys)
 
         if not divergent_pl.empty:
@@ -268,7 +270,7 @@ def check_values_integrity(intermediate_cfg, entity, entity_name, invested, grou
 
 
 def explode_partplanprev(intermediate_cfg, portfolios):
-    with log_timing("enriching", "explode_partplanprev") as log:
+    with log_timing('enrich', 'explode_partplanprev') as log:
         allocated_partplanprev = crt.explode_partplanprev_and_allocate(portfolios)
         if allocated_partplanprev is None:
             return
@@ -276,7 +278,7 @@ def explode_partplanprev(intermediate_cfg, portfolios):
     portfolios = crt.integrate_allocated_partplanprev(portfolios, allocated_partplanprev)
 
     if intermediate_cfg['save']:
-        with log_timing("enriching", "saving_exploded_partplanprev") as log:
+        with log_timing('enrich', 'save_exploded_partplanprev') as log:
             save_intermediate(portfolios, 'portfolios-exploded', intermediate_cfg, log)
 
     mask = portfolios['tipo'] == 'partplanprev'
@@ -287,10 +289,10 @@ def explode_partplanprev(intermediate_cfg, portfolios):
 def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
            new_tipo_rules, gestor_name_stopwords, name_standardization_rules):
 
-    with log_timing("enriching", "load_aux_data") as log:
-        aux_data = aux_loader.load_all_auxiliary_data(data_aux_path)
+    with log_timing('enrich', 'load_aux_data') as log:
+        aux_data = aux_loader.load_enrich_auxiliary_data(data_aux_path)
 
-    with log_timing("enriching", "merge_aux_data") as log:
+    with log_timing('enrich', 'merge_aux_data') as log:
         portfolios = merge_aux_data(
             portfolios,
             aux_data['dcadplano'],
@@ -307,34 +309,76 @@ def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
             'cnpj'
         )
 
-    enricher.enrich_and_classify(portfolios, types_series, name_standardization_rules,
-                                 new_tipo_rules, gestor_name_stopwords)
+    with log_timing('enrich', 'enrich_and_classify') as log:
+        alerts = enricher.enrich_and_classify(portfolios, types_series,
+                                              name_standardization_rules,
+                                              new_tipo_rules, gestor_name_stopwords)
+        if alerts:
+            log.warning(f"Classification alerts for portfolios: {alerts}")
 
-    enricher.enrich_and_classify(funds, types_series, name_standardization_rules,
-                                 new_tipo_rules, gestor_name_stopwords)
+        alerts = enricher.enrich_and_classify(funds, types_series,
+                                              name_standardization_rules,
+                                              new_tipo_rules, gestor_name_stopwords)
+        if alerts:
+            log.warning(f"Classification alerts for funds: {alerts}")
+
 
     if intermediate_cfg['save']:
-        with log_timing("cleaning", "saving_enriched_data") as log:
+        with log_timing('enrich', 'save_enriched_data') as log:
             save_intermediate(funds, 'funds-enriched', intermediate_cfg, log)
             save_intermediate(portfolios, 'portfolios-enriched', intermediate_cfg, log)
 
     return [funds, portfolios]
 
 
-def run_pipeline():
+def compute_metrics(funds, portfolios, types_series):
+    metrics.compute(funds, funds, types_series, ['cnpj'])
+
+    group_keys_port = ['cnpjcpf', 'codcart', 'dtposicao', 'nome', 'cnpb']
+    metrics.compute(portfolios, funds, types_series, group_keys_port)
+
+
+def validate_fund_graph_is_acyclic(funds):
+    """
+    Validates that the fund-to-fund relationships form a Directed Acyclic Graph (DAG).
+    Raises an exception if any cycles are found in the investment structure.
+
+    Args:
+        funds (pd.DataFrame): DataFrame containing at least 'cnpj' (invested fund) and
+                              'cnpjfundo' (investor fund) columns.
+
+    Raises:
+        ValueError: If a cycle is detected in the graph of fund relationships.
+    """
+    edges = (
+        funds[['cnpjfundo', 'cnpj']]
+        .dropna()
+        .drop_duplicates()
+        .values
+        .tolist()
+    )
+    graph = nx.DiGraph()
+    graph.add_edges_from(edges)
+
+    try:
+        nx.algorithms.dag.topological_sort(graph)
+    except nx.NetworkXUnfeasible as excpt:
+        cycle = nx.find_cycle(graph, orientation='original')
+        raise ValueError(f"Cycle detected in fund relationships: {cycle}") from excpt
+
+
+def build_horizontal_tree(funds, portfolios, data_aux_path):
+    with log_timing('tree', 'build_tree'):
+        governance_struct = aux_loader.load_governance_struct(data_aux_path)
+        governance_struct = governance_struct[governance_struct['KEY_VEICULO'].notna()]
+
+        tree_horzt = tree.build_tree(funds, portfolios, governance_struct)
+        #tree.enrich_tree(tree_horzt, governance_struct)
+        return tree_horzt
+
+
+def load_config():
     config = utl.load_config('config.ini')
-
-    if not config.has_section("Debug"):
-        raise KeyError("Missing [Debug] section in config.ini")
-
-    if not config.has_section("Paths"):
-        raise KeyError("Missing [Paths] section in config.ini")
-
-    intermediate_cfg = {
-        'save': config["Debug"].get("write_intermediate_files").lower() == "true",
-        'output_path': config["Debug"].get("intermediate_output_path"),
-        'file_format': config["Paths"].get("destination_file_extension")
-    }
 
     xml_source_path = config['Paths']['xml_source_path']
     xml_source_path = f"{os.path.dirname(utl.format_path(xml_source_path))}/"
@@ -342,10 +386,28 @@ def run_pipeline():
     xlsx_destination_path = config['Paths']['xlsx_destination_path']
     xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
 
-    setup_folders([xml_source_path, xlsx_destination_path])
-
     data_aux_path = config['Paths']['data_aux_path']
     data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
+
+    if not config.has_section('Debug'):
+        raise KeyError('Missing [Debug] section in config.ini')
+
+    if not config.has_section('Paths'):
+        raise KeyError('Missing [Paths] section in config.ini')
+
+    intermediate_cfg = {
+        'save': config['Debug'].get('write_intermediate_files').lower() == 'yes',
+        'output_path': config['Debug'].get('intermediate_output_path'),
+        'file_format': config['Paths'].get('destination_file_extension')
+    }
+
+    return [xml_source_path, xlsx_destination_path, data_aux_path, intermediate_cfg]
+
+
+def run_pipeline():
+    xml_source_path, xlsx_destination_path, data_aux_path, intermediate_cfg = load_config()
+
+    setup_folders([xlsx_destination_path])
 
     header_daily_values = dta.read('header_daily_values')
     daily_keys = header_daily_values.keys()
@@ -376,5 +438,18 @@ def run_pipeline():
     check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
     check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf'])
 
+    compute_metrics(funds, portfolios, types_series)
 
-run_pipeline()
+    validate_fund_graph_is_acyclic(funds)
+
+    build_horizontal_tree(funds, portfolios, data_aux_path)
+
+    with log_timing('finish', 'save_final_files'):
+        save_df(funds,f"{xlsx_destination_path}fundos", 'xlsx')
+        save_df(funds,f"{xlsx_destination_path}carteiras", 'xlsx')
+        save_df(funds,f"{xlsx_destination_path}arvore_carteiras", 'xlsx')
+
+
+if __name__ == "__main__":
+    with log_timing('full', 'all_process'):
+        run_pipeline()

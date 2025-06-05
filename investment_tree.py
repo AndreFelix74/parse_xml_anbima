@@ -7,15 +7,6 @@ Created on Wed May 14 16:55:27 2025
 """
 
 
-import os
-import networkx as nx
-import pandas as pd
-import numpy as np
-import util as utl
-import data_access as dta
-import file_handler as fhdl
-
-
 def _apply_calculations_to_new_rows(current, mask, deep):
     """
     Applies in-place calculations to rows resulting from a successful merge
@@ -52,35 +43,6 @@ def _apply_calculations_to_new_rows(current, mask, deep):
     sufix = '' if deep == 0 else f"_nivel_{deep}"
     current.loc[mask, 'PARENT_FUNDO'] = current.loc[mask, f"NEW_NOME_ATIVO{sufix}"]
     current.loc[mask, 'PARENT_FUNDO_GESTOR'] = current.loc[mask, f"NEW_GESTOR{sufix}"]
-
-
-def validate_fund_graph_is_acyclic(funds):
-    """
-    Validates that the fund-to-fund relationships form a Directed Acyclic Graph (DAG).
-    Raises an exception if any cycles are found in the investment structure.
-
-    Args:
-        funds (pd.DataFrame): DataFrame containing at least 'cnpj' (invested fund) and
-                              'cnpjfundo' (investor fund) columns.
-
-    Raises:
-        ValueError: If a cycle is detected in the graph of fund relationships.
-    """
-    edges = (
-        funds[['cnpjfundo', 'cnpj']]
-        .dropna()
-        .drop_duplicates()
-        .values
-        .tolist()
-    )
-    graph = nx.DiGraph()
-    graph.add_edges_from(edges)
-
-    try:
-        nx.algorithms.dag.topological_sort(graph)
-    except nx.NetworkXUnfeasible:
-        cycle = nx.find_cycle(graph, orientation='original')
-        raise ValueError(f"Cycle detected in fund relationships: {cycle}")
 
 
 def build_tree_horizontal(portfolios, funds, deep=0):
@@ -312,74 +274,8 @@ def fill_missing_estrutura_gerencial(tree_horzt, key_veiculo_estrutura_gerencial
     tree_horzt.loc[sem_estrutura & ~codcart, 'KEY_ESTRUTURA_GERENCIAL'] = '#OUTROS'
 
 
-def main():
-    """
-    Main execution function for loading portfolio and fund data, constructing
-    the horizontal investment tree, and exporting the final tree structure to
-    an Excel file.
-    """
-    config = utl.load_config('config.ini')
-
-    data_aux_path = config['Paths']['data_aux_path']
-    data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
-    dbaux_path = f"{data_aux_path}dbAux.xlsx"
-    estrutura_gerencial = pd.read_excel(
-        f"{dbaux_path}",
-        sheet_name='dEstruturaGerencial',
-        dtype=str
-    )
-    estrutura_gerencial = estrutura_gerencial[estrutura_gerencial['KEY_VEICULO'].notna()]
-    key_veiculo_estrutura_gerencial = estrutura_gerencial['KEY_VEICULO'].dropna().unique()
-
-    xlsx_destination_path = config['Paths']['xlsx_destination_path']
-    xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
-    file_ext = 'xlsx' #config['Paths'].get('destination_file_extension', 'xlsx')
-
-    cols_funds = ['cnpj', 'dtposicao', 'cnpjfundo', 'equity_stake', 'composicao',
-                  'valor_calc', 'isin', 'NEW_TIPO', 'fNUMERACA.DESCRICAO',
-                  'fEMISSOR.NOME_EMISSOR', 'NEW_NOME_ATIVO', 'NEW_GESTOR',
-                  'NEW_GESTOR_WORD_CLOUD', 'IS_CNPJFUNDO_ESTRUTURA_GERENCIAL']
-
-    utl.log_message('Carregando arquivo de fundos.')
-    dtypes = dta.read("fundos_metadata")
-    file_name = f"{xlsx_destination_path}fundos"
-    funds = fhdl.load_df(file_name, file_ext, dtypes)
-
-    funds['IS_CNPJFUNDO_ESTRUTURA_GERENCIAL'] = funds['cnpj'].isin(key_veiculo_estrutura_gerencial)
-    funds['NEW_TIPO_ESTRUTURA_GERENCIAL'] = funds['NEW_TIPO']
-
-    validate_fund_graph_is_acyclic(funds)
-
-    funds = funds[funds['valor_serie'] == 0][cols_funds].copy()
-
-    cols_port = ['cnpjcpf', 'codcart', 'cnpb', 'dtposicao', 'nome', 'cnpjfundo',
-                 'equity_stake', 'composicao', 'valor_calc', 'isin',
-                 'NEW_TIPO', 'NEW_NOME_ATIVO', 'fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR',
-                 'NEW_GESTOR_WORD_CLOUD']
-
-    utl.log_message('Carregando arquivo de carteiras.')
-    dtypes = dta.read(f"carteiras_metadata")
-    file_name = f"{xlsx_destination_path}carteiras"
-    portfolios = fhdl.load_df(file_name, file_ext, dtypes)
-
-    portfolios = portfolios[(portfolios['flag_rateio'] == 0) &
-                            (portfolios['valor_serie'] == 0)][cols_port].copy()
-
-    portfolios['nivel'] = 0
-    portfolios['fNUMERACA.DESCRICAO'] = ''
-    portfolios['cnpj'] = ''
-    portfolios['NEW_TIPO_ESTRUTURA_GERENCIAL'] = portfolios['NEW_TIPO']
-
-    mask_estrutura = portfolios['cnpjfundo'].isin(key_veiculo_estrutura_gerencial)
-    portfolios['IS_CNPJFUNDO_ESTRUTURA_GERENCIAL'] = portfolios['cnpjfundo'].isin(
-        key_veiculo_estrutura_gerencial
-    )
-    portfolios.loc[mask_estrutura, 'KEY_ESTRUTURA_GERENCIAL'] = (
-        portfolios.loc[mask_estrutura, 'cnpjfundo']
-    )
-
-    utl.log_message('Início processamento árvore.')
-    tree_horzt = build_tree_horizontal(portfolios.copy(), funds)
+def enrich_tree(tree_horzt, governance_struct):
+    key_vehicle_governance_struct = governance_struct['KEY_VEICULO'].dropna().unique()
 
     generate_final_columns(tree_horzt)
     max_deep = tree_horzt['nivel'].max()
@@ -392,15 +288,41 @@ def main():
         + ' ' + tree_horzt['PARENT_FUNDO'].fillna('')
     )
 
-    fill_missing_estrutura_gerencial(tree_horzt, key_veiculo_estrutura_gerencial)
-
-    utl.log_message('Fim processamento árvore.')
-
-    utl.log_message('Salvando dados')
-    file_name = f"{xlsx_destination_path}arvore_carteiras"
-    fhdl.save_df(tree_horzt, file_name, 'xlsx')
-    utl.log_message(f"Fim processamento árvore. Arquivo {file_name}.{file_ext}")
+    fill_missing_estrutura_gerencial(tree_horzt, key_vehicle_governance_struct)
 
 
-if __name__ == "__main__":
-    main()
+def build_tree(funds, portfolios, governance_struct):
+    key_vehicle_governance_struct = governance_struct['KEY_VEICULO'].dropna().unique()
+
+    cols_funds = ['cnpj', 'dtposicao', 'cnpjfundo', 'equity_stake', 'composicao',
+                  'valor_calc', 'isin', 'NEW_TIPO', 'fNUMERACA.DESCRICAO',
+                  'fEMISSOR.NOME_EMISSOR', 'NEW_NOME_ATIVO', 'NEW_GESTOR',
+                  'NEW_GESTOR_WORD_CLOUD', 'IS_CNPJFUNDO_ESTRUTURA_GERENCIAL']
+
+    funds['IS_CNPJFUNDO_ESTRUTURA_GERENCIAL'] = funds['cnpj'].isin(key_vehicle_governance_struct)
+    funds['NEW_TIPO_ESTRUTURA_GERENCIAL'] = funds['NEW_TIPO']
+
+    funds = funds[funds['valor_serie'] == 0][cols_funds].copy()
+
+    cols_port = ['cnpjcpf', 'codcart', 'cnpb', 'dtposicao', 'nome', 'cnpjfundo',
+                 'equity_stake', 'composicao', 'valor_calc', 'isin',
+                 'NEW_TIPO', 'NEW_NOME_ATIVO', 'fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR',
+                 'NEW_GESTOR_WORD_CLOUD']
+
+    portfolios = portfolios[(portfolios['flag_rateio'] == 0) &
+                            (portfolios['valor_serie'] == 0)][cols_port].copy()
+
+    portfolios['nivel'] = 0
+    portfolios['fNUMERACA.DESCRICAO'] = ''
+    portfolios['cnpj'] = ''
+    portfolios['NEW_TIPO_ESTRUTURA_GERENCIAL'] = portfolios['NEW_TIPO']
+
+    mask_estrutura = portfolios['cnpjfundo'].isin(key_vehicle_governance_struct)
+    portfolios['IS_CNPJFUNDO_ESTRUTURA_GERENCIAL'] = portfolios['cnpjfundo'].isin(
+        key_vehicle_governance_struct
+    )
+    portfolios.loc[mask_estrutura, 'KEY_ESTRUTURA_GERENCIAL'] = (
+        portfolios.loc[mask_estrutura, 'cnpjfundo']
+    )
+
+    return build_tree_horizontal(portfolios.copy(), funds)
