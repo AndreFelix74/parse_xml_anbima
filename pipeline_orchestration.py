@@ -255,7 +255,7 @@ def check_values_integrity(intermediate_cfg, entity, entity_name, invested, grou
         divergent_puposicao = checker.check_puposicao(investor_holdings, invested)
 
         if not divergent_puposicao.empty:
-            log.warn('check', dados=divergent_puposicao.to_json())
+            log.warn('check', dados=divergent_puposicao.to_dict(orient="records"))
             save_intermediate(divergent_puposicao,
                               f"{entity_name}_puposicao_divergente",
                               intermediate_cfg, log)
@@ -264,7 +264,7 @@ def check_values_integrity(intermediate_cfg, entity, entity_name, invested, grou
         divergent_pl = checker.check_composition_consistency(entity, group_keys)
 
         if not divergent_pl.empty:
-            log.warn('check', dados=divergent_pl.to_json())
+            log.warn('check', dados=divergent_pl.to_dict(orient="records"))
             save_intermediate(divergent_pl, f"{entity_name}_pl_divergente",
                               intermediate_cfg, log)
 
