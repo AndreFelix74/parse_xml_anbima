@@ -28,7 +28,7 @@ def add_nome_ativo(entity):
     entity.loc[acoes, 'NOME_ATIVO'] = entity['codativo']
 
     over = entity['NEW_TIPO'] == 'OVER'
-    
+
     tipo_tpf = entity['NEW_TIPO'] == 'TPF'
 
     entity.loc[has_nome_emissor & tipo_tpf & ~over, 'NOME_ATIVO'] = (
@@ -37,7 +37,9 @@ def add_nome_ativo(entity):
         + entity['ANO_VENC_TPF']
     ).str.strip()
 
-    entity.loc[has_nome_emissor & ~tipo_tpf & ~over & ~acoes, 'NOME_ATIVO'] = entity['fEMISSOR.NOME_EMISSOR']
+    entity.loc[has_nome_emissor & ~tipo_tpf & ~over & ~acoes, 'NOME_ATIVO'] = (
+        entity['fEMISSOR.NOME_EMISSOR']
+    )
 
 
 def add_vencimento_tpf(entity):
@@ -139,7 +141,7 @@ def standardize_asset_names(entity, rules):
             replacement['new'],
             regex=False
         )
-        
+
     for rule in rules['abbreviations']:
         prefix, abbrev = rule['prefix'], rule['abbrev']
         mask = entity['NEW_NOME_ATIVO'].str.startswith(prefix, na=False)
@@ -198,10 +200,12 @@ def enrich_and_classify(joined, tipos_serie, name_standardization_rules,
         tipos_serie (list): List of types to be marked as 'SIM' in the 'FLAG_SERIE' column.
         name_standardization_rules (dict): Rules used to standardize asset names.
         new_tipo_rules (dict): Rules for classifying the 'NEW_TIPO' column.
-        gestor_name_stopwords (list): List of stopwords to remove from manager names for word cloud generation.
+        gestor_name_stopwords (list): List of stopwords to remove from manager
+        names for word cloud generation.
 
     Returns:
-        list: A list of warning or error messages generated during the 'NEW_TIPO' classification process.
+        list: A list of warning or error messages generated during the 'NEW_TIPO'
+        classification process.
     """
     joined['FLAG_SERIE'] = np.where(joined['tipo'].isin(tipos_serie), 'SIM', 'NAO')
 

@@ -158,5 +158,14 @@ def load_enrich_auxiliary_data(data_aux_path):
 
 
 def load_governance_struct(data_aux_path):
+    """
+    Loads the 'dEstruturaGerencial' sheet from the dbAux Excel file.
+
+    Args:
+        data_aux_path (str): Path to the directory containing 'dbAux.xlsx'.
+
+    Returns:
+        pd.DataFrame: Loaded DataFrame from the 'dEstruturaGerencial' sheet.
+    """
     dbaux_path = f"{data_aux_path}dbAux.xlsx"
     return pd.read_excel(dbaux_path, sheet_name='dEstruturaGerencial', dtype=str)

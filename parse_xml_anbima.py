@@ -54,23 +54,12 @@ def parse_file(file_name):
     Returns:
         defaultdict: Parsed data grouped by XML tags.
     """
-    data = defaultdict(list)
-
-    root = None
-
-    try:
-        root = ET.parse(file_name).getroot()
-    except KeyboardInterrupt:
-        return []
-    except Exception as excpt:
-        print(excpt)
+    root = ET.parse(file_name).getroot()
 
     if root is None or len(root) == 0:
-        print(f"{file_name} without root node.")
-        return data
+        raise ValueError(f"{file_name} without root node.")
 
     if root.find('.//header') is None:
-        print(f"{file_name} is missing a 'header' node.")
         raise ValueError('header not found')
 
     return extract_node_data(root)

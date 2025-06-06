@@ -275,6 +275,24 @@ def fill_missing_estrutura_gerencial(tree_horzt, key_veiculo_estrutura_gerencial
 
 
 def enrich_tree(tree_horzt, governance_struct):
+    """
+    Enriches a tree structure with derived textual fields and governance structure mappings.
+
+    This function:
+        - Generates final label columns.
+        - Propagates level-based data forward.
+        - Creates a combined search string from relevant textual fields.
+        - Attempts to fill in missing governance structure information.
+
+    Args:
+        tree_horzt (pd.DataFrame): The horizontal tree structure containing fund
+        relationships.
+        governance_struct (pd.DataFrame): Governance structure dataset with
+        'KEY_VEICULO' identifiers.
+
+    Returns:
+        None: The input DataFrame is modified in-place.
+    """
     key_vehicle_governance_struct = governance_struct['KEY_VEICULO'].dropna().unique()
 
     generate_final_columns(tree_horzt)
@@ -292,6 +310,25 @@ def enrich_tree(tree_horzt, governance_struct):
 
 
 def build_tree(funds, portfolios, governance_struct):
+    """
+    Builds a horizontal tree of fund relationships by combining fund and portfolio data.
+
+    This function:
+        - Filters and prepares the funds and portfolios datasets.
+        - Identifies which entities are part of a governance structure.
+        - Adds relevant columns and flags for hierarchy construction.
+        - Combines both datasets and returns the horizontal tree.
+
+    Args:
+        funds (pd.DataFrame): DataFrame containing fund-to-fund relationships.
+        portfolios (pd.DataFrame): DataFrame containing investor portfolios and
+        allocations.
+        governance_struct (pd.DataFrame): Governance structure dataset with
+        'KEY_VEICULO' identifiers.
+
+    Returns:
+        pd.DataFrame: A combined DataFrame representing the horizontal fund tree.
+    """
     key_vehicle_governance_struct = governance_struct['KEY_VEICULO'].dropna().unique()
 
     cols_funds = ['cnpj', 'dtposicao', 'cnpjfundo', 'equity_stake', 'composicao',
