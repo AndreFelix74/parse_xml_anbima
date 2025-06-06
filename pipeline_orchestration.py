@@ -445,9 +445,10 @@ def run_pipeline():
     tree = build_horizontal_tree(funds, portfolios, data_aux_path)
 
     with log_timing('finish', 'save_final_files'):
-        save_df(funds, f"{xlsx_destination_path}fundos", 'xlsx')
-        save_df(portfolios, f"{xlsx_destination_path}carteiras", 'xlsx')
-        save_df(tree, f"{xlsx_destination_path}arvore_carteiras", 'xlsx')
+        file_frmt = intermediate_cfg['file_format']
+        save_df(funds, f"{xlsx_destination_path}fundos", file_frmt)
+        save_df(portfolios, f"{xlsx_destination_path}carteiras", file_frmt)
+        save_df(tree, f"{xlsx_destination_path}arvore_carteiras", file_frmt)
 
 
 if __name__ == "__main__":
