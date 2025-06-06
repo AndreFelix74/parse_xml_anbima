@@ -204,11 +204,11 @@ def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys):
         xml_files_to_process, xml_discarted = select_latest_xml_by_cnpj_and_date(all_xml_files)
 
         log.info(
-            'arquivos_xml_encontrados',
+            'parse',
             total=len(all_xml_files),
             processados=len(xml_files_to_process),
             descartados=len(xml_discarted),
-            dados=xml_discarted
+            dados=[{"nome_arquivo_descartado": nome} for nome in xml_discarted]
         )
 
     with log_timing('parse', 'paser_xml_content') as log:
@@ -442,13 +442,13 @@ def run_pipeline():
 
     validate_fund_graph_is_acyclic(funds)
 
-    tree = build_horizontal_tree(funds, portfolios, data_aux_path)
+    tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
 
     with log_timing('finish', 'save_final_files'):
         file_frmt = intermediate_cfg['file_format']
         save_df(funds, f"{xlsx_destination_path}fundos", file_frmt)
         save_df(portfolios, f"{xlsx_destination_path}carteiras", file_frmt)
-        save_df(tree, f"{xlsx_destination_path}arvore_carteiras", file_frmt)
+        save_df(tree_hrztl, f"{xlsx_destination_path}arvore_carteiras", file_frmt)
 
 
 if __name__ == "__main__":
