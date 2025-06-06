@@ -237,6 +237,7 @@ def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
 
         funds = cleaner.clean_data(funds, funds_dtypes, types_to_exclude,
                                    types_series, harmonization_rules)
+
         portfolios = cleaner.clean_data(portfolios, port_dtypes, types_to_exclude,
                                         types_series, harmonization_rules)
 
@@ -408,6 +409,8 @@ def load_config():
 
     return [xml_source_path, xlsx_destination_path, data_aux_path, intermediate_cfg]
 
+def compute_returns_by_cnpjfundo_dtposicao(entity, range_eom):
+    pass
 
 def run_pipeline():
     xml_source_path, xlsx_destination_path, data_aux_path, intermediate_cfg = load_config()
