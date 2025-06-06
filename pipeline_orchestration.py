@@ -208,7 +208,7 @@ def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys):
             total=len(all_xml_files),
             processados=len(xml_files_to_process),
             descartados=len(xml_discarted),
-            arquivos_descartados=xml_discarted
+            dados=xml_discarted
         )
 
     with log_timing('parse', 'paser_xml_content') as log:
