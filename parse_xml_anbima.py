@@ -8,18 +8,9 @@ Created on Thu Dec 26 10:54:51 2024
 
 
 import xml.etree.ElementTree as ET
-import time
-import multiprocessing
-import os
 import re
 from collections import defaultdict
 import pandas as pd
-import util as utl
-import data_access as dta
-import file_handler as fhdl
-
-
-COUNT_PARSE = multiprocessing.Value('i', 0)
 
 
 def parse_decimal_value(value):
@@ -53,92 +44,22 @@ def parse_decimal_value(value):
     return value
 
 
-def get_xml_files(files_path):
-    """
-    Retrieve and sort all XML files in a given directory and its subdirectories.
-
-    Args:
-        files_path (str): Path to the directory containing XML files.
-
-    Returns:
-        list: List of absolute paths to XML files.
-    """
-    lst_files = [
-            (os.path.join(root, file), os.path.getmtime(os.path.join(root, file)))
-            for root, dirs, files in os.walk(files_path)
-            for file in files
-            if file.lower().endswith(".xml")
-        ]
-
-    return lst_files
-
-
-def get_latest_xml_by_cnpj(files_info):
-    """
-    Given a list of (file_path, mtime), retain only the most recent file
-    for each unique FD+CNPJ prefix (first 16 characters of the filename).
-
-    Args:
-        file_info (list of tuples): Each tuple is (file_path, mtime)
-
-    Returns:
-        list: List of file paths to the latest XML for each FD+CNPJ.
-    """
-    file_date_pattern = re.compile(r'^.+?_\d{8}(?!\d)')
-    grouped = defaultdict(list)
-
-    for path, mtime in files_info:
-        filename = os.path.basename(path)
-        match = file_date_pattern.search(filename)
-        key = match.group(0) if match else filename
-        grouped[key].append((path, mtime))
-
-    latest_files = []
-
-    for key, group in grouped.items():
-        group_sorted = sorted(group, key=lambda x: x[1], reverse=True)
-        latest = group_sorted[0][0]
-        latest_files.append(latest)
-        for discarded_path, _ in group_sorted[1:]:
-            utl.log_message(f"Chave {key} duplicada. Arquivo {discarded_path} descartado.", 'warn')
-
-    return latest_files
-
-
-def parse_files(str_file_name):
+def parse_file(file_name):
     """
     Parse the contents of an XML file and extract its structured data.
 
     Args:
-        str_file_name (str): Path to the XML file.
+        file_name (str): Path to the XML file.
 
     Returns:
         defaultdict: Parsed data grouped by XML tags.
     """
-    global COUNT_PARSE
-
-    with COUNT_PARSE.get_lock():
-        COUNT_PARSE.value += 1
-        if COUNT_PARSE.value % 100 == 0:
-            print(f"Parsing {COUNT_PARSE.value}th file")
-
-    data = defaultdict(list)
-
-    root = None
-
-    try:
-        root = ET.parse(str_file_name).getroot()
-    except KeyboardInterrupt:
-        return []
-    except Exception as excpt:
-        print(excpt)
+    root = ET.parse(file_name).getroot()
 
     if root is None or len(root) == 0:
-        print(f"{str_file_name} without root node.")
-        return data
+        raise ValueError(f"{file_name} without root node.")
 
     if root.find('.//header') is None:
-        print(f"{str_file_name} is missing a 'header' node.")
         raise ValueError('header not found')
 
     return extract_node_data(root)
@@ -184,7 +105,7 @@ def extract_node_data(root):
     return data
 
 
-def read_data_from_parsed_data(xml_content):
+def split_funds_and_portfolios(xml_content):
     """
     Process parsed XML data and split it into fund and portfolio data.
 
@@ -273,63 +194,3 @@ def convert_to_dataframe(data_list, daily_keys, non_propagated_header_keys):
                 all_rows.append(row)
 
     return pd.DataFrame(all_rows)
-
-
-def setup_folders(paths):
-    """
-    Create directories if they do not already exist.
-
-    Args:
-        paths (list): List of directory paths to create.
-    """
-    for path in paths:
-        if not os.path.exists(path):
-            os.makedirs(path)
-
-
-def main():
-    """
-    Main function to process XML files, parse data, and export to Excel.
-    """
-    config = utl.load_config('config.ini')
-
-    xml_source_path = config['Paths']['xml_source_path']
-    xml_source_path = f"{os.path.dirname(utl.format_path(xml_source_path))}/"
-
-    xlsx_destination_path = config['Paths']['xlsx_destination_path']
-    xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
-
-    file_ext = config['Paths'].get('destination_file_extension', 'xlsx')
-
-    setup_folders([xml_source_path, xlsx_destination_path])
-
-    utl.log_message(f"Início leitura dos arquivos XML na pasta {xml_source_path}")
-    lst_files = get_xml_files(f"{xml_source_path}")
-    lst_files = get_latest_xml_by_cnpj(lst_files)
-
-    pool = multiprocessing.Pool()
-    time_start = time.time()
-    xml_content = pool.map(parse_files, lst_files)
-    utl.print_elapsed_time(f"parse {len(lst_files)} xml files", time_start)
-
-    lst_data = read_data_from_parsed_data(xml_content)
-
-    header_daily_values = dta.read('header_daily_values')
-    daily_keys = header_daily_values.keys()
-
-    for idx, data in enumerate(lst_data):
-        entity_name = 'fundos' if idx % 2 == 0 else 'carteiras'
-        utl.log_message(f"Início conversão dos dados de {entity_name} para dataframe")
-        dataframe = convert_to_dataframe(data, daily_keys, ['isin'])
-
-        dtypes_dict = dataframe.dtypes.apply(lambda x: x.name).to_dict()
-
-        dta.create_if_not_exists(f"{entity_name}_metadata", dtypes_dict)
-
-        file_name = f"{xlsx_destination_path}{str(entity_name)}_raw"
-        fhdl.save_df(dataframe, file_name, file_ext)
-        utl.log_message(f"Fim processamento {entity_name}. Arquivo {file_name}.{file_ext}")
-
-
-if __name__ == "__main__":
-    main()

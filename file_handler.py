@@ -73,7 +73,7 @@ def save_df(dtfrm, file_path, file_format):
     full_path = f"{file_path}.{file_format}"
 
     if file_format == 'csv':
-        dtfrm.to_csv(full_path, index=False, sep=';', encoding='utf-8')
+        dtfrm.to_csv(full_path, index=False, sep=';', decimal=",", encoding='utf-8')
     elif file_format == 'xlsx':
         dtfrm.to_excel(full_path, index=False)
     else:
