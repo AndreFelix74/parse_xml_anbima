@@ -23,8 +23,12 @@ def add_nome_ativo(entity):
 
     has_nome_emissor = ~entity['fEMISSOR.NOME_EMISSOR'].isna()
 
-    over = entity['NEW_TIPO'] == 'OVER'
+    acoes = entity['tipo'] == 'acoes'
 
+    entity.loc[acoes, 'NOME_ATIVO'] = entity['codativo']
+
+    over = entity['NEW_TIPO'] == 'OVER'
+    
     tipo_tpf = entity['NEW_TIPO'] == 'TPF'
 
     entity.loc[has_nome_emissor & tipo_tpf & ~over, 'NOME_ATIVO'] = (
@@ -33,7 +37,7 @@ def add_nome_ativo(entity):
         + entity['ANO_VENC_TPF']
     ).str.strip()
 
-    entity.loc[has_nome_emissor & ~tipo_tpf & ~over, 'NOME_ATIVO'] = entity['fEMISSOR.NOME_EMISSOR']
+    entity.loc[has_nome_emissor & ~tipo_tpf & ~over & ~acoes, 'NOME_ATIVO'] = entity['fEMISSOR.NOME_EMISSOR']
 
 
 def add_vencimento_tpf(entity):
