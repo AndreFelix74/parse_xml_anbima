@@ -13,10 +13,12 @@ import multiprocessing
 from collections import defaultdict
 import networkx as nx
 from logger import log_timing, RUN_ID
+import pandas as pd
 
 import auxiliary_loaders as aux_loader
 import parse_xml_anbima as parser
 import clean_and_prepare_raw_data as cleaner
+import update_returns_by_puposicao as updt_rentab
 import integrity_checks as checker
 import carteiras_operations as crt
 import enrich_and_classify_data as enricher
@@ -249,6 +251,30 @@ def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
     return [funds, portfolios]
 
 
+def update_returns_by_cnpjfundo_dtposicao(funds, portfolios, data_aux_path):
+    with log_timing('enrich', 'update_returns_by_cnpjfundo'):
+        range_eom = aux_loader.load_range_eom(data_aux_path)
+        range_eom = pd.to_datetime(range_eom['DATA_POSICAO'].unique())
+    
+        group_cols = ['cnpjfundo', 'dtposicao', 'puposicao']
+        cnpjfundo_data = pd.concat([
+            funds[funds['cnpjfundo'].notnull()][group_cols].drop_duplicates(),
+            portfolios[portfolios['cnpjfundo'].notnull()][group_cols].drop_duplicates()
+            ]).drop_duplicates()
+        
+        returns_path = Path(data_aux_path) / 'funds_returns.csv'
+        if returns_path.exists():
+            persisted_returns = pd.read_csv(returns_path)
+        else:
+            persisted_returns = pd.DataFrame(columns=['cnpjfundo', 'dtposicao', 'puposicao', 'rentab'])
+    
+        updated_returns = updt_rentab.update_returns_from_puposicao(
+            range_date=range_eom,
+            new_data=cnpjfundo_data,
+            persisted_returns=persisted_returns
+        )
+
+
 def check_values_integrity(intermediate_cfg, entity, entity_name, invested, group_keys):
     investor_holdings_cols = ['cnpjfundo', 'qtdisponivel', 'dtposicao', 'isin',
                               'NOME_ATIVO', 'puposicao']
@@ -324,7 +350,6 @@ def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
                                               new_tipo_rules, gestor_name_stopwords)
         if alerts:
             log.warning(f"Classification alerts for funds: {alerts}")
-
 
     if intermediate_cfg['save']:
         with log_timing('enrich', 'save_enriched_data') as log:
@@ -409,8 +434,6 @@ def load_config():
 
     return [xml_source_path, xlsx_destination_path, data_aux_path, intermediate_cfg]
 
-def compute_returns_by_cnpjfundo_dtposicao(entity, range_eom):
-    pass
 
 def run_pipeline():
     xml_source_path, xlsx_destination_path, data_aux_path, intermediate_cfg = load_config()
