@@ -56,7 +56,7 @@ def compute_equity_stake(investor_holdings, invested):
 
     Args:
         investor_holdings (pd.DataFrame): DataFrame containing investor positions,
-            with required columns: 'cnpjfundo', 'qtdisponivel', and 'dtposicao'.
+            with required columns: 'cnpjfundo', 'valor_calc', and 'dtposicao'.
         invested (pd.DataFrame): DataFrame containing fund value data,
             with required columns: 'cnpj', 'valor', 'dtposicao' and a 'tipo' column
             (must be equal to 'quantidade' for inclusion).
@@ -70,7 +70,7 @@ def compute_equity_stake(investor_holdings, invested):
     columns_invested = ['cnpj', 'valor', 'dtposicao']
 
     equity_stake = investor_holdings.merge(
-        invested[invested['tipo'] == 'quantidade'][columns_invested],
+        invested[invested['tipo'] == 'patliq'][columns_invested],
         left_on=['cnpjfundo', 'dtposicao'],
         right_on=['cnpj', 'dtposicao'],
         how='inner'
@@ -78,7 +78,7 @@ def compute_equity_stake(investor_holdings, invested):
 
     equity_stake.set_index('original_index', inplace=True)
 
-    equity_stake['equity_stake'] = equity_stake['qtdisponivel'] / equity_stake['valor']
+    equity_stake['equity_stake'] = equity_stake['valor_calc'] / equity_stake['valor']
 
     return equity_stake
 
@@ -91,7 +91,7 @@ def compute(entity, invested, types_series, composition_group_keys):
     - Computes equity stake
     - Saves processed data back to Excel files.
     """
-    investor_holdings_cols = ['cnpjfundo', 'qtdisponivel', 'dtposicao']
+    investor_holdings_cols = ['cnpjfundo', 'valor_calc', 'dtposicao']
 
     investor_holdings = entity[entity['cnpjfundo'].notnull()][investor_holdings_cols].copy()
 

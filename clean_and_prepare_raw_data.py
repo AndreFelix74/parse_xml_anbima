@@ -66,7 +66,7 @@ def harmonize_values(dtfr, harmonization_rules):
     1   cotas    200  180.0
     2   caixa    300  330.0
     """
-    dtfr['valor_calc'] = None
+    dtfr['valor_calc'] = 0.0
 
     for key, value in harmonization_rules.items():
         try:

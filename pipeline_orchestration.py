@@ -21,7 +21,8 @@ import integrity_checks as checker
 import carteiras_operations as crt
 import enrich_and_classify_data as enricher
 import compute_metrics as metrics
-import investment_tree as tree
+from investment_tree import build_tree, enrich_tree
+from reporting import assign_governance_struct_keys
 import util as utl
 import data_access as dta
 from file_handler import save_df
@@ -230,13 +231,14 @@ def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys):
 
 def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
                           types_series, harmonization_rules):
-    funds_dtypes = dta.read('fundos_metadata')
-    port_dtypes = dta.read('carteiras_metadata')
+    with log_timing('clean', 'clean_and_prepare'):
+        funds_dtypes = dta.read('fundos_metadata')
+        port_dtypes = dta.read('carteiras_metadata')
 
-    funds = cleaner.clean_data(funds, funds_dtypes, types_to_exclude,
-                               types_series, harmonization_rules)
-    portfolios = cleaner.clean_data(portfolios, port_dtypes, types_to_exclude,
-                                    types_series, harmonization_rules)
+        funds = cleaner.clean_data(funds, funds_dtypes, types_to_exclude,
+                                   types_series, harmonization_rules)
+        portfolios = cleaner.clean_data(portfolios, port_dtypes, types_to_exclude,
+                                        types_series, harmonization_rules)
 
     if intermediate_cfg['save']:
         with log_timing('clean', 'save_cleaned_data') as log:
@@ -369,11 +371,14 @@ def validate_fund_graph_is_acyclic(funds):
 
 def build_horizontal_tree(funds, portfolios, data_aux_path):
     with log_timing('tree', 'build_tree'):
+        tree_horzt = build_tree(funds, portfolios)
+        enrich_tree(tree_horzt)
+
         governance_struct = aux_loader.load_governance_struct(data_aux_path)
         governance_struct = governance_struct[governance_struct['KEY_VEICULO'].notna()]
 
-        tree_horzt = tree.build_tree(funds, portfolios, governance_struct)
-        tree.enrich_tree(tree_horzt, governance_struct)
+        assign_governance_struct_keys(tree_horzt, governance_struct)
+
         return tree_horzt
 
 
