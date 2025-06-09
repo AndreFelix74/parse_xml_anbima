@@ -169,3 +169,17 @@ def load_governance_struct(data_aux_path):
     """
     dbaux_path = f"{data_aux_path}dbAux.xlsx"
     return pd.read_excel(dbaux_path, sheet_name='dEstruturaGerencial', dtype=str)
+
+
+def load_range_eom(data_aux_path):
+    """
+    Loads the 'dDataMes' sheet from the dbAux Excel file.
+
+    Args:
+        data_aux_path (str): Path to the directory containing 'dbAux.xlsx'.
+
+    Returns:
+        pd.DataFrame: Loaded DataFrame from the 'dEstruturaGerencial' sheet.
+    """
+    dbaux_path = f"{data_aux_path}dbAux.xlsx"
+    return pd.read_excel(dbaux_path, sheet_name='dDataMes', dtype=str)
