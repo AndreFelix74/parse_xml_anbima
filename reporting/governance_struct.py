@@ -52,7 +52,6 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
 
     When such a match is found, the function assigns:
         - 'KEY_ESTRUTURA_GERENCIAL' = 'cnpjfundo_nivel_{i}'
-        - 'NEW_TIPO_ESTRUTURA_GERENCIAL' = 'NEW_TIPO_nivel_{i}'
 
     After all levels are processed, a fallback rule is applied:
         - If 'KEY_ESTRUTURA_GERENCIAL' is still missing
@@ -69,7 +68,6 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
         None: The input DataFrame is modified in place.
     """
     tree['KEY_ESTRUTURA_GERENCIAL'] = None
-    tree['NEW_TIPO_ESTRUTURA_GERENCIAL'] = None
 
     for i in range(max_deep, -1, -1):
         cnpj_col = 'cnpjfundo' if i == 0 else f'cnpjfundo_nivel_{i}'
@@ -80,7 +78,6 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
         mask = mask_key_missing & mask_in_estrutura
 
         tree.loc[mask, 'KEY_ESTRUTURA_GERENCIAL'] = tree.loc[mask, cnpj_col]
-        tree.loc[mask, 'NEW_TIPO_ESTRUTURA_GERENCIAL'] = tree.loc[mask, tipo_col]
 
     fallback_mask = (
         tree['KEY_ESTRUTURA_GERENCIAL'].isna() &
@@ -88,7 +85,6 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
         (tree['cnpjfundo'] != '')
     )
     tree.loc[fallback_mask, 'KEY_ESTRUTURA_GERENCIAL'] = '#OUTROS'
-    tree.loc[fallback_mask, 'NEW_TIPO_ESTRUTURA_GERENCIAL'] = tree.loc[fallback_mask, 'NEW_TIPO']
 
 
 def assign_governance_struct_keys(tree_horzt, governance_struct):
@@ -98,7 +94,7 @@ def assign_governance_struct_keys(tree_horzt, governance_struct):
     This function enriches the investment tree with governance structure information by:
         - Scanning all hierarchical levels to identify the first occurrence of a fund
           (cnpjfundo_nivel_{i}) present in the governance structure list and assigning it
-          to 'KEY_ESTRUTURA_GERENCIAL' and 'NEW_TIPO_ESTRUTURA_GERENCIAL'.
+          to 'KEY_ESTRUTURA_GERENCIAL'.
         - Filling in any remaining missing values in 'KEY_ESTRUTURA_GERENCIAL' based on
           whether the 'codcart' field exists in the governance structure list.
           If not, '#OUTROS' is assigned as a fallback.
