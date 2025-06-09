@@ -43,17 +43,30 @@ def fill_missing_governance_struct(tree_horzt, key_vehicle_governance_struct):
 
 def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep):
     """
-    Atribui as colunas 'KEY_ESTRUTURA_GERENCIAL' e 'NEW_TIPO_ESTRUTURA_GERENCIAL' com base
-    no primeiro nível (do mais profundo ao mais superficial) em que o CNPJ do fundo investidor
-    ('cnpjfundo_nivel_{i}') pertence à estrutura gerencial.
+    Assigns governance structure information to the investment tree based on hierarchical levels.
 
-    Args:
-        tree (pd.DataFrame): DataFrame da árvore horizontal.
-        key_vehicle_governance_struct (Iterable): Conjunto de CNPJs da estrutura gerencial.
-        max_deep (int): Profundidade máxima da árvore.
+    This function scans all levels of the investment tree, from the deepest level up to the root,
+    looking for the first occurrence where:
+        - 'cnpjfundo_nivel_{i}' exists in the governance structure list
+        - and its corresponding type ('NEW_TIPO_nivel_{i}') is not 'COTAS'
+
+    When such a match is found, the function assigns:
+        - 'KEY_ESTRUTURA_GERENCIAL' = 'cnpjfundo_nivel_{i}'
+        - 'NEW_TIPO_ESTRUTURA_GERENCIAL' = 'NEW_TIPO_nivel_{i}'
+
+    After all levels are processed, a fallback rule is applied:
+        - If 'KEY_ESTRUTURA_GERENCIAL' is still missing
+        - And 'cnpjfundo' (level 0) is present and non-empty
+        - Then '#OUTROS' is assigned to 'KEY_ESTRUTURA_GERENCIAL'
+
+    Parameters:
+        tree (pd.DataFrame): The investment tree in wide format with hierarchical columns.
+        key_veiculo_estrutura_gerencial (Iterable): A list or set of fund CNPJs that belong
+            to the governance structure.
+        max_deep (int): The maximum depth of the investment tree.
 
     Returns:
-        None: Modifica o DataFrame in-place.
+        None: The input DataFrame is modified in place.
     """
     tree['KEY_ESTRUTURA_GERENCIAL'] = None
     tree['NEW_TIPO_ESTRUTURA_GERENCIAL'] = None
@@ -68,6 +81,14 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
 
         tree.loc[mask, 'KEY_ESTRUTURA_GERENCIAL'] = tree.loc[mask, cnpj_col]
         tree.loc[mask, 'NEW_TIPO_ESTRUTURA_GERENCIAL'] = tree.loc[mask, tipo_col]
+
+    fallback_mask = (
+        tree['KEY_ESTRUTURA_GERENCIAL'].isna() &
+        tree['cnpjfundo'].notna() &
+        (tree['cnpjfundo'] != '')
+    )
+    tree.loc[fallback_mask, 'KEY_ESTRUTURA_GERENCIAL'] = '#OUTROS'
+    tree.loc[fallback_mask, 'NEW_TIPO_ESTRUTURA_GERENCIAL'] = tree.loc[fallback_mask, 'NEW_TIPO']
 
 
 def assign_governance_struct_keys(tree_horzt, governance_struct):
