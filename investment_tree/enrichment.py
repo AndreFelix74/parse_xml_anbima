@@ -38,21 +38,25 @@ def generate_final_columns(tree_horzt):
 
 def create_column_based_on_levels(tree_hrzt, new_col, base_col, deep):
     """
-    Preenche uma nova coluna com valores prioritários entre colunas base e níveis sucessivos.
+    Creates a new column by filling values from a sequence of level-based columns in cascade order.
+
+    The function searches for the first non-null value among columns named 
+    `{base_col}_nivel_{deep}` down to `{base_col}_nivel_1`, and finally `{base_col}`, 
+    applying a left-to-right backfill strategy.
 
     Args:
-        tree_hrzt (pd.DataFrame): DataFrame de entrada.
-        new_col (str): Nome da nova coluna a ser criada.
-        base_col (str): Nome da coluna base.
-        deep (int): Número de níveis (sufixos _nivel_1 a _nivel_{deep}).
+        tree_hrzt (pd.DataFrame): Input DataFrame.
+        new_col (str): Name of the new column to be created.
+        base_col (str): Base column name used to generate level columns.
+        deep (int): Depth of levels to search, starting from `nivel_{deep}`.
 
     Returns:
-        pd.DataFrame: O DataFrame com a nova coluna preenchida.
+        pd.DataFrame: The original DataFrame with the new column added.
     """
-    priority_cols = [f"{base_col}_nivel_{i}" for i in range(deep, 0, -1)]
-    priority_cols.append(base_col)
+    cascading_cols = [f"{base_col}_nivel_{i}" for i in range(deep, 0, -1)]
+    cascading_cols.append(base_col)
 
-    tree_hrzt[new_col] = tree_hrzt[priority_cols].bfill(axis=1).iloc[:, 0]
+    tree_hrzt[new_col] = tree_hrzt[cascading_cols].astype(str).bfill(axis=1).iloc[:, 0]
 
 
 def fill_level_columns_forward(tree_hrzt, base_col, deep):
