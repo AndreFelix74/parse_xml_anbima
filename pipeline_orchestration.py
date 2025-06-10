@@ -27,7 +27,7 @@ from investment_tree import build_tree, enrich_tree
 from reporting import assign_governance_struct_keys
 import util as utl
 import data_access as dta
-from file_handler import save_df
+from file_handler import save_df, load_df
 
 
 def setup_folders(paths):
@@ -252,32 +252,53 @@ def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
 
 
 def update_returns_by_cnpjfundo_dtposicao(funds, portfolios, data_aux_path):
-    with log_timing('enrich', 'update_returns_by_cnpjfundo'):
+    with log_timing('enrich', 'update_returns_by_cnpjfundo') as log:
         range_eom = aux_loader.load_range_eom(data_aux_path)
         range_eom = pd.to_datetime(range_eom['DATA_POSICAO'].unique())
-    
+
         group_cols = ['cnpjfundo', 'dtposicao', 'puposicao']
         cnpjfundo_data = pd.concat([
-            funds[funds['cnpjfundo'].notnull()][group_cols].drop_duplicates(),
-            portfolios[portfolios['cnpjfundo'].notnull()][group_cols].drop_duplicates()
+            funds[funds['cnpjfundo'].notnull()][['cnpj'] + group_cols].drop_duplicates(),
+            portfolios[portfolios['cnpjfundo'].notnull()][['cnpjcpf'] + group_cols].drop_duplicates()
             ]).drop_duplicates()
-        
-        returns_path = Path(data_aux_path) / 'funds_returns.csv'
-        if returns_path.exists():
-            persisted_returns = pd.read_csv(returns_path)
+
+        valid_idx, dupl_idx = updt_rentab.validate_unique_puposicao(cnpjfundo_data)
+        if len(dupl_idx) > 0:
+            cols = ['cnpj', 'cnpjfundo', 'dtposicao', 'puposicao']
+            duplicated_data = cnpjfundo_data.loc[dupl_idx, cols]
+
+            log.warn(
+                'enrich',
+                message='puposicao diferente para mesmo cnpjfundo e dtposicao.',
+                dados=duplicated_data.to_dict(orient='records')
+            )
+
+        returns_path = os.path.join(data_aux_path, 'cnpjfundo_rentab')
+
+        if os.path.exists(f"{returns_path}.csv"):
+            persisted_returns = load_df(returns_path, 'csv')
         else:
-            persisted_returns = pd.DataFrame(columns=['cnpjfundo', 'dtposicao', 'puposicao', 'rentab'])
-    
+            persisted_returns = pd.DataFrame({
+                'cnpjfundo': pd.Series(dtype='str'),
+                'dtposicao': pd.Series(dtype='datetime64[ns]'),
+                'puposicao': pd.Series(dtype='float'),
+                'rentab': pd.Series(dtype='float')
+                })
+
         updated_returns = updt_rentab.update_returns_from_puposicao(
             range_date=range_eom,
-            new_data=cnpjfundo_data,
+            new_data=cnpjfundo_data.loc[valid_idx],
             persisted_returns=persisted_returns
         )
+
+        save_df(updated_returns, returns_path, 'csv')
+
+    return updated_returns[['cnpjfundo', 'dtposicao', 'rentab']]
 
 
 def check_values_integrity(intermediate_cfg, entity, entity_name, invested, group_keys):
     investor_holdings_cols = ['cnpjfundo', 'qtdisponivel', 'dtposicao', 'isin',
-                              'NOME_ATIVO', 'puposicao']
+                              'nome', 'puposicao']
 
     with log_timing('check', f"check_puposicao_consistency_{entity_name}") as log:
         investor_holdings = entity[entity['cnpjfundo'].notnull()][investor_holdings_cols].copy()
@@ -290,7 +311,7 @@ def check_values_integrity(intermediate_cfg, entity, entity_name, invested, grou
                               intermediate_cfg, log)
 
     with log_timing('check', f"check_pl_consistency_{entity_name}") as log:
-        divergent_pl = checker.check_composition_consistency(entity, group_keys)
+        divergent_pl = checker.check_composition_consistency(entity, group_keys, 0.01 / 100.0)
 
         if not divergent_pl.empty:
             log.warn('check', dados=divergent_pl.to_dict(orient="records"))
@@ -316,7 +337,8 @@ def explode_partplanprev(intermediate_cfg, portfolios):
 
 
 def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
-           new_tipo_rules, gestor_name_stopwords, name_standardization_rules):
+           new_tipo_rules, gestor_name_stopwords, name_standardization_rules,
+           cnpjfundo_rentab):
 
     with log_timing('enrich', 'load_aux_data') as log:
         aux_data = aux_loader.load_enrich_auxiliary_data(data_aux_path)
@@ -350,6 +372,21 @@ def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
                                               new_tipo_rules, gestor_name_stopwords)
         if alerts:
             log.warning(f"Classification alerts for funds: {alerts}")
+
+    with log_timing('enrich', 'funds_returns'):
+        portfolios['dtposicao'] = pd.to_datetime(portfolios['dtposicao'])
+        portfolios = portfolios.merge(
+            cnpjfundo_rentab,
+            on=['cnpjfundo', 'dtposicao'],
+            how='left'
+            )
+
+        funds['dtposicao'] = pd.to_datetime(funds['dtposicao'])
+        funds = funds.merge(
+            cnpjfundo_rentab,
+            on=['cnpjfundo', 'dtposicao'],
+            how='left'
+            )
 
     if intermediate_cfg['save']:
         with log_timing('enrich', 'save_enriched_data') as log:
@@ -456,6 +493,11 @@ def run_pipeline():
                                               types_to_exclude, types_series,
                                               harmonization_rules)
 
+    cnpjfundo_rentab = update_returns_by_cnpjfundo_dtposicao(funds, portfolios, data_aux_path)
+
+    check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
+    check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
+
     name_standardization_rules = dta.read('name_standardization_rules')
     new_tipo_rules = dta.read('enrich_de_para_tipos')
     gestor_name_stopwords = dta.read('gestor_name_stopwords')
@@ -464,10 +506,7 @@ def run_pipeline():
 
     funds, portfolios = enrich(intermediate_cfg, funds, portfolios, types_series,
                                data_aux_path, new_tipo_rules, gestor_name_stopwords,
-                               name_standardization_rules)
-
-    check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
-    check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf'])
+                               name_standardization_rules, cnpjfundo_rentab)
 
     compute_metrics(funds, portfolios, types_series)
 
