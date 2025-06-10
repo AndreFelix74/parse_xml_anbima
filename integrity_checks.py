@@ -52,15 +52,15 @@ def check_puposicao(investor_holdings, invested):
     return compare_puposicao.loc[mask_diff]
 
 
-def check_composition_consistency(entity, group_keys):
+def check_composition_consistency(entity, group_keys, min_pct_diff=0.0):
     """
     Checks consistency between the computed total value of investments and 
     the declared net asset value ('patrimônio líquido') for each group.
 
     For each group defined by `group_keys` (plus 'dtposicao'), this function:
-    - Computes the total investment value (`valor_calc`), optionally excluding specified types.
+    - Computes the total investment value (`valor_calc`).
     - Extracts the declared net asset value (`valor_serie`) for rows where `tipo == 'patliq'`.
-    - Compares both values and returns only the rows where there is a non-zero difference.
+    - Compares both values and returns only the rows where the absolute percentage difference exceeds `min_pct_diff`.
 
     Parameters
     ----------
@@ -71,19 +71,15 @@ def check_composition_consistency(entity, group_keys):
     group_keys : list of str
         List of columns to group by. 'dtposicao' will be added automatically if not present.
     
-    types_to_exclude : list of str
-        Types in the 'tipo' column to exclude from the investment total calculation.
+    min_pct_diff : float, optional
+        Minimum absolute percentage difference (e.g., 0.01 for 1%) to include a row in the result.
+        Default is 0.0 (returns all non-zero percentage differences).
 
     Returns
     -------
     pandas.DataFrame
         A DataFrame containing group keys, 'valor_serie', 'total_invest', 'diff',
-        and 'pct_diff', only for the groups where diff != 0.
-
-    Notes
-    -----
-    This function does not raise exceptions or halt execution in case of inconsistencies.
-    It is meant for auditing or logging purposes.
+        and 'pct_diff', only for the groups where abs(pct_diff) > min_pct_diff.
     """
     if 'dtposicao' not in group_keys:
         group_keys = group_keys + ['dtposicao']
@@ -102,4 +98,4 @@ def check_composition_consistency(entity, group_keys):
     check['diff'] = check['total_invest'] - check['valor_serie']
     check['pct_diff'] = check['diff'] / check['valor_serie']
 
-    return check[check['diff'] != 0]
+    return check[check['pct_diff'].abs() > min_pct_diff]
