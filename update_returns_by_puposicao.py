@@ -7,6 +7,7 @@ Created on Fri Jun  6 18:18:07 2025
 """
 
 
+import numpy as np
 import pandas as pd
 
 
@@ -50,6 +51,10 @@ def update_returns_from_puposicao(range_date, new_data, persisted_returns):
     full_data = grade.merge(base, on=['cnpjfundo', 'dtposicao'], how='left')
 
     full_data.sort_values(['cnpjfundo', 'dtposicao'], inplace=True)
-    full_data['rentab'] = full_data.groupby('cnpjfundo')['puposicao'].pct_change(fill_method=None)
+
+    rentab_series = full_data.groupby('cnpjfundo')['puposicao'].pct_change(fill_method=None)
+    formatted = np.char.mod('%.15g', rentab_series.values.astype(np.float64))
+
+    full_data['rentab'] = pd.to_numeric(formatted, errors='coerce')
 
     return full_data[['cnpjfundo', 'dtposicao', 'puposicao', 'rentab']]
