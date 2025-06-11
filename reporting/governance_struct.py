@@ -71,7 +71,6 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
 
     for i in range(max_deep, -1, -1):
         cnpj_col = 'cnpjfundo' if i == 0 else f'cnpjfundo_nivel_{i}'
-        tipo_col = 'NEW_TIPO' if i == 0 else f'NEW_TIPO_nivel_{i}'
 
         mask_key_missing = tree['KEY_ESTRUTURA_GERENCIAL'].isna()
         mask_in_estrutura = tree[cnpj_col].isin(key_vehicle_governance_struct)
