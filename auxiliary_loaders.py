@@ -183,3 +183,32 @@ def load_range_eom(data_aux_path):
     """
     dbaux_path = f"{data_aux_path}dbAux.xlsx"
     return pd.read_excel(dbaux_path, sheet_name='dDataMes', dtype=str)
+
+
+def load_returns_by_puposicao(data_aux_path):
+    """
+    Loads the saved returns from 'cnpjfundo_rentab.csv' if available, or returns
+    an empty template.
+
+    Args:
+        data_aux_path (str): Path to the directory containing 'cnpjfundo_rentab.csv'.
+
+    Returns:
+        pd.DataFrame: DataFrame with columns ['cnpjfundo', 'dtposicao',
+                                              'puposicao', 'rentab'].
+                      If the file does not exist, returns an empty DataFrame
+                      with the correct schema.
+    """
+    returns_path = f"{data_aux_path}cnpjfundo_rentab.csv"
+
+    try:
+        returns_by_puposicao = pd.read_csv(returns_path, dtype=str)
+    except FileNotFoundError:
+        returns_by_puposicao = pd.DataFrame({
+            'cnpjfundo': pd.Series(dtype='str'),
+            'dtposicao': pd.Series(dtype='datetime64[ns]'),
+            'puposicao': pd.Series(dtype='float'),
+            'rentab': pd.Series(dtype='float')
+            })
+
+    return returns_by_puposicao

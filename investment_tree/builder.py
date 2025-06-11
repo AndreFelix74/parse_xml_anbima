@@ -29,8 +29,6 @@ def _apply_calculations_to_new_rows(current, mask, deep):
     current.loc[mask, 'composicao'] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
     current.loc[mask, 'isin'] = current.loc[mask, f"isin_nivel_{deep+1}"]
 
-    current.loc[mask, 'rentab'] = current.loc[mask, f"rentab_nivel_{deep+1}"]    
-
     sufix = '' if deep == 0 else f"_nivel_{deep}"
     current.loc[mask, 'PARENT_FUNDO'] = current.loc[mask, f"NEW_NOME_ATIVO{sufix}"]
     current.loc[mask, 'PARENT_FUNDO_GESTOR'] = current.loc[mask, f"NEW_GESTOR{sufix}"]
@@ -181,14 +179,14 @@ def build_tree(funds, portfolios):
     cols_funds = ['cnpj', 'dtposicao', 'cnpjfundo', 'equity_stake', 'composicao',
                   'valor_calc', 'isin', 'NEW_TIPO', 'fNUMERACA.DESCRICAO',
                   'fEMISSOR.NOME_EMISSOR', 'NEW_NOME_ATIVO', 'NEW_GESTOR',
-                  'NEW_GESTOR_WORD_CLOUD', 'rentab']
+                  'NEW_GESTOR_WORD_CLOUD']
 
     funds = funds[funds['valor_serie'] == 0][cols_funds].copy()
 
     cols_port = ['cnpjcpf', 'codcart', 'cnpb', 'dtposicao', 'nome', 'cnpjfundo',
                  'equity_stake', 'composicao', 'valor_calc', 'isin',
                  'NEW_TIPO', 'NEW_NOME_ATIVO', 'fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR',
-                 'NEW_GESTOR_WORD_CLOUD', 'rentab']
+                 'NEW_GESTOR_WORD_CLOUD']
 
     portfolios = portfolios[(portfolios['flag_rateio'] == 0) &
                             (portfolios['valor_serie'] == 0)][cols_port].copy()

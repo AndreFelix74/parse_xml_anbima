@@ -27,7 +27,7 @@ from investment_tree import build_tree, enrich_tree
 from reporting import assign_governance_struct_keys
 import util as utl
 import data_access as dta
-from file_handler import save_df, load_df
+from file_handler import save_df
 
 
 def setup_folders(paths):
@@ -277,17 +277,7 @@ def update_returns_by_cnpjfundo_dtposicao(intermediate_cfg, funds, portfolios, d
                               'puposicao_divergente_mesma_data',
                               intermediate_cfg, log)
 
-        returns_path = os.path.join(data_aux_path, 'cnpjfundo_rentab')
-
-        if os.path.exists(f"{returns_path}.csv"):
-            persisted_returns = load_df(returns_path, 'csv', dtype=str)
-        else:
-            persisted_returns = pd.DataFrame({
-                'cnpjfundo': pd.Series(dtype='str'),
-                'dtposicao': pd.Series(dtype='datetime64[ns]'),
-                'puposicao': pd.Series(dtype='float'),
-                'rentab': pd.Series(dtype='float')
-                })
+        persisted_returns = aux_loader.load_returns_by_puposicao(data_aux_path)
 
         updated_returns = updt_rentab.update_returns_from_puposicao(
             range_date=range_eom,
@@ -295,9 +285,8 @@ def update_returns_by_cnpjfundo_dtposicao(intermediate_cfg, funds, portfolios, d
             persisted_returns=persisted_returns
         )
 
+        returns_path = f"{data_aux_path}cnpjfundo_rentab"
         save_df(updated_returns, returns_path, 'csv')
-
-    return updated_returns[['cnpjfundo', 'dtposicao', 'rentab']]
 
 
 def check_values_integrity(intermediate_cfg, entity, entity_name, invested, group_keys):
@@ -420,32 +409,12 @@ def validate_fund_graph_is_acyclic(funds):
         raise ValueError(f"Cycle detected in fund relationships: {cycle}") from excpt
 
 
-def build_horizontal_tree(funds, portfolios, data_aux_path, cnpjfundo_rentab, config):
+def build_horizontal_tree(funds, portfolios, data_aux_path):
     with log_timing('tree', 'build_tree'):
-        cnpjfundo_rentab['dtposicao'] = pd.to_datetime(cnpjfundo_rentab['dtposicao'])
+        returns_by_puposicao = aux_loader.load_returns_by_puposicao(data_aux_path)
 
-        group_keys_port = ['cnpjcpf', 'codcart', 'dtposicao', 'nome', 'cnpb', 'cnpjfundo']
-        portfolios['dtposicao'] = pd.to_datetime(portfolios['dtposicao'])
-        rentab = portfolios[group_keys_port].merge(
-            cnpjfundo_rentab[['cnpjfundo', 'dtposicao', 'rentab']],
-            on=['cnpjfundo', 'dtposicao'],
-            how='inner'
-        )
-
-        port_rentab = pd.concat([portfolios, rentab])
-    
-        funds['dtposicao'] = pd.to_datetime(funds['dtposicao'])
-        rentab = funds[['cnpj', 'dtposicao', 'cnpjfundo']].drop_duplicates().merge(
-            cnpjfundo_rentab[['cnpjfundo', 'dtposicao', 'rentab']],
-            left_on=['cnpj', 'dtposicao'],
-            right_on=['cnpjfundo', 'dtposicao'],
-            how='inner'
-        )
-        rentab['valor_serie'] = 0
-        funds_rentab = pd.concat([funds, rentab])
-
-        tree_horzt = build_tree(funds_rentab, port_rentab)
-        enrich_tree(tree_horzt)
+        tree_horzt = build_tree(funds, portfolios)
+        tree_horzt = enrich_tree(tree_horzt, returns_by_puposicao)
 
         governance_struct = aux_loader.load_governance_struct(data_aux_path)
         governance_struct = governance_struct[governance_struct['KEY_VEICULO'].notna()]
@@ -503,9 +472,7 @@ def run_pipeline():
                                               types_to_exclude, types_series,
                                               harmonization_rules)
 
-    cnpjfundo_rentab = update_returns_by_cnpjfundo_dtposicao(intermediate_cfg,
-                                                             funds, portfolios,
-                                                             data_aux_path)
+    update_returns_by_cnpjfundo_dtposicao(intermediate_cfg, funds, portfolios, data_aux_path)
 
     check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
     check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
@@ -524,7 +491,7 @@ def run_pipeline():
 
     validate_fund_graph_is_acyclic(funds)
 
-    tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path, cnpjfundo_rentab, intermediate_cfg)
+    tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
 
     with log_timing('finish', 'save_final_files'):
         file_frmt = intermediate_cfg['file_format']
