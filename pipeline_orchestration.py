@@ -414,6 +414,7 @@ def build_horizontal_tree(funds, portfolios, data_aux_path):
         returns_by_puposicao = aux_loader.load_returns_by_puposicao(data_aux_path)
 
         tree_horzt = build_tree(funds, portfolios)
+        tree_horzt['rentab'] = 0.0
         tree_horzt = enrich_tree(tree_horzt, returns_by_puposicao)
 
         governance_struct = aux_loader.load_governance_struct(data_aux_path)

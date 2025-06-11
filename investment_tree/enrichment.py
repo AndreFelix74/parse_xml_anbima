@@ -111,7 +111,7 @@ def find_matched_returns_from_tree(tree_horzt, returns_by_fund, deep):
     for i in range(0, deep):
         curr_level_suffix = f"_nivel_{i}" if i > 0 else ''
         cnpjfundo_col = f"cnpjfundo{curr_level_suffix}"
-        returns = tree_horzt[group_keys_tree + [cnpjfundo_col]].merge(
+        returns = tree_horzt[group_keys_tree + [cnpjfundo_col]].drop_duplicates().merge(
             returns_by_fund[['cnpjfundo', 'dtposicao', 'rentab']],
             left_on=[cnpjfundo_col, 'dtposicao'],
             right_on=['cnpjfundo', 'dtposicao'],
@@ -155,5 +155,5 @@ def enrich_tree(tree_horzt, returns_by_puposicao):
     )
 
     returns = find_matched_returns_from_tree(tree_horzt, returns_by_puposicao, max_deep)
-    
+
     return pd.concat([tree_horzt, returns])
