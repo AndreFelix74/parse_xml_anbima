@@ -97,7 +97,8 @@ def save_df(dtfrm, file_path, file_format):
                      index=False,
                      sep=field_sep,
                      decimal=decimal_sep,
-                     encoding='utf-8'
+                     encoding='utf-8',
+                     float_format="%.15f"
                     )
     elif file_format == 'xlsx':
         dtfrm.to_excel(full_path, index=False)
