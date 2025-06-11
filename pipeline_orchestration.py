@@ -286,7 +286,7 @@ def update_returns_by_cnpjfundo_dtposicao(intermediate_cfg, funds, portfolios, d
         )
 
         returns_path = f"{data_aux_path}cnpjfundo_rentab"
-        save_df(updated_returns, returns_path, 'csv')
+        save_df(updated_returns, returns_path, 'xlsx')
 
 
 def check_values_integrity(intermediate_cfg, entity, entity_name, invested, group_keys):

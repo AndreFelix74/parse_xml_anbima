@@ -187,11 +187,11 @@ def load_range_eom(data_aux_path):
 
 def load_returns_by_puposicao(data_aux_path):
     """
-    Loads the saved returns from 'cnpjfundo_rentab.csv' if available, or returns
+    Loads the saved returns from 'cnpjfundo_rentab.xlsx' if available, or returns
     an empty template.
 
     Args:
-        data_aux_path (str): Path to the directory containing 'cnpjfundo_rentab.csv'.
+        data_aux_path (str): Path to the directory containing 'cnpjfundo_rentab.xlsx'.
 
     Returns:
         pd.DataFrame: DataFrame with columns ['cnpjfundo', 'dtposicao',
@@ -199,10 +199,10 @@ def load_returns_by_puposicao(data_aux_path):
                       If the file does not exist, returns an empty DataFrame
                       with the correct schema.
     """
-    returns_path = f"{data_aux_path}cnpjfundo_rentab.csv"
+    returns_path = f"{data_aux_path}cnpjfundo_rentab.xlsx"
 
     try:
-        returns_by_puposicao = pd.read_csv(returns_path, dtype=str)
+        returns_by_puposicao = pd.read_excel(returns_path, dtype=str)
     except FileNotFoundError:
         returns_by_puposicao = pd.DataFrame({
             'cnpjfundo': pd.Series(dtype='str'),
