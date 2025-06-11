@@ -103,27 +103,39 @@ def find_matched_returns_from_tree(tree_horzt, returns_by_fund, deep):
         pd.DataFrame: A DataFrame of matched return entries, with columns:
             ['cnpjfundo_alvo', 'dtposicao', 'rentab', 'nivel', 'origem'].
     """
+    returns_by_fund.rename(columns={'cnpjfundo': 'ret_cnpjfundo'}, inplace=True)
     returns_by_fund['dtposicao'] = pd.to_datetime(returns_by_fund['dtposicao'])
-    tree_horzt['dtposicao'] = pd.to_datetime(tree_horzt['dtposicao'])
 
-    group_keys_tree = ['cnpjcpf', 'codcart', 'dtposicao', 'nome', 'cnpb', 'nivel']
-    returns_level = []
-    for i in range(0, deep):
+    group_keys_tree = ['cnpjcpf', 'codcart', 'dtposicao', 'nome', 'cnpb', 'nivel',
+                       'NEW_TIPO', 'NEW_NOME_ATIVO', 'NEW_GESTOR_WORD_CLOUD',
+                       'fEMISSOR.NOME_EMISSOR', 'PARENT_FUNDO']
+
+    cnpj_cols = [f'cnpjfundo{"_nivel_" + str(i) if i > 0 else ""}' for i in range(deep)]
+
+    tree_aux = tree_horzt[group_keys_tree + cnpj_cols].drop_duplicates().copy()
+    tree_aux.to_csv('tree_aux.csv')
+    tree_aux['original_index'] = tree_aux.index
+    tree_aux['dtposicao'] = pd.to_datetime(tree_aux['dtposicao'])
+
+    returns_by_level = []
+
+    for i in range(deep - 1, -1, -1):
         curr_level_suffix = f"_nivel_{i}" if i > 0 else ''
         cnpjfundo_col = f"cnpjfundo{curr_level_suffix}"
-        returns = tree_horzt[group_keys_tree + [cnpjfundo_col]].drop_duplicates().merge(
-            returns_by_fund[['cnpjfundo', 'dtposicao', 'rentab']],
+        returns = tree_aux.merge(
+            returns_by_fund[['ret_cnpjfundo', 'dtposicao', 'rentab']],
             left_on=[cnpjfundo_col, 'dtposicao'],
-            right_on=['cnpjfundo', 'dtposicao'],
-            how='inner',
-            suffixes=('', '_returns')
+            right_on=['ret_cnpjfundo', 'dtposicao'],
+            how='inner'
         )
-    
-        returns.drop(columns=[c for c in ['cnpjfundo_returns', 'dtposicao_returns'] if c in returns.columns], inplace=True)
 
-        returns_level.append(returns)
+        tree_aux = tree_aux[~tree_aux['original_index'].isin(returns['original_index'])]
+        returns.drop(columns=['ret_cnpjfundo', 'original_index'], inplace=True)
+        returns['NEW_TIPO'] = 'rentab'
 
-    return pd.concat(returns_level)
+        returns_by_level.append(returns.drop_duplicates())
+
+    return pd.concat(returns_by_level)
 
 
 def enrich_tree(tree_horzt, returns_by_puposicao):
@@ -143,8 +155,13 @@ def enrich_tree(tree_horzt, returns_by_puposicao):
     Returns:
         None: The input DataFrame is modified in-place.
     """
-    generate_final_columns(tree_horzt)
     max_deep = tree_horzt['nivel'].max()
+    returns = find_matched_returns_from_tree(tree_horzt, returns_by_puposicao, max_deep)
+    returns.to_csv('rentab.csv')
+    tree_horzt = pd.concat([tree_horzt, returns])
+
+    generate_final_columns(tree_horzt)
+
     fill_level_columns_forward(tree_horzt, 'NEW_NOME_ATIVO', max_deep)
 
     tree_horzt['SEARCH'] = (
@@ -154,6 +171,4 @@ def enrich_tree(tree_horzt, returns_by_puposicao):
         + ' ' + tree_horzt['PARENT_FUNDO'].fillna('')
     )
 
-    returns = find_matched_returns_from_tree(tree_horzt, returns_by_puposicao, max_deep)
-
-    return pd.concat([tree_horzt, returns])
+    return tree_horzt
