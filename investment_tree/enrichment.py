@@ -132,6 +132,7 @@ def find_matched_returns_from_tree(tree_horzt, returns_by_fund, deep):
         tree_aux = tree_aux[~tree_aux['original_index'].isin(returns['original_index'])]
         returns.drop(columns=['ret_cnpjfundo', 'original_index'], inplace=True)
         returns['NEW_TIPO'] = 'rentab'
+        returns['dtposicao'] = returns['dtposicao'].dt.strftime('%Y-%m-%d')
 
         returns_by_level.append(returns.drop_duplicates())
 
