@@ -75,7 +75,7 @@ def calculate_return_15_digits(df: pd.DataFrame, group_col: str, value_col: str)
         Series of formatted percentage changes.
     """
     pct = df.groupby(group_col)[value_col].pct_change(fill_method=None)
-    formatted = np.char.mod('%.15g', pct.values.astype(np.float64))
+    formatted = np.char.mod('%.8f', pct.values.astype(np.float64))
     return pd.to_numeric(formatted, errors='coerce')
 
 
