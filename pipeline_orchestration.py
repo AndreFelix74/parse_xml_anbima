@@ -251,7 +251,7 @@ def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
     return [funds, portfolios]
 
 
-def update_returns_by_cnpjfundo_dtposicao(funds, portfolios, data_aux_path):
+def update_returns_by_cnpjfundo_dtposicao(intermediate_cfg, funds, portfolios, data_aux_path):
     with log_timing('enrich', 'update_returns_by_cnpjfundo') as log:
         range_eom = aux_loader.load_range_eom(data_aux_path)
         range_eom = pd.to_datetime(range_eom['DATA_POSICAO'].unique())
@@ -273,10 +273,14 @@ def update_returns_by_cnpjfundo_dtposicao(funds, portfolios, data_aux_path):
                 dados=duplicated_data.to_dict(orient='records')
             )
 
+            save_intermediate(duplicated_data,
+                              'puposicao_divergente_mesma_data',
+                              intermediate_cfg, log)
+
         returns_path = os.path.join(data_aux_path, 'cnpjfundo_rentab')
 
         if os.path.exists(f"{returns_path}.csv"):
-            persisted_returns = load_df(returns_path, 'csv')
+            persisted_returns = load_df(returns_path, 'csv', dtype=str)
         else:
             persisted_returns = pd.DataFrame({
                 'cnpjfundo': pd.Series(dtype='str'),
@@ -337,8 +341,7 @@ def explode_partplanprev(intermediate_cfg, portfolios):
 
 
 def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
-           new_tipo_rules, gestor_name_stopwords, name_standardization_rules,
-           cnpjfundo_rentab):
+           new_tipo_rules, gestor_name_stopwords, name_standardization_rules):
 
     with log_timing('enrich', 'load_aux_data') as log:
         aux_data = aux_loader.load_enrich_auxiliary_data(data_aux_path)
@@ -372,21 +375,6 @@ def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
                                               new_tipo_rules, gestor_name_stopwords)
         if alerts:
             log.warning(f"Classification alerts for funds: {alerts}")
-
-    with log_timing('enrich', 'funds_returns'):
-        portfolios['dtposicao'] = pd.to_datetime(portfolios['dtposicao'])
-        portfolios = portfolios.merge(
-            cnpjfundo_rentab,
-            on=['cnpjfundo', 'dtposicao'],
-            how='left'
-            )
-
-        funds['dtposicao'] = pd.to_datetime(funds['dtposicao'])
-        funds = funds.merge(
-            cnpjfundo_rentab,
-            on=['cnpjfundo', 'dtposicao'],
-            how='left'
-            )
 
     if intermediate_cfg['save']:
         with log_timing('enrich', 'save_enriched_data') as log:
@@ -432,9 +420,31 @@ def validate_fund_graph_is_acyclic(funds):
         raise ValueError(f"Cycle detected in fund relationships: {cycle}") from excpt
 
 
-def build_horizontal_tree(funds, portfolios, data_aux_path):
+def build_horizontal_tree(funds, portfolios, data_aux_path, cnpjfundo_rentab, config):
     with log_timing('tree', 'build_tree'):
-        tree_horzt = build_tree(funds, portfolios)
+        cnpjfundo_rentab['dtposicao'] = pd.to_datetime(cnpjfundo_rentab['dtposicao'])
+
+        group_keys_port = ['cnpjcpf', 'codcart', 'dtposicao', 'nome', 'cnpb', 'cnpjfundo']
+        portfolios['dtposicao'] = pd.to_datetime(portfolios['dtposicao'])
+        rentab = portfolios[group_keys_port].merge(
+            cnpjfundo_rentab[['cnpjfundo', 'dtposicao', 'rentab']],
+            on=['cnpjfundo', 'dtposicao'],
+            how='inner'
+        )
+
+        port_rentab = pd.concat([portfolios, rentab])
+    
+        funds['dtposicao'] = pd.to_datetime(funds['dtposicao'])
+        rentab = funds[['cnpj', 'dtposicao', 'cnpjfundo']].drop_duplicates().merge(
+            cnpjfundo_rentab[['cnpjfundo', 'dtposicao', 'rentab']],
+            left_on=['cnpj', 'dtposicao'],
+            right_on=['cnpjfundo', 'dtposicao'],
+            how='inner'
+        )
+        rentab['valor_serie'] = 0
+        funds_rentab = pd.concat([funds, rentab])
+
+        tree_horzt = build_tree(funds_rentab, port_rentab)
         enrich_tree(tree_horzt)
 
         governance_struct = aux_loader.load_governance_struct(data_aux_path)
@@ -493,7 +503,9 @@ def run_pipeline():
                                               types_to_exclude, types_series,
                                               harmonization_rules)
 
-    cnpjfundo_rentab = update_returns_by_cnpjfundo_dtposicao(funds, portfolios, data_aux_path)
+    cnpjfundo_rentab = update_returns_by_cnpjfundo_dtposicao(intermediate_cfg,
+                                                             funds, portfolios,
+                                                             data_aux_path)
 
     check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
     check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
@@ -506,13 +518,13 @@ def run_pipeline():
 
     funds, portfolios = enrich(intermediate_cfg, funds, portfolios, types_series,
                                data_aux_path, new_tipo_rules, gestor_name_stopwords,
-                               name_standardization_rules, cnpjfundo_rentab)
+                               name_standardization_rules)
 
     compute_metrics(funds, portfolios, types_series)
 
     validate_fund_graph_is_acyclic(funds)
 
-    tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
+    tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path, cnpjfundo_rentab, intermediate_cfg)
 
     with log_timing('finish', 'save_final_files'):
         file_frmt = intermediate_cfg['file_format']
