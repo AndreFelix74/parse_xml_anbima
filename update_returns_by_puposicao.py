@@ -61,24 +61,6 @@ def generate_position_grid(base: pd.DataFrame, range_date) -> pd.DataFrame:
     return merged
 
 
-def calculate_return_15_digits(df: pd.DataFrame, group_col: str, value_col: str) -> pd.Series:
-    """
-    Computes percentage change within groups and formats the result
-    to 15 significant digits (Excel-compatible).
-
-    Args:
-        df: DataFrame containing the data.
-        group_col: Column name to group by (e.g., 'cnpjfundo').
-        value_col: Column name on which to compute pct_change (e.g., 'puposicao').
-
-    Returns:
-        Series of formatted percentage changes.
-    """
-    pct = df.groupby(group_col)[value_col].pct_change(fill_method=None)
-    formatted = np.char.mod('%.8f', pct.values.astype(np.float64))
-    return pd.to_numeric(formatted, errors='coerce')
-
-
 def update_returns_from_puposicao(range_date, new_data, persisted_returns):
     """
     Validates new position data, merges it with persisted returns,
@@ -111,6 +93,7 @@ def update_returns_from_puposicao(range_date, new_data, persisted_returns):
     full_data = generate_position_grid(base, range_date)
     full_data.sort_values(['cnpjfundo', 'dtposicao'], inplace=True)
 
-    full_data['rentab'] = calculate_return_15_digits(full_data, 'cnpjfundo', 'puposicao')
+    pct = full_data.groupby('cnpjfundo')['puposicao'].pct_change(fill_method=None)
+    full_data['rentab'] = pct.round(8)
 
     return full_data[['cnpjfundo', 'dtposicao', 'puposicao', 'rentab']]
