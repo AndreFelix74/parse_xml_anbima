@@ -29,7 +29,7 @@ def _apply_calculations_to_new_rows(current, mask, deep):
     current.loc[mask, 'composicao'] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
     current.loc[mask, 'isin'] = current.loc[mask, f"isin_nivel_{deep+1}"]
 
-    current.loc[mask, f"rentab_nivel_{deep+1}"] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
+    current.loc[mask, 'rentab'] = current.loc[mask, f"rentab_nivel_{deep+1}"]    
 
     sufix = '' if deep == 0 else f"_nivel_{deep}"
     current.loc[mask, 'PARENT_FUNDO'] = current.loc[mask, f"NEW_NOME_ATIVO{sufix}"]
