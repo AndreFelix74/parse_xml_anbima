@@ -105,10 +105,12 @@ def enrich_tree(tree_horzt):
 
     for i in range(max_deep, 0, -1):
         mask_deep = tree_horzt['nivel'] == i
+        col_returns = f"rentab_nivel_{i}"
         tree_horzt.loc[mask_deep, 'rentab_ponderada'] = (
             tree_horzt.loc[mask_deep, 'composicao']
-            * tree_horzt.loc[mask_deep, f"rentab_nivel_{i}"].fillna(0.0)
+            * tree_horzt.loc[mask_deep, col_returns].fillna(0.0)
         )
+        tree_horzt.loc[mask_deep, 'rentab_nominal'] = tree_horzt.loc[mask_deep, col_returns]
 
 
     base_final_cols = [
@@ -127,4 +129,3 @@ def enrich_tree(tree_horzt):
         + ' ' + tree_horzt['fEMISSOR.NOME_EMISSOR_FINAL'].fillna('')
         + ' ' + tree_horzt['PARENT_FUNDO'].fillna('')
     )
-
