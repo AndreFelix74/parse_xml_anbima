@@ -411,11 +411,19 @@ def validate_fund_graph_is_acyclic(funds):
 
 def build_horizontal_tree(funds, portfolios, data_aux_path):
     with log_timing('tree', 'build_tree'):
-        returns_by_puposicao = aux_loader.load_returns_by_puposicao(data_aux_path)
+        returns = aux_loader.load_returns_by_puposicao(data_aux_path)
 
         tree_horzt = build_tree(funds, portfolios)
-        tree_horzt['rentab'] = 0.0
-        tree_horzt = enrich_tree(tree_horzt, returns_by_puposicao)
+
+        returns['dtposicao'] = pd.to_datetime(returns['dtposicao'])
+        returns['match_key'] = returns['cnpjfundo'].astype(str) + "|" + returns['dtposicao'].dt.strftime('%Y%m%d')
+        rentab_dict = returns.set_index('match_key')['rentab'].to_dict()
+
+        tree_horzt['rentab'] = tree_horzt['match_key'].apply(
+            lambda mk: rentab_dict.get(mk) if pd.notna(mk) else None
+        )
+
+        enrich_tree(tree_horzt)
 
         governance_struct = aux_loader.load_governance_struct(data_aux_path)
         governance_struct = governance_struct[governance_struct['KEY_VEICULO'].notna()]
@@ -473,10 +481,11 @@ def run_pipeline():
                                               types_to_exclude, types_series,
                                               harmonization_rules)
 
-    update_returns_by_cnpjfundo_dtposicao(intermediate_cfg, funds, portfolios, data_aux_path)
-
     check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
     check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
+
+    update_returns_by_cnpjfundo_dtposicao(intermediate_cfg, funds, portfolios,
+                                          data_aux_path)
 
     name_standardization_rules = dta.read('name_standardization_rules')
     new_tipo_rules = dta.read('enrich_de_para_tipos')

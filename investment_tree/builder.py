@@ -7,6 +7,9 @@ Created on Wed May 14 16:55:27 2025
 """
 
 
+import pandas as pd
+
+
 def _apply_calculations_to_new_rows(current, mask, deep):
     """
     Applies in-place calculations to rows resulting from a successful merge
@@ -34,6 +37,41 @@ def _apply_calculations_to_new_rows(current, mask, deep):
     current.loc[mask, 'PARENT_FUNDO_GESTOR'] = current.loc[mask, f"NEW_GESTOR{sufix}"]
 
 
+def extract_current_matching_rows(current, funds, left_col):
+    """
+    Extracts rows from the current DataFrame at the current recursion level
+    that have matching (cnpj, dtposicao) pairs in the funds DataFrame.
+
+    This is useful for retaining the original form of rows that will be
+    expanded during the merge with fund compositions.
+
+    Args:
+        current (pd.DataFrame): The current-level portfolio DataFrame.
+        funds (pd.DataFrame): The fund composition DataFrame.
+        left_col (str): The name of the column in current used to match with
+                        `funds['cnpj']`.
+
+    Returns:
+        pd.DataFrame: Subset of `current` where (left_col, dtposicao) matches `funds`,
+                      with `valor_calc = 0.0`.
+    """
+    funds_keys = funds[['cnpj', 'dtposicao']].drop_duplicates()
+    funds_keys['match_key'] = (
+        funds_keys['cnpj'].astype(str) + "|" + funds_keys['dtposicao'].astype(str)
+    )
+
+    current = current.copy()
+    current['match_key'] = (
+        current[left_col].astype(str) + "|" + current['dtposicao'].astype(str)
+    )
+
+    matched_rows = current[current['match_key'].isin(funds_keys['match_key'])].copy()
+    matched_rows['valor_calc'] = 0.0
+    # matched_rows.drop(columns='match_key', inplace=True)
+
+    return matched_rows
+
+
 def build_tree_horizontal(portfolios, funds, deep=0):
     """
     Recursively builds a horizontal investment tree by merging portfolio and
@@ -53,6 +91,8 @@ def build_tree_horizontal(portfolios, funds, deep=0):
     if portfolios[left_col].notna().sum() == 0:
         return portfolios
 
+    original_rows = extract_current_matching_rows(portfolios, funds, left_col)
+
     current = portfolios.merge(
         funds,
         left_on=[left_col, 'dtposicao'],
@@ -65,6 +105,7 @@ def build_tree_horizontal(portfolios, funds, deep=0):
     mask = current['_merge'] == 'both'
     _apply_calculations_to_new_rows(current, mask, deep)
     current.drop(columns=['_merge'], inplace=True)
+    current = pd.concat([current, original_rows])
 
     return build_tree_horizontal(current, funds, deep + 1)
 

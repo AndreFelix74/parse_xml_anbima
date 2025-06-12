@@ -7,9 +7,6 @@ Created on Sat Jun  7 12:58:01 2025
 """
 
 
-import pandas as pd
-
-
 def generate_final_columns(tree_horzt):
     """
     Generate final columns based on hierarchical levels in the 'tree_horzt' DataFrame.
@@ -83,63 +80,7 @@ def fill_level_columns_forward(tree_hrzt, base_col, deep):
         tree_hrzt.loc[mask, next_col] = tree_hrzt.loc[mask, current_col]
 
 
-def find_matched_returns_from_tree(tree_horzt, returns_by_fund, deep):
-    """
-    Finds matched return records from a horizontal investment tree across all levels.
-
-    This function iterates through each level of the tree structure and searches for
-    return data (`returns_by_fund`) that matches each fund's CNPJ and reporting date (`dtposicao`).
-    It returns only the successful matches, annotated with the corresponding tree level and 
-    metadata indicating the source.
-
-    Args:
-        tree_horzt (pd.DataFrame): Horizontal investment tree with columns such as 
-            'cnpjfundo', 'cnpjfundo_nivel_1', ..., containing the nested fund structure.
-        returns_by_fund (pd.DataFrame): DataFrame with columns ['cnpjfundo', 'dtposicao', 'rentab']
-            that holds return information by fund and date.
-        deep (int): Maximum recursion depth (i.e., the number of tree levels).
-
-    Returns:
-        pd.DataFrame: A DataFrame of matched return entries, with columns:
-            ['cnpjfundo_alvo', 'dtposicao', 'rentab', 'nivel', 'origem'].
-    """
-    returns_by_fund.rename(columns={'cnpjfundo': 'ret_cnpjfundo'}, inplace=True)
-    returns_by_fund['dtposicao'] = pd.to_datetime(returns_by_fund['dtposicao'])
-
-    group_keys_tree = ['cnpjcpf', 'codcart', 'dtposicao', 'nome', 'cnpb', 'nivel',
-                       'NEW_TIPO', 'NEW_NOME_ATIVO', 'NEW_GESTOR_WORD_CLOUD',
-                       'fEMISSOR.NOME_EMISSOR', 'PARENT_FUNDO']
-
-    cnpj_cols = [f'cnpjfundo{"_nivel_" + str(i) if i > 0 else ""}' for i in range(deep)]
-
-    tree_aux = tree_horzt[group_keys_tree + cnpj_cols].drop_duplicates().copy()
-    tree_aux.to_csv('tree_aux.csv')
-    tree_aux['original_index'] = tree_aux.index
-    tree_aux['dtposicao'] = pd.to_datetime(tree_aux['dtposicao'])
-
-    returns_by_level = []
-
-    for i in range(deep - 1, -1, -1):
-        curr_level_suffix = f"_nivel_{i}" if i > 0 else ''
-        cnpjfundo_col = f"cnpjfundo{curr_level_suffix}"
-        returns = tree_aux.merge(
-            returns_by_fund[['ret_cnpjfundo', 'dtposicao', 'rentab']],
-            left_on=[cnpjfundo_col, 'dtposicao'],
-            right_on=['ret_cnpjfundo', 'dtposicao'],
-            how='inner'
-        )
-
-        tree_aux = tree_aux[~tree_aux['original_index'].isin(returns['original_index'])]
-        returns.drop(columns=['ret_cnpjfundo', 'original_index'], inplace=True)
-        returns['NEW_TIPO'] = 'rentab'
-        returns['dtposicao'] = returns['dtposicao'].dt.strftime('%Y-%m-%d')
-
-        returns_by_level.append(returns.drop_duplicates())
-
-    return pd.concat(returns_by_level)
-
-
-def enrich_tree(tree_horzt, returns_by_puposicao):
+def enrich_tree(tree_horzt):
     """
     Enriches a tree structure with derived textual fields and governance structure mappings.
 
@@ -157,9 +98,6 @@ def enrich_tree(tree_horzt, returns_by_puposicao):
         None: The input DataFrame is modified in-place.
     """
     max_deep = tree_horzt['nivel'].max()
-    returns = find_matched_returns_from_tree(tree_horzt, returns_by_puposicao, max_deep)
-    returns.to_csv('rentab.csv')
-    tree_horzt = pd.concat([tree_horzt, returns])
 
     generate_final_columns(tree_horzt)
 
@@ -172,4 +110,3 @@ def enrich_tree(tree_horzt, returns_by_puposicao):
         + ' ' + tree_horzt['PARENT_FUNDO'].fillna('')
     )
 
-    return tree_horzt
