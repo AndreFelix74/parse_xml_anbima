@@ -288,6 +288,8 @@ def update_returns_by_cnpjfundo_dtposicao(intermediate_cfg, funds, portfolios, d
         returns_path = f"{data_aux_path}cnpjfundo_rentab"
         save_df(updated_returns, returns_path, 'xlsx')
 
+    return updated_returns
+
 
 def check_values_integrity(intermediate_cfg, entity, entity_name, invested, group_keys):
     investor_holdings_cols = ['cnpjfundo', 'qtdisponivel', 'dtposicao', 'isin',
@@ -411,18 +413,7 @@ def validate_fund_graph_is_acyclic(funds):
 
 def build_horizontal_tree(funds, portfolios, data_aux_path):
     with log_timing('tree', 'build_tree'):
-        returns = aux_loader.load_returns_by_puposicao(data_aux_path)
-
         tree_horzt = build_tree(funds, portfolios)
-
-        returns['dtposicao'] = pd.to_datetime(returns['dtposicao'])
-        returns['match_key'] = returns['cnpjfundo'].astype(str) + "|" + returns['dtposicao'].dt.strftime('%Y%m%d')
-        rentab_dict = returns.set_index('match_key')['rentab'].to_dict()
-
-        tree_horzt['rentab'] = tree_horzt['match_key'].apply(
-            lambda mk: rentab_dict.get(mk) if pd.notna(mk) else None
-        )
-
         enrich_tree(tree_horzt)
 
         governance_struct = aux_loader.load_governance_struct(data_aux_path)
@@ -484,8 +475,8 @@ def run_pipeline():
     check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
     check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
 
-    update_returns_by_cnpjfundo_dtposicao(intermediate_cfg, funds, portfolios,
-                                          data_aux_path)
+    returns = update_returns_by_cnpjfundo_dtposicao(intermediate_cfg, funds,
+                                                    portfolios, data_aux_path)
 
     name_standardization_rules = dta.read('name_standardization_rules')
     new_tipo_rules = dta.read('enrich_de_para_tipos')
@@ -500,6 +491,18 @@ def run_pipeline():
     compute_metrics(funds, portfolios, types_series)
 
     validate_fund_graph_is_acyclic(funds)
+
+    returns['dtposicao'] = pd.to_datetime(returns['dtposicao']).dt.strftime('%Y%m%d')
+    returns['cnpjfundo'] = returns['cnpjfundo'].astype(str)
+    returns['rentab'] = returns['rentab'].astype(float)
+    funds = funds.merge(
+        returns[['cnpjfundo', 'dtposicao', 'rentab']],
+        left_on=['cnpj', 'dtposicao'],
+        right_on=['cnpjfundo', 'dtposicao'],
+        how='left',
+        suffixes=['', '_rentab']
+    )
+    portfolios['rentab'] = 0.0
 
     tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
 
