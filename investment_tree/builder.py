@@ -7,71 +7,6 @@ Created on Wed May 14 16:55:27 2025
 """
 
 
-import pandas as pd
-
-
-def _apply_calculations_to_new_rows(current, mask, deep):
-    """
-    Applies in-place calculations to rows resulting from a successful merge
-    ('both') at the current recursion depth.
-
-    Args:
-        current (pd.DataFrame): DataFrame containing the merged investment tree
-        structure.
-        mask (pd.Series): Boolean Series identifying the rows that originated
-        from both sides of the merge.
-        deep (int): Current recursion depth, used to access level-specific columns.
-    """
-    current.loc[mask, 'nivel'] = deep + 1
-    current.loc[mask, 'equity_stake'] *= current.loc[mask, f"equity_stake_nivel_{deep+1}"].fillna(1)
-    current.loc[mask, 'valor_calc'] = (
-        current.loc[mask, f"valor_calc_nivel_{deep+1}"]
-        * current.loc[mask, 'equity_stake'].fillna(1)
-    )
-
-    current.loc[mask, 'composicao'] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
-    current.loc[mask, 'isin'] = current.loc[mask, f"isin_nivel_{deep+1}"]
-
-    sufix = '' if deep == 0 else f"_nivel_{deep}"
-    current.loc[mask, 'PARENT_FUNDO'] = current.loc[mask, f"NEW_NOME_ATIVO{sufix}"]
-    current.loc[mask, 'PARENT_FUNDO_GESTOR'] = current.loc[mask, f"NEW_GESTOR{sufix}"]
-
-
-def extract_current_matching_rows(current, funds, left_col):
-    """
-    Extracts rows from the current DataFrame at the current recursion level
-    that have matching (cnpj, dtposicao) pairs in the funds DataFrame.
-
-    This is useful for retaining the original form of rows that will be
-    expanded during the merge with fund compositions.
-
-    Args:
-        current (pd.DataFrame): The current-level portfolio DataFrame.
-        funds (pd.DataFrame): The fund composition DataFrame.
-        left_col (str): The name of the column in current used to match with
-                        `funds['cnpj']`.
-
-    Returns:
-        pd.DataFrame: Subset of `current` where (left_col, dtposicao) matches `funds`,
-                      with `valor_calc = 0.0`.
-    """
-    funds_keys = funds[['cnpj', 'dtposicao']].drop_duplicates()
-    funds_keys['match_key'] = (
-        funds_keys['cnpj'].astype(str) + "|" + funds_keys['dtposicao'].astype(str)
-    )
-
-    current = current.copy()
-    current['match_key'] = (
-        current[left_col].astype(str) + "|" + current['dtposicao'].astype(str)
-    )
-
-    matched_rows = current[current['match_key'].isin(funds_keys['match_key'])].copy()
-    matched_rows['valor_calc'] = 0.0
-    # matched_rows.drop(columns='match_key', inplace=True)
-
-    return matched_rows
-
-
 def build_tree_horizontal(portfolios, funds, deep=0):
     """
     Recursively builds a horizontal investment tree by merging portfolio and
@@ -91,8 +26,6 @@ def build_tree_horizontal(portfolios, funds, deep=0):
     if portfolios[left_col].notna().sum() == 0:
         return portfolios
 
-    original_rows = extract_current_matching_rows(portfolios, funds, left_col)
-
     current = portfolios.merge(
         funds,
         left_on=[left_col, 'dtposicao'],
@@ -103,9 +36,15 @@ def build_tree_horizontal(portfolios, funds, deep=0):
     )
 
     mask = current['_merge'] == 'both'
-    _apply_calculations_to_new_rows(current, mask, deep)
+
+    current.loc[mask, 'nivel'] = deep + 1
+
+    #as tres linhas abaixo devem ser movidas para o enriquecimento.
+    sufix = '' if deep == 0 else f"_nivel_{deep}"
+    current.loc[mask, 'PARENT_FUNDO'] = current.loc[mask, f"NEW_NOME_ATIVO{sufix}"]
+    current.loc[mask, 'PARENT_FUNDO_GESTOR'] = current.loc[mask, f"NEW_GESTOR{sufix}"]
+
     current.drop(columns=['_merge'], inplace=True)
-    current = pd.concat([current, original_rows])
 
     return build_tree_horizontal(current, funds, deep + 1)
 
@@ -220,14 +159,14 @@ def build_tree(funds, portfolios):
     cols_funds = ['cnpj', 'dtposicao', 'cnpjfundo', 'equity_stake', 'composicao',
                   'valor_calc', 'isin', 'NEW_TIPO', 'fNUMERACA.DESCRICAO',
                   'fEMISSOR.NOME_EMISSOR', 'NEW_NOME_ATIVO', 'NEW_GESTOR',
-                  'NEW_GESTOR_WORD_CLOUD']
+                  'NEW_GESTOR_WORD_CLOUD', 'rentab']
 
     funds = funds[funds['valor_serie'] == 0][cols_funds].copy()
 
     cols_port = ['cnpjcpf', 'codcart', 'cnpb', 'dtposicao', 'nome', 'cnpjfundo',
                  'equity_stake', 'composicao', 'valor_calc', 'isin',
                  'NEW_TIPO', 'NEW_NOME_ATIVO', 'fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR',
-                 'NEW_GESTOR_WORD_CLOUD']
+                 'NEW_GESTOR_WORD_CLOUD', 'rentab']
 
     portfolios = portfolios[(portfolios['flag_rateio'] == 0) &
                             (portfolios['valor_serie'] == 0)][cols_port].copy()

@@ -7,33 +7,26 @@ Created on Sat Jun  7 12:58:01 2025
 """
 
 
-def generate_final_columns(tree_horzt):
+def accumulate_columns_by_level(tree_hrzt, result_col, base_col, deep):
     """
-    Generate final columns based on hierarchical levels in the 'tree_horzt' DataFrame.
+    Accumulates numerical values from level-specific columns by multiplying them,
+    producing a final consolidated value.
 
-    This function calculates the maximum depth of the hierarchy using the 'nivel' column
-    and uses it to generate final versions of multiple columns by aggregating or selecting
-    values based on that depth.
+    Each level column is expected to follow the pattern '{base_col}_nivel_{i}' 
+    for i in range(1, deep + 1). Missing values are treated as 1.0 (neutral element).
 
-    Parameters:
-    ----------
-    tree_horzt : pandas.DataFrame
-        The hierarchical tree DataFrame containing the 'nivel' column and intermediate
-        columns used to compute final columns.
+    Args:
+        df (pd.DataFrame): DataFrame containing level-specific columns.
+        base_col (str): Name of the base column (e.g., 'equity_stake').
+        deep (int): Maximum depth to consider for level-specific columns.
+        result_col (str): Name of the resulting column to store the accumulated value.
 
     Returns:
-    -------
-    None
-        The function modifies the input DataFrame in place, adding new final columns.
+        None: Modifies the DataFrame in place by adding the result_col.
     """
-    max_deep = tree_horzt['nivel'].max()
-
-    columns_to_generate = [
-        'NEW_TIPO', 'NEW_NOME_ATIVO', 'NEW_GESTOR_WORD_CLOUD', 'fEMISSOR.NOME_EMISSOR'
-    ]
-
-    for base_col in columns_to_generate:
-        create_column_based_on_levels(tree_horzt, f"{base_col}_FINAL", base_col, max_deep)
+    accumulate_cols = [f"{base_col}_nivel_{i}" for i in range(1, deep + 1)]
+    accumulate_cols.append(base_col)
+    tree_hrzt[result_col] = tree_hrzt[accumulate_cols].fillna(1).prod(axis=1)
 
 
 def create_column_based_on_levels(tree_hrzt, new_col, base_col, deep):
@@ -99,7 +92,32 @@ def enrich_tree(tree_horzt):
     """
     max_deep = tree_horzt['nivel'].max()
 
-    generate_final_columns(tree_horzt)
+    accumulate_columns_by_level(tree_horzt, 'equity_stake', 'equity_stake', max_deep)
+    accumulate_columns_by_level(tree_horzt, 'composicao', 'composicao', max_deep)
+
+    for i in range(1, max_deep + 1):
+        mask_deep = tree_horzt['nivel'] == i
+        col_name = f"valor_calc_nivel_{i}"
+        tree_horzt.loc[mask_deep, 'valor_calc'] = (
+            tree_horzt.loc[mask_deep, col_name]
+            * tree_horzt.loc[mask_deep, 'equity_stake']
+        )
+
+    for i in range(max_deep, 0, -1):
+        mask_deep = tree_horzt['nivel'] == i
+        tree_horzt.loc[mask_deep, 'rentab_ponderada'] = (
+            tree_horzt.loc[mask_deep, 'composicao']
+            * tree_horzt.loc[mask_deep, f"rentab_nivel_{i}"].fillna(0.0)
+        )
+
+
+    base_final_cols = [
+        'NEW_TIPO', 'NEW_NOME_ATIVO', 'NEW_GESTOR_WORD_CLOUD', 'fEMISSOR.NOME_EMISSOR'
+    ]
+    for base_col in base_final_cols:
+        create_column_based_on_levels(tree_horzt, f"{base_col}_FINAL", base_col, max_deep)
+
+    create_column_based_on_levels(tree_horzt, 'isin', 'isin', max_deep)
 
     fill_level_columns_forward(tree_horzt, 'NEW_NOME_ATIVO', max_deep)
 
