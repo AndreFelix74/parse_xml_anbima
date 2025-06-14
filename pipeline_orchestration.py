@@ -16,6 +16,7 @@ from collections import defaultdict
 import networkx as nx
 import pandas as pd
 from logger import log_timing, RUN_ID
+import pandas as pd
 
 import auxiliary_loaders as aux_loader
 import parse_xml_anbima as parser
@@ -204,7 +205,8 @@ def convert_entity_to_dataframe(entity_data, entity_name, daily_keys):
         pd.DataFrame: DataFrame convertido.
     """
     non_propagated_header_keys = ['isin']
-    dataframe = parser.convert_to_dataframe(entity_data, daily_keys, non_propagated_header_keys)
+    normalized_data = parser.normalize_data(entity_data, daily_keys, non_propagated_header_keys)
+    dataframe = pd.DataFrame(normalized_data)
 
     dtypes_dict = dataframe.dtypes.apply(lambda x: x.name).to_dict()
     dta.create_if_not_exists(f"{entity_name}_metadata", dtypes_dict)
