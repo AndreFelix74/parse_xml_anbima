@@ -112,14 +112,6 @@ def enrich_tree(tree_horzt):
         )
         tree_horzt.loc[mask_deep, 'rentab_nominal'] = tree_horzt.loc[mask_deep, col_returns]
 
-        mask_cotas = (tree_horzt[f"NEW_TIPO_nivel_{i}"] == 'COTAS')
-        tree_horzt.loc[mask_deep & mask_cotas, 'rentab_ponderada_soh_cotas'] = (
-            tree_horzt.loc[mask_deep & mask_cotas, 'composicao']
-            * tree_horzt.loc[mask_deep & mask_cotas, col_returns].fillna(0.0)
-        )
-        tree_horzt.loc[mask_deep & ~mask_cotas, 'rentab_ponderada_soh_cotas'] = ''
-
-
     base_final_cols = [
         'NEW_TIPO', 'NEW_NOME_ATIVO', 'NEW_GESTOR_WORD_CLOUD', 'fEMISSOR.NOME_EMISSOR'
     ]
