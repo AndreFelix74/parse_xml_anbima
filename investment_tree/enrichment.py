@@ -103,9 +103,10 @@ def enrich_tree(tree_horzt):
             * tree_horzt.loc[mask_deep, 'equity_stake']
         )
 
-    for i in range(max_deep, 0, -1):
+    for i in range(max_deep, -1, -1):
         mask_deep = tree_horzt['nivel'] == i
-        col_returns = f"rentab_nivel_{i}"
+        suffix = '' if i == 0 else f"_nivel_{i}"
+        col_returns = f"rentab{suffix}"
         tree_horzt.loc[mask_deep, 'rentab_ponderada'] = (
             tree_horzt.loc[mask_deep, 'composicao']
             * tree_horzt.loc[mask_deep, col_returns].fillna(0.0)
