@@ -251,25 +251,25 @@ def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
     return [funds, portfolios]
 
 
-def update_returns_by_cnpjfundo_dtposicao(intermediate_cfg, funds, portfolios, data_aux_path):
-    with log_timing('enrich', 'update_returns_by_cnpjfundo') as log:
+def update_returns_by_isin_dtposicao(intermediate_cfg, funds, portfolios, data_aux_path):
+    with log_timing('enrich', 'update_returns_by_isin_dtposicao') as log:
         range_eom = aux_loader.load_range_eom(data_aux_path)
         range_eom = pd.to_datetime(range_eom['DATA_POSICAO'].unique())
 
-        group_cols = ['cnpjfundo', 'dtposicao', 'puposicao']
-        cnpjfundo_data = pd.concat([
-            funds[funds['cnpjfundo'].notnull()][['cnpj'] + group_cols].drop_duplicates(),
-            portfolios[portfolios['cnpjfundo'].notnull()][['cnpjcpf'] + group_cols].drop_duplicates()
+        group_cols = ['isin', 'dtposicao', 'puposicao']
+        isin_data = pd.concat([
+            funds[funds['isin'].notnull()][group_cols].drop_duplicates(),
+            portfolios[portfolios['isin'].notnull()][group_cols].drop_duplicates()
             ]).drop_duplicates()
 
-        valid_idx, dupl_idx = updt_rentab.validate_unique_puposicao(cnpjfundo_data)
+        valid_idx, dupl_idx = updt_rentab.validate_unique_puposicao(isin_data)
         if len(dupl_idx) > 0:
-            cols = ['cnpj', 'cnpjfundo', 'dtposicao', 'puposicao']
-            duplicated_data = cnpjfundo_data.loc[dupl_idx, cols]
+            cols = ['isin', 'dtposicao', 'puposicao']
+            duplicated_data = isin_data.loc[dupl_idx, cols]
 
             log.warn(
                 'enrich',
-                message='puposicao diferente para mesmo cnpjfundo e dtposicao.',
+                message='puposicao diferente para mesmo isin e dtposicao.',
                 dados=duplicated_data.to_dict(orient='records')
             )
 
@@ -281,11 +281,11 @@ def update_returns_by_cnpjfundo_dtposicao(intermediate_cfg, funds, portfolios, d
 
         updated_returns = updt_rentab.update_returns_from_puposicao(
             range_date=range_eom,
-            new_data=cnpjfundo_data.loc[valid_idx],
+            new_data=isin_data.loc[valid_idx],
             persisted_returns=persisted_returns
         )
 
-        returns_path = f"{data_aux_path}cnpjfundo_rentab"
+        returns_path = f"{data_aux_path}isin_rentab"
         save_df(updated_returns, returns_path, 'xlsx')
 
     return updated_returns
@@ -475,7 +475,7 @@ def run_pipeline():
     check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
     check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
 
-    returns = update_returns_by_cnpjfundo_dtposicao(intermediate_cfg, funds,
+    isin_returns = update_returns_by_isin_dtposicao(intermediate_cfg, funds,
                                                     portfolios, data_aux_path)
 
     name_standardization_rules = dta.read('name_standardization_rules')
@@ -492,17 +492,21 @@ def run_pipeline():
 
     validate_fund_graph_is_acyclic(funds)
 
-    returns['dtposicao'] = pd.to_datetime(returns['dtposicao']).dt.strftime('%Y%m%d')
-    returns['cnpjfundo'] = returns['cnpjfundo'].astype(str)
-    returns['rentab'] = returns['rentab'].astype(float)
+    isin_returns['dtposicao'] = pd.to_datetime(isin_returns['dtposicao']).dt.strftime('%Y%m%d')
+    isin_returns['isin'] = isin_returns['isin'].astype(str)
+    isin_returns['rentab'] = isin_returns['rentab'].astype(float)
     funds = funds.merge(
-        returns[['cnpjfundo', 'dtposicao', 'rentab']],
-        left_on=['cnpj', 'dtposicao'],
-        right_on=['cnpjfundo', 'dtposicao'],
+        isin_returns[['isin', 'dtposicao', 'rentab']],
+        on=['isin', 'dtposicao'],
         how='left',
         suffixes=['', '_rentab']
     )
-    portfolios['rentab'] = 0.0
+    portfolios = portfolios.merge(
+        isin_returns[['isin', 'dtposicao', 'rentab']],
+        on=['isin', 'dtposicao'],
+        how='left',
+        suffixes=['', '_rentab']
+    )
 
     tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
 

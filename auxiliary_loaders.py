@@ -187,25 +187,25 @@ def load_range_eom(data_aux_path):
 
 def load_returns_by_puposicao(data_aux_path):
     """
-    Loads the saved returns from 'cnpjfundo_rentab.xlsx' if available, or returns
+    Loads the saved returns from 'isin_rentab.xlsx' if available, or returns
     an empty template.
 
     Args:
-        data_aux_path (str): Path to the directory containing 'cnpjfundo_rentab.xlsx'.
+        data_aux_path (str): Path to the directory containing 'isin_rentab.xlsx'.
 
     Returns:
-        pd.DataFrame: DataFrame with columns ['cnpjfundo', 'dtposicao',
+        pd.DataFrame: DataFrame with columns ['isin', 'dtposicao',
                                               'puposicao', 'rentab'].
                       If the file does not exist, returns an empty DataFrame
                       with the correct schema.
     """
-    returns_path = f"{data_aux_path}cnpjfundo_rentab.xlsx"
+    returns_path = f"{data_aux_path}isin_rentab.xlsx"
 
     try:
         returns_by_puposicao = pd.read_excel(returns_path, dtype=str)
     except FileNotFoundError:
         returns_by_puposicao = pd.DataFrame({
-            'cnpjfundo': pd.Series(dtype='str'),
+            'isin': pd.Series(dtype='str'),
             'dtposicao': pd.Series(dtype='datetime64[ns]'),
             'puposicao': pd.Series(dtype='float'),
             'rentab': pd.Series(dtype='float')
