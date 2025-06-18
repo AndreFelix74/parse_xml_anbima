@@ -12,8 +12,8 @@ import re
 import multiprocessing
 from collections import defaultdict
 import networkx as nx
-from logger import log_timing, RUN_ID
 import pandas as pd
+from logger import log_timing, RUN_ID
 
 import auxiliary_loaders as aux_loader
 import parse_xml_anbima as parser
@@ -257,9 +257,11 @@ def update_returns_by_isin_dtposicao(intermediate_cfg, funds, portfolios, data_a
         range_eom = pd.to_datetime(range_eom['DATA_POSICAO'].unique())
 
         group_cols = ['isin', 'dtposicao', 'puposicao']
+        funds_mask = funds['isin'].notnull() & (funds['NEW_TIPO'] != 'OVER')
+        port_mask = portfolios['isin'].notnull() & (portfolios['NEW_TIPO'] != 'OVER')
         isin_data = pd.concat([
-            funds[funds['isin'].notnull()][group_cols].drop_duplicates(),
-            portfolios[portfolios['isin'].notnull()][group_cols].drop_duplicates()
+            funds[funds_mask][group_cols].drop_duplicates(),
+            portfolios[port_mask][group_cols].drop_duplicates()
             ]).drop_duplicates()
 
         valid_idx, dupl_idx = updt_rentab.validate_unique_puposicao(isin_data)
@@ -475,9 +477,6 @@ def run_pipeline():
     check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
     check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
 
-    isin_returns = update_returns_by_isin_dtposicao(intermediate_cfg, funds,
-                                                    portfolios, data_aux_path)
-
     name_standardization_rules = dta.read('name_standardization_rules')
     new_tipo_rules = dta.read('enrich_de_para_tipos')
     gestor_name_stopwords = dta.read('gestor_name_stopwords')
@@ -491,6 +490,9 @@ def run_pipeline():
     compute_metrics(funds, portfolios, types_series)
 
     validate_fund_graph_is_acyclic(funds)
+
+    isin_returns = update_returns_by_isin_dtposicao(intermediate_cfg, funds,
+                                                    portfolios, data_aux_path)
 
     isin_returns['dtposicao'] = pd.to_datetime(isin_returns['dtposicao']).dt.strftime('%Y%m%d')
     isin_returns['isin'] = isin_returns['isin'].astype(str)
@@ -507,6 +509,18 @@ def run_pipeline():
         how='left',
         suffixes=['', '_rentab']
     )
+
+    mask_over = funds['NEW_TIPO'] == 'OVER'
+    funds.loc[mask_over, 'rentab'] = (
+        funds.loc[mask_over, 'compromisso_puretorno']
+        / funds.loc[mask_over, 'pucompra']
+    ) - 1
+    if 'compromisso_puretorno' in portfolios.columns:
+        mask_over = portfolios['NEW_TIPO'] == 'OVER'
+        portfolios.loc[mask_over, 'rentab'] = (
+            portfolios.loc[mask_over, 'compromisso_puretorno']
+            / portfolios.loc[mask_over, 'pucompra']
+        ) - 1
 
     tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
 
