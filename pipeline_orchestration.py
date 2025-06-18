@@ -413,6 +413,39 @@ def validate_fund_graph_is_acyclic(funds):
         raise ValueError(f"Cycle detected in fund relationships: {cycle}") from excpt
 
 
+def assign_returns(entity, isin_returns):
+    """
+    Assigns return values to a fund or portfolio DataFrame using ISIN and date of position.
+    For assets of type 'OVER', the return is manually calculated using the ratio between 
+    'compromisso_puretorno' and 'pucompra', minus one.
+
+    Args:
+        entity (pd.DataFrame): DataFrame representing either funds or portfolios. Must contain:
+            'isin', 'dtposicao', 'NEW_TIPO', 'pucompra', and 'compromisso_puretorno'.
+        isin_returns (pd.DataFrame): DataFrame containing return data with columns:
+            'isin', 'dtposicao', and 'rentab'.
+
+    Returns:
+        pd.DataFrame: The updated entity DataFrame with the 'rentab' column assigned accordingly.
+    """
+    entity = entity.merge(
+        isin_returns[['isin', 'dtposicao', 'rentab']],
+        on=['isin', 'dtposicao'],
+        how='left',
+        suffixes=['', '_rentab']
+    )
+
+    mask_over = entity['NEW_TIPO'] == 'OVER'
+
+    if mask_over.any():
+        entity.loc[mask_over, 'rentab'] = ((
+            entity.loc[mask_over, 'compromisso_puretorno']
+            / entity.loc[mask_over, 'pucompra']
+        ) ** 21) - 1
+
+    return entity
+
+
 def build_horizontal_tree(funds, portfolios, data_aux_path):
     with log_timing('tree', 'build_tree'):
         tree_horzt = build_tree(funds, portfolios)
@@ -497,30 +530,9 @@ def run_pipeline():
     isin_returns['dtposicao'] = pd.to_datetime(isin_returns['dtposicao']).dt.strftime('%Y%m%d')
     isin_returns['isin'] = isin_returns['isin'].astype(str)
     isin_returns['rentab'] = isin_returns['rentab'].astype(float)
-    funds = funds.merge(
-        isin_returns[['isin', 'dtposicao', 'rentab']],
-        on=['isin', 'dtposicao'],
-        how='left',
-        suffixes=['', '_rentab']
-    )
-    portfolios = portfolios.merge(
-        isin_returns[['isin', 'dtposicao', 'rentab']],
-        on=['isin', 'dtposicao'],
-        how='left',
-        suffixes=['', '_rentab']
-    )
-
-    mask_over = funds['NEW_TIPO'] == 'OVER'
-    funds.loc[mask_over, 'rentab'] = (
-        funds.loc[mask_over, 'compromisso_puretorno']
-        / funds.loc[mask_over, 'pucompra']
-    ) - 1
-    if 'compromisso_puretorno' in portfolios.columns:
-        mask_over = portfolios['NEW_TIPO'] == 'OVER'
-        portfolios.loc[mask_over, 'rentab'] = (
-            portfolios.loc[mask_over, 'compromisso_puretorno']
-            / portfolios.loc[mask_over, 'pucompra']
-        ) - 1
+    
+    funds = assign_returns(funds, isin_returns)
+    portfolios = assign_returns(portfolios, isin_returns)
 
     tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
 
