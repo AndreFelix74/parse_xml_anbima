@@ -471,6 +471,9 @@ def load_config():
     data_aux_path = config['Paths']['data_aux_path']
     data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
 
+    mec_sac_path = config['Paths']['mec_sac_path']
+    mec_sac_path = f"{os.path.dirname(utl.format_path(mec_sac_path))}/"
+
     if not config.has_section('Debug'):
         raise KeyError('Missing [Debug] section in config.ini')
 
@@ -483,11 +486,57 @@ def load_config():
         'file_format': config['Paths'].get('destination_file_extension')
     }
 
-    return [xml_source_path, xlsx_destination_path, data_aux_path, intermediate_cfg]
+    return [xml_source_path, xlsx_destination_path, data_aux_path,
+            intermediate_cfg, mec_sac_path]
+
+
+def compute_adjust_plan_returns(tree_hrztl, data_aux_path, mec_sac_path):
+    with log_timing('plans_returns', 'load_mec_sac'):
+        mec_sac = aux_loader.load_mec_sac_last_day_month(mec_sac_path)
+
+    mec_sac['DT'] = pd.to_datetime(mec_sac['DT']).dt.strftime('%Y%m%d')
+
+    with log_timing('plans_returns', 'load_dcadplanosac'):
+        dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
+
+    dcadplanosac['CODCLI_SAC'] = dcadplanosac['CODCLI_SAC'].astype(str).str.strip()
+    mec_sac['CODCLI'] = mec_sac['CODCLI'].astype(str).str.strip()
+
+    dcadplanosac_mec_sac = dcadplanosac.merge(
+        mec_sac,
+        how='left',
+        left_on='CODCLI_SAC',
+        right_on='CODCLI'
+    )
+
+    dcadplanosac_mec_sac['total_pl'] = (
+        dcadplanosac_mec_sac.groupby(['CNPB', 'DT'])['VL_PATRLIQTOT1']
+        .transform('sum')
+    )
+
+    dcadplanosac_mec_sac['RENTAB_MES_PONDERADA'] = (
+        dcadplanosac_mec_sac['VL_PATRLIQTOT1']
+        / dcadplanosac_mec_sac['total_pl']
+        * dcadplanosac_mec_sac['RENTAB_MES']
+        )
+
+    rentab_mec = dcadplanosac_mec_sac.groupby(['CNPB', 'DT'], as_index=False)['RENTAB_MES_PONDERADA'].sum()
+    rentab_tree = tree_hrztl.groupby(['cnpb', 'dtposicao'], as_index=False)['rentab_ponderada'].sum()
+
+    ajuste = rentab_tree.merge(
+        rentab_mec,
+        left_on=['cnpb', 'dtposicao'],
+        right_on=['CNPB', 'DT'],
+        how='left'
+    )
+
+    ajuste['rentab_ponderada'] = ajuste['RENTAB_MES_PONDERADA'] - ajuste['rentab_ponderada']
+
+    return ajuste[['cnpb', 'dtposicao', 'rentab_ponderada']]
 
 
 def run_pipeline():
-    xml_source_path, xlsx_destination_path, data_aux_path, intermediate_cfg = load_config()
+    xml_source_path, xlsx_destination_path, data_aux_path, intermediate_cfg, mec_sac_path = load_config()
 
     setup_folders([xlsx_destination_path])
 
@@ -535,6 +584,10 @@ def run_pipeline():
     portfolios = assign_returns(portfolios, isin_returns)
 
     tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
+    adjust_rentab = compute_adjust_plan_returns(tree_hrztl, data_aux_path, mec_sac_path)
+    adjust_rentab['KEY_ESTRUTURA_GERENCIAL'] = '#AJUSTE'
+
+    tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
 
     with log_timing('finish', 'save_final_files'):
         file_frmt = intermediate_cfg['file_format']
