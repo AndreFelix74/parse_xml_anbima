@@ -490,7 +490,8 @@ def load_config():
             intermediate_cfg, mec_sac_path]
 
 
-def compute_adjust_plan_returns(tree_hrztl, data_aux_path, mec_sac_path):
+def compute_adjust_plan_returns(intermediate_cfg, tree_hrztl, data_aux_path,
+                                mec_sac_path):
     with log_timing('plans_returns', 'load_mec_sac'):
         mec_sac = aux_loader.load_mec_sac_last_day_month(mec_sac_path)
 
@@ -522,6 +523,10 @@ def compute_adjust_plan_returns(tree_hrztl, data_aux_path, mec_sac_path):
 
     rentab_mec = dcadplanosac_mec_sac.groupby(['CNPB', 'DT'], as_index=False)['RENTAB_MES_PONDERADA'].sum()
     rentab_tree = tree_hrztl.groupby(['cnpb', 'dtposicao'], as_index=False)['rentab_ponderada'].sum()
+
+    if intermediate_cfg['save']:
+        with log_timing('parse', 'save_parsed_raw_data') as log:
+            save_intermediate(rentab_mec, 'rentab-plano-mecsac', intermediate_cfg, log)
 
     ajuste = rentab_tree.merge(
         rentab_mec,
@@ -584,7 +589,8 @@ def run_pipeline():
     portfolios = assign_returns(portfolios, isin_returns)
 
     tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
-    adjust_rentab = compute_adjust_plan_returns(tree_hrztl, data_aux_path, mec_sac_path)
+    adjust_rentab = compute_adjust_plan_returns(intermediate_cfg, tree_hrztl,
+                                                data_aux_path, mec_sac_path)
     adjust_rentab['KEY_ESTRUTURA_GERENCIAL'] = '#AJUSTE'
 
     tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
