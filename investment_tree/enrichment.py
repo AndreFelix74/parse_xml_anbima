@@ -93,7 +93,6 @@ def enrich_tree(tree_horzt):
     max_deep = tree_horzt['nivel'].max()
 
     accumulate_columns_by_level(tree_horzt, 'equity_stake', 'equity_stake', max_deep)
-    accumulate_columns_by_level(tree_horzt, 'composicao', 'composicao', max_deep)
 
     for i in range(1, max_deep + 1):
         mask_deep = tree_horzt['nivel'] == i
@@ -102,6 +101,16 @@ def enrich_tree(tree_horzt):
             tree_horzt.loc[mask_deep, col_name]
             * tree_horzt.loc[mask_deep, 'equity_stake']
         )
+
+    tree_horzt['total_invest'] = (
+        tree_horzt.groupby(['cnpb', 'dtposicao'])['valor_calc']
+        .transform('sum')
+    )
+
+    tree_horzt['composicao'] = (
+        tree_horzt['valor_calc']
+        / tree_horzt['total_invest']
+    )
 
     for i in range(max_deep, -1, -1):
         mask_deep = tree_horzt['nivel'] == i

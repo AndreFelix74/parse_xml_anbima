@@ -156,17 +156,16 @@ def build_tree(funds, portfolios):
     Returns:
         pd.DataFrame: A combined DataFrame representing the horizontal fund tree.
     """
-    cols_funds = ['cnpj', 'dtposicao', 'cnpjfundo', 'equity_stake', 'composicao',
-                  'valor_calc', 'isin', 'NEW_TIPO', 'fNUMERACA.DESCRICAO',
-                  'fEMISSOR.NOME_EMISSOR', 'NEW_NOME_ATIVO', 'NEW_GESTOR',
-                  'NEW_GESTOR_WORD_CLOUD', 'rentab']
+    cols_funds = ['cnpj', 'dtposicao', 'cnpjfundo', 'equity_stake', 'valor_calc',
+                  'isin', 'NEW_TIPO', 'fNUMERACA.DESCRICAO', 'fEMISSOR.NOME_EMISSOR',
+                  'NEW_NOME_ATIVO', 'NEW_GESTOR', 'NEW_GESTOR_WORD_CLOUD', 'rentab']
 
     funds = funds[funds['valor_serie'] == 0][cols_funds].copy()
 
     cols_port = ['cnpjcpf', 'codcart', 'cnpb', 'dtposicao', 'nome', 'cnpjfundo',
-                 'equity_stake', 'composicao', 'valor_calc', 'isin',
-                 'NEW_TIPO', 'NEW_NOME_ATIVO', 'fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR',
-                 'NEW_GESTOR_WORD_CLOUD', 'rentab']
+                 'equity_stake', 'valor_calc', 'isin', 'NEW_TIPO', 'NEW_NOME_ATIVO',
+                 'fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR', 'NEW_GESTOR_WORD_CLOUD',
+                 'rentab']
 
     portfolios = portfolios[(portfolios['flag_rateio'] == 0) &
                             (portfolios['valor_serie'] == 0)][cols_port].copy()
