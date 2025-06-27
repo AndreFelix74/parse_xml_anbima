@@ -524,10 +524,6 @@ def compute_adjust_plan_returns(intermediate_cfg, tree_hrztl, data_aux_path,
     rentab_mec = dcadplanosac_mec_sac.groupby(['CNPB', 'DT'], as_index=False)['RENTAB_MES_PONDERADA'].sum()
     rentab_tree = tree_hrztl.groupby(['cnpb', 'dtposicao'], as_index=False)['rentab_ponderada'].sum()
 
-    if intermediate_cfg['save']:
-        with log_timing('parse', 'save_parsed_raw_data') as log:
-            save_intermediate(rentab_mec, 'rentab-plano-mecsac', intermediate_cfg, log)
-
     ajuste = rentab_tree.merge(
         rentab_mec,
         left_on=['cnpb', 'dtposicao'],
@@ -535,7 +531,16 @@ def compute_adjust_plan_returns(intermediate_cfg, tree_hrztl, data_aux_path,
         how='left'
     )
 
-    ajuste['rentab_ponderada'] = ajuste['RENTAB_MES_PONDERADA'] - ajuste['rentab_ponderada']
+    if intermediate_cfg['save']:
+        with log_timing('parse', 'save_parsed_raw_data') as log:
+            save_intermediate(rentab_mec, 'rentab-plano-mecsac', intermediate_cfg, log)
+            save_intermediate(rentab_tree, 'rentab-plano-tree', intermediate_cfg, log)
+            save_intermediate(ajuste, 'rentab-plano-ajuste', intermediate_cfg, log)
+
+    ajuste['rentab_ponderada'] = (
+        ajuste['RENTAB_MES_PONDERADA']
+        - ajuste['rentab_ponderada']
+        )
 
     return ajuste[['cnpb', 'dtposicao', 'rentab_ponderada']]
 
@@ -584,7 +589,7 @@ def run_pipeline():
     isin_returns['dtposicao'] = pd.to_datetime(isin_returns['dtposicao']).dt.strftime('%Y%m%d')
     isin_returns['isin'] = isin_returns['isin'].astype(str)
     isin_returns['rentab'] = isin_returns['rentab'].astype(float)
-    
+
     funds = assign_returns(funds, isin_returns)
     portfolios = assign_returns(portfolios, isin_returns)
 
