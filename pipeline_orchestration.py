@@ -591,7 +591,12 @@ def run_pipeline():
     tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
     adjust_rentab = compute_adjust_plan_returns(intermediate_cfg, tree_hrztl,
                                                 data_aux_path, mec_sac_path)
-    adjust_rentab['KEY_ESTRUTURA_GERENCIAL'] = '#AJUSTE'
+    adjust_rentab['nivel'] = '0'
+    cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
+                   'NEW_NOME_ATIVO', 'SEARCH', 'NEW_TIPO_FINAL',
+                   'NEW_NOME_ATIVO_FINAL', 'isin']
+    for col in cols_adjust:
+        adjust_rentab[col] = '#AJUSTE'
 
     tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
 
