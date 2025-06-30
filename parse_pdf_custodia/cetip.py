@@ -22,14 +22,16 @@ def get_header(page_text):
         list[Optional[str]]: List with [code, participant name]. None values if
             not found.
     """
-    rgx_particpnt = r'([A-Z0-9 \-]+)\n([\d\.\-]+)\n'
+    rgx_particpnt = r'Vencimento\n\d{2}\/\d{2}\/\d{4}\n([\s\S]+?)\n(?:[\d\.\-]+\n)?Tipo de Posicao'
+    rgx_codigo = r'Vencimento\n\d{2}\/\d{2}\/\d{4}\n[\s\S]+?\n([\d\.\-]+\n)Tipo de Posicao'
+    
+    particpnt_match = re.search(rgx_particpnt, page_text)
+    codigo_match = re.search(rgx_codigo, page_text)
 
-    part_match= re.search(rgx_particpnt, page_text)
+    particpnt = particpnt_match.group(1).strip() if particpnt_match else None
+    codigo = codigo_match.group(1).strip() if codigo_match else None
 
-    if part_match:
-        return [part_match.group(2).strip(), part_match.group(1).strip()]
-
-    return [None, None]
+    return [particpnt, codigo]
 
 
 def parse_file(file_name):
