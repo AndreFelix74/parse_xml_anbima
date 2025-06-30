@@ -144,18 +144,21 @@ def convert_parsed_to_dataframe(parsed_selic_content, parsed_cetip_content):
     """
     selic_cols = ['arquivo', 'conta', 'data ref', 'Carteira c/d', 'Carteira Qtd',
                   'A revender', 'A recomprar', 'isin', 'Fechamento', 'Abertura',
-                  'Titulo Vencimento', 'Titulo Nome', 'Titulo Cod', ]
+                  'Titulo Vencimento', 'Titulo Nome', 'Titulo Cod' ]
     flattened = [row for file_rows in parsed_selic_content for row in file_rows]
     custodia_selic = pd.DataFrame(flattened, columns=selic_cols)
+    cols_float = ['Carteira Qtd', 'A revender', 'A recomprar', 'Fechamento', 'Abertura']
+    for col in cols_float:
+        custodia_selic[col] = custodia_selic[col].astype(float)
 
     cetip_cols = ['arquivo', 'codigo', 'participante', 'Fundo (IF)', 'Tipo IF',
                   'Data Inicio', 'Data Venc', 'Data Ref', 'Quantidade', 'PU',
                   'Financeiro', 'Tipo Posicao']
     flattened = [row for file_rows in parsed_cetip_content for row in file_rows]
     custodia_cetip = pd.DataFrame(flattened, columns=cetip_cols)
-    custodia_cetip['Quantidade'] = custodia_cetip['Quantidade'].astype(float)
-    custodia_cetip['PU'] = custodia_cetip['PU'].astype(float)
-    custodia_cetip['Financeiro'] = custodia_cetip['Financeiro'].astype(float)
+    cols_float = ['Quantidade', 'PU', 'Financeiro']
+    for col in cols_float:
+        custodia_cetip[col] = custodia_cetip[col].astype(float)
 
     return [custodia_selic, custodia_cetip]
 
