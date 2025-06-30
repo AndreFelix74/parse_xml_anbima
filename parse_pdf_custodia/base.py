@@ -39,7 +39,7 @@ def extract_raw_rows(file_name, rgx_fields, get_header):
 
         matches = patt_row.findall(page_text)
         for row_match in matches:
-            raw_rows.append([file_name] + header + list(row_match))
+            raw_rows.append(header + list(row_match) + [file_name])
 
     return raw_rows
 
