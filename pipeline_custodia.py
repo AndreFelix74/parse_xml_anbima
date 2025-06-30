@@ -153,6 +153,9 @@ def convert_parsed_to_dataframe(parsed_selic_content, parsed_cetip_content):
                   'Tipo Posicao']
     flattened = [row for file_rows in parsed_cetip_content for row in file_rows]
     custodia_cetip = pd.DataFrame(flattened, columns=cetip_cols)
+    custodia_cetip['Quantidade'] = custodia_cetip['Quantidade'].astype(float)
+    custodia_cetip['PU'] = custodia_cetip['PU'].astype(float)
+    custodia_cetip['Financeiro'] = custodia_cetip['Financeiro'].astype(float)
 
     return [custodia_selic, custodia_cetip]
 
