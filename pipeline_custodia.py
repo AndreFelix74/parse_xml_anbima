@@ -12,9 +12,10 @@ import multiprocessing
 import pandas as pd
 from logger import log_timing
 
+import auxiliary_loaders as aux_loader
 from parse_pdf_custodia import cetip, selic
 import util as utl
-from file_handler import save_df
+from file_handler import save_df, load_df
 
 
 def load_config():
@@ -30,6 +31,12 @@ def load_config():
     """
     config = utl.load_config('config.ini')
 
+    data_aux_path = config['Paths']['data_aux_path']
+    data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
+
+    xlsx_destination_path = config['Paths']['xlsx_destination_path']
+    xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
+
     custodia_source_path = config['Paths']['custodia_source_path']
     custodia_source_path = f"{os.path.dirname(utl.format_path(custodia_source_path))}/"
 
@@ -42,7 +49,8 @@ def load_config():
         'file_format': config['Paths'].get('destination_file_extension')
     }
 
-    return [custodia_source_path, custodia_destin_path, intermediate_cfg]
+    return [custodia_source_path, custodia_destin_path, intermediate_cfg,
+            data_aux_path, xlsx_destination_path]
 
 
 def setup_folders(paths):
@@ -162,6 +170,49 @@ def convert_parsed_to_dataframe(parsed_selic_content, parsed_cetip_content):
 
     return [custodia_selic, custodia_cetip]
 
+def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_cetip):
+    dcad_crt_brad['CNPJ'] = dcad_crt_brad['CNPJ'].astype(str).str.zfill(14)
+    portfolios.rename(columns={'cnpjcpf': 'cnpj'}, inplace=True)
+    cols_recon = ['cnpj', 'qtdisponivel', 'qtgarantia', 'isin', 'NEW_TIPO', 'dtposicao']
+    type_recon = ['TPF', 'OVER', 'COTAS']
+    portfolios = portfolios[portfolios['NEW_TIPO'].isin(type_recon)][cols_recon]
+    portfolios['qttotal'] = portfolios['qtdisponivel'] + portfolios['qtgarantia']
+
+    portfolios['cnpj'] = portfolios['cnpj'].astype(str).str.zfill(14)
+    funds['cnpj'] = funds['cnpj'].astype(str).str.zfill(14)
+
+    funds = funds[funds['NEW_TIPO'].isin(type_recon)][cols_recon]
+    funds['qttotal'] = funds['qtdisponivel'] + funds['qtgarantia']
+
+    aux = pd.concat([portfolios, funds])
+    position = aux.groupby(['cnpj', 'isin', 'NEW_TIPO', 'dtposicao'], as_index=False)['qttotal'].sum()
+    position['cnpj'] = position['cnpj'].astype(str)
+
+    position = position.merge(
+        dcad_crt_brad[['CNPJ', 'SELIC', 'CETIP']],
+        left_on=['cnpj'],
+        right_on=['CNPJ'],
+        how='left'
+        )
+
+    position['dtposicao'] = position['dtposicao'].astype(str)
+    custodia_selic['data ref'] = custodia_selic['data ref'].astype('datetime64[s]').dt.strftime('%Y%m%d')
+
+    recon_selic = position[position['NEW_TIPO'] != 'COTAS'].merge(
+        custodia_selic,
+        left_on=['SELIC', 'dtposicao', 'isin'],
+        right_on=['conta', 'data ref', 'isin'],
+        how='left'
+        )
+
+    recon_cetip = position[position['NEW_TIPO'] == 'COTAS'].merge(
+        custodia_selic,
+        left_on=['CETIP', 'dtposicao', 'isin'],
+        right_on=['conta', 'data ref', 'isin'],
+        how='left'
+        )
+
+    return [recon_selic, recon_cetip]
 
 def run_pipeline():
     """
@@ -170,7 +221,7 @@ def run_pipeline():
     Loads configuration, sets up folders, parses files in parallel, 
     converts results into DataFrames, and saves final outputs.
     """
-    custodia_source_path, custodia_destin_path, intermediate_cfg = load_config()
+    custodia_source_path, custodia_destin_path, intermediate_cfg, data_aux_path, xlsx_destination_path = load_config()
 
     setup_folders([custodia_destin_path])
 
@@ -180,10 +231,21 @@ def run_pipeline():
     custodia_selic, custodia_cetip = convert_parsed_to_dataframe(parsed_selic_content,
                                                                  parsed_cetip_content)
 
+    file_frmt = intermediate_cfg['file_format']
+
+    with log_timing('reconciliation', 'load_aux_data'):
+        dcad_crt_brad = aux_loader.load_dcad_crt_brad(data_aux_path)
+        portfolios = load_df(f"{xlsx_destination_path}carteiras", file_frmt)
+        funds = load_df(f"{xlsx_destination_path}fundos", file_frmt)
+
+    with log_timing('reconciliation', 'merging'):
+        recon_selic, recon_cetip = reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_cetip)
+
     with log_timing('finish_custodia', 'save_final_files'):
-        file_frmt = intermediate_cfg['file_format']
         save_df(custodia_selic, f"{custodia_destin_path}custodia_selic", file_frmt)
         save_df(custodia_cetip, f"{custodia_destin_path}custodia_cetip", file_frmt)
+        save_df(recon_selic, f"{custodia_destin_path}reconciliacao_selic", file_frmt)
+        save_df(recon_cetip, f"{custodia_destin_path}reconciliacao_cetip", file_frmt)
 
 
 if __name__ == "__main__":
