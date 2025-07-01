@@ -182,15 +182,22 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
 
     portfolios.rename(columns={'cnpjcpf': 'cnpj'}, inplace=True)
     cols_recon = ['cnpj', 'qtdisponivel', 'qtgarantia', 'isin', 'NEW_TIPO', 'dtposicao']
-    type_recon = ['TPF', 'OVER', 'COTAS']
-    portfolios = portfolios[portfolios['NEW_TIPO'].isin(type_recon)][cols_recon]
+    # type_recon = ['TPF', 'OVER', 'COTAS']
+    # portfolios = portfolios[portfolios['NEW_TIPO'].isin(type_recon)][cols_recon]
+    portfolios = portfolios[cols_recon].copy()
+    portfolios['qtdisponivel'] = portfolios['qtdisponivel'].astype(float)
+    portfolios['qtgarantia'] = portfolios['qtgarantia'].astype(float)
     portfolios['qttotal'] = portfolios['qtdisponivel'] + portfolios['qtgarantia']
 
     portfolios['cnpj'] = portfolios['cnpj'].astype(str).str.zfill(14)
     funds['cnpj'] = funds['cnpj'].astype(str).str.zfill(14)
 
-    funds = funds[funds['NEW_TIPO'].isin(type_recon)][cols_recon]
+    # funds = funds[funds['NEW_TIPO'].isin(type_recon)][cols_recon]
+    funds = funds[cols_recon].copy()
+    funds['qtdisponivel'] = funds['qtdisponivel'].astype(float)
+    funds['qtgarantia'] = funds['qtgarantia'].astype(float)
     funds['qttotal'] = funds['qtdisponivel'] + funds['qtgarantia']
+    funds['qttotal'] = funds['qttotal'].astype(float)
 
     aux = pd.concat([portfolios, funds])
     position = aux.groupby(['cnpj', 'isin', 'NEW_TIPO', 'dtposicao'], as_index=False)['qttotal'].sum()
@@ -213,16 +220,18 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
         right_on=['conta', 'data ref', 'isin'],
         how='left'
         )
-#remover CETIP
-#deixar somente o nome do arquivo sem o caminho
+    recon_selic.drop(columns='CETIP', inplace=True)
+
     recon_cetip = position[position['NEW_TIPO'] == 'COTAS'].merge(
         custodia_cetip,
         left_on=['CETIP', 'dtposicao', 'isin'],
         right_on=['codigo', 'data', 'Fundo (IF)'],
         how='left'
         )
-#remover SELIC
+    recon_cetip.drop(columns='SELIC', inplace=True)
+
     return [recon_selic, recon_cetip]
+
 
 def run_pipeline():
     """
