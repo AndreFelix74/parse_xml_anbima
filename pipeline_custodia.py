@@ -179,21 +179,17 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
         + dcad_crt_brad['CETIP'].str.slice(-1)
         )
 
-
     portfolios.rename(columns={'cnpjcpf': 'cnpj'}, inplace=True)
     cols_recon = ['cnpj', 'qtdisponivel', 'qtgarantia', 'isin', 'NEW_TIPO', 'dtposicao']
-    # type_recon = ['TPF', 'OVER', 'COTAS']
-    # portfolios = portfolios[portfolios['NEW_TIPO'].isin(type_recon)][cols_recon]
-    portfolios = portfolios[cols_recon].copy()
+    type_recon = ['TPF', 'OVER', 'TERMORF']
+    portfolios = portfolios[portfolios['NEW_TIPO'].isin(type_recon)][cols_recon].copy()
+    portfolios['cnpj'] = portfolios['cnpj'].astype(str).str.zfill(14)
     portfolios['qtdisponivel'] = portfolios['qtdisponivel'].astype(float)
     portfolios['qtgarantia'] = portfolios['qtgarantia'].astype(float)
     portfolios['qttotal'] = portfolios['qtdisponivel'] + portfolios['qtgarantia']
 
-    portfolios['cnpj'] = portfolios['cnpj'].astype(str).str.zfill(14)
-    funds['cnpj'] = funds['cnpj'].astype(str).str.zfill(14)
-
-    # funds = funds[funds['NEW_TIPO'].isin(type_recon)][cols_recon]
     funds = funds[cols_recon].copy()
+    funds['cnpj'] = funds['cnpj'].astype(str).str.zfill(14)
     funds['qtdisponivel'] = funds['qtdisponivel'].astype(float)
     funds['qtgarantia'] = funds['qtgarantia'].astype(float)
     funds['qttotal'] = funds['qtdisponivel'] + funds['qtgarantia']
@@ -203,19 +199,22 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
     position = aux.groupby(['cnpj', 'isin', 'NEW_TIPO', 'dtposicao'], as_index=False)['qttotal'].sum()
     position['cnpj'] = position['cnpj'].astype(str)
 
-    position = position.merge(
+    position = position[position['NEW_TIPO'].isin(['TPF', 'OVER', 'TERMORF'])].merge(
         dcad_crt_brad[['cnpj', 'SELIC', 'CETIP']],
         left_on=['cnpj'],
         right_on=['cnpj'],
-        how='left'
+        how='inner'
         )
 
     position['dtposicao'] = position['dtposicao'].astype(str)
     custodia_selic['data ref'] = custodia_selic['data ref'].astype('datetime64[s]').dt.strftime('%Y%m%d')
     custodia_cetip['data'] = custodia_cetip['data'].astype('datetime64[s]').dt.strftime('%Y%m%d')
 
+    cols_selic = ['conta', 'data ref', 'isin', 'Titulo Vencimento',
+                  'Titulo Nome', 'Titulo Cod', 'arquivo']
+    selic = custodia_selic.groupby(cols_selic, as_index=False)['Fechamento'].sum()
     recon_selic = position[position['NEW_TIPO'] != 'COTAS'].merge(
-        custodia_selic[['conta', 'data ref', 'isin', 'Fechamento', 'Titulo Vencimento', 'Titulo Nome', 'Titulo Cod', 'arquivo']],
+        selic,
         left_on=['SELIC', 'dtposicao', 'isin'],
         right_on=['conta', 'data ref', 'isin'],
         how='left'
