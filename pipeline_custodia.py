@@ -171,7 +171,15 @@ def convert_parsed_to_dataframe(parsed_selic_content, parsed_cetip_content):
     return [custodia_selic, custodia_cetip]
 
 def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_cetip):
-    dcad_crt_brad['CNPJ'] = dcad_crt_brad['CNPJ'].astype(str).str.zfill(14)
+    dcad_crt_brad['cnpj'] = dcad_crt_brad['CNPJ'].astype(str).str.zfill(14)
+    dcad_crt_brad['CETIP'] = dcad_crt_brad['CETIP'].astype(str).str.zfill(8)
+    dcad_crt_brad['CETIP'] = (
+        dcad_crt_brad['CETIP'].str.slice(0, -1)
+        + '-'
+        + dcad_crt_brad['CETIP'].str.slice(-1)
+        )
+
+
     portfolios.rename(columns={'cnpjcpf': 'cnpj'}, inplace=True)
     cols_recon = ['cnpj', 'qtdisponivel', 'qtgarantia', 'isin', 'NEW_TIPO', 'dtposicao']
     type_recon = ['TPF', 'OVER', 'COTAS']
@@ -189,9 +197,9 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
     position['cnpj'] = position['cnpj'].astype(str)
 
     position = position.merge(
-        dcad_crt_brad[['CNPJ', 'SELIC', 'CETIP']],
+        dcad_crt_brad[['cnpj', 'SELIC', 'CETIP']],
         left_on=['cnpj'],
-        right_on=['CNPJ'],
+        right_on=['cnpj'],
         how='left'
         )
 
@@ -200,19 +208,20 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
     custodia_cetip['data'] = custodia_cetip['data'].astype('datetime64[s]').dt.strftime('%Y%m%d')
 
     recon_selic = position[position['NEW_TIPO'] != 'COTAS'].merge(
-        custodia_selic,
+        custodia_selic[['conta', 'data ref', 'isin', 'Fechamento', 'Titulo Vencimento', 'Titulo Nome', 'Titulo Cod', 'arquivo']],
         left_on=['SELIC', 'dtposicao', 'isin'],
         right_on=['conta', 'data ref', 'isin'],
         how='left'
         )
-
+#remover CETIP
+#deixar somente o nome do arquivo sem o caminho
     recon_cetip = position[position['NEW_TIPO'] == 'COTAS'].merge(
         custodia_cetip,
         left_on=['CETIP', 'dtposicao', 'isin'],
         right_on=['codigo', 'data', 'Fundo (IF)'],
         how='left'
         )
-
+#remover SELIC
     return [recon_selic, recon_cetip]
 
 def run_pipeline():
