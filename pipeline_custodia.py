@@ -180,9 +180,10 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
         + dcad_crt_brad['CETIP'].str.slice(-1)
         )
 
-    portfolios.rename(columns={'cnpjcpf': 'cnpj'}, inplace=True)
     cols_recon = ['cnpj', 'qtdisponivel', 'qtgarantia', 'isin', 'NEW_TIPO', 'dtposicao']
     type_recon = ['TPF', 'OVER', 'TERMORF']
+
+    portfolios.rename(columns={'cnpjcpf': 'cnpj'}, inplace=True)
     portfolios = portfolios[portfolios['NEW_TIPO'].isin(type_recon)][cols_recon].copy()
     portfolios['cnpj'] = portfolios['cnpj'].astype(str).str.zfill(14)
     portfolios['qtdisponivel'] = portfolios['qtdisponivel'].astype(float)
@@ -214,7 +215,7 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
     cols_selic = ['conta', 'data ref', 'isin', 'Titulo Vencimento',
                   'Titulo Nome', 'Titulo Cod', 'arquivo']
     selic = custodia_selic.groupby(cols_selic, as_index=False)['Fechamento'].sum()
-    recon_selic = position[position['NEW_TIPO'] != 'COTAS'].merge(
+    recon_selic = position.merge(
         selic,
         left_on=['SELIC', 'dtposicao', 'isin'],
         right_on=['conta', 'data ref', 'isin'],
@@ -222,7 +223,7 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
         )
     recon_selic.drop(columns='CETIP', inplace=True)
 
-    recon_cetip = position[position['NEW_TIPO'] == 'COTAS'].merge(
+    recon_cetip = position.merge(
         custodia_cetip,
         left_on=['CETIP', 'dtposicao', 'isin'],
         right_on=['codigo', 'data', 'Fundo (IF)'],
