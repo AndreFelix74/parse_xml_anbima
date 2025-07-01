@@ -9,6 +9,7 @@ Created on Mon Jun 30 11:37:55 2025
 
 import os
 import multiprocessing
+import numpy as np
 import pandas as pd
 from logger import log_timing
 
@@ -173,7 +174,11 @@ def convert_parsed_to_dataframe(parsed_selic_content, parsed_cetip_content):
 
 def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_cetip):
     dcad_crt_brad['cnpj'] = dcad_crt_brad['CNPJ'].astype(str).str.zfill(14)
-    dcad_crt_brad['SELIC'] = dcad_crt_brad['SELIC'].astype(str).str.zfill(9)
+    dcad_crt_brad['SELIC'] = np.where(
+        dcad_crt_brad['SELIC'].notnull(),
+        dcad_crt_brad['SELIC'].astype(str).str.zfill(9),
+        None
+    )
     dcad_crt_brad['CETIP'] = dcad_crt_brad['CETIP'].astype(str).str.zfill(8)
     dcad_crt_brad['CETIP'] = (
         dcad_crt_brad['CETIP'].str.slice(0, -1)
@@ -216,11 +221,11 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
     cols_selic = ['conta', 'data ref', 'isin', 'Titulo Vencimento',
                   'Titulo Nome', 'Titulo Cod', 'arquivo']
     selic = custodia_selic.groupby(cols_selic, as_index=False)['Fechamento'].sum()
+    selic.rename(columns={'data ref': 'dtposicao', 'conta': 'SELIC'}, inplace=True)
     recon_selic = position.merge(
         selic,
-        left_on=['SELIC', 'dtposicao', 'isin'],
-        right_on=['conta', 'data ref', 'isin'],
-        how='left'
+        on=['SELIC', 'dtposicao', 'isin'],
+        how='outer'
         )
     recon_selic.drop(columns='CETIP', inplace=True)
 
