@@ -186,7 +186,8 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
         + dcad_crt_brad['CETIP'].str.slice(-1)
         )
 
-    cols_recon = ['cnpj', 'qtdisponivel', 'qtgarantia', 'isin', 'NEW_TIPO', 'dtposicao']
+    cols_recon = ['cnpj', 'qtdisponivel', 'qtgarantia', 'isin', 'NEW_TIPO',
+                  'dtposicao', 'valor_calc']
     type_recon = ['TPF', 'OVER', 'TERMORF']
 
     portfolios.rename(columns={'cnpjcpf': 'cnpj'}, inplace=True)
@@ -204,7 +205,7 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
     funds['qttotal'] = funds['qttotal'].astype(float)
 
     aux = pd.concat([portfolios, funds])
-    position = aux.groupby(['cnpj', 'isin', 'dtposicao'], as_index=False)['qttotal'].sum()
+    position = aux.groupby(['cnpj', 'isin', 'dtposicao'], as_index=False)[['qttotal', 'valor_calc']].sum()
     position['cnpj'] = position['cnpj'].astype(str)
 
     position = position.merge(
@@ -228,6 +229,7 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
         how='outer'
         )
     recon_selic.drop(columns='CETIP', inplace=True)
+    recon_selic['dif_xml_selic'] = recon_selic['qttotal'] - recon_selic['Fechamento']
 
     recon_cetip = position.merge(
         custodia_cetip,
