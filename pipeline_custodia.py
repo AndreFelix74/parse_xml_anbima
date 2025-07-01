@@ -229,7 +229,9 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
         how='outer'
         )
     recon_selic.drop(columns='CETIP', inplace=True)
-    recon_selic['dif_xml_selic'] = recon_selic['qttotal'] - recon_selic['Fechamento']
+    recon_selic['dif_xml_selic'] = (
+        (recon_selic['qttotal'].fillna(0) - recon_selic['Fechamento'].fillna(0)).abs()
+    )
 
     recon_cetip = position.merge(
         custodia_cetip,
