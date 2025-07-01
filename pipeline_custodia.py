@@ -251,6 +251,7 @@ def run_pipeline():
     with log_timing('reconciliation', 'merging'):
         recon_selic, recon_cetip = reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_cetip)
 
+    file_frmt = 'xlsx' #intermediate_cfg['file_format']
     with log_timing('finish_custodia', 'save_final_files'):
         save_df(custodia_selic, f"{custodia_destin_path}custodia_selic", file_frmt)
         save_df(custodia_cetip, f"{custodia_destin_path}custodia_cetip", file_frmt)
