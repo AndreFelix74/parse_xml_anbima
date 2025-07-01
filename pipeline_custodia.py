@@ -173,6 +173,7 @@ def convert_parsed_to_dataframe(parsed_selic_content, parsed_cetip_content):
 
 def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_cetip):
     dcad_crt_brad['cnpj'] = dcad_crt_brad['CNPJ'].astype(str).str.zfill(14)
+    dcad_crt_brad['SELIC'] = dcad_crt_brad['SELIC'].astype(str).str.zfill(9)
     dcad_crt_brad['CETIP'] = dcad_crt_brad['CETIP'].astype(str).str.zfill(8)
     dcad_crt_brad['CETIP'] = (
         dcad_crt_brad['CETIP'].str.slice(0, -1)
