@@ -159,9 +159,9 @@ def convert_parsed_to_dataframe(parsed_selic_content, parsed_cetip_content):
     for col in cols_float:
         custodia_selic[col] = custodia_selic[col].astype(float)
 
-    cetip_cols = ['codigo', 'participante', 'Fundo (IF)', 'Tipo IF', 'Data Inicio',
-                  'Data Venc', 'Data Ref', 'Quantidade', 'PU', 'Financeiro',
-                  'Tipo Posicao', 'arquivo']
+    cetip_cols = ['participante', 'codigo', 'data', 'Fundo (IF)', 'Tipo IF',
+                  'Data Inicio', 'Data Venc', 'Data Ref', 'Quantidade', 'PU',
+                  'Financeiro', 'Tipo Posicao', 'arquivo']
     flattened = [row for file_rows in parsed_cetip_content for row in file_rows]
     custodia_cetip = pd.DataFrame(flattened, columns=cetip_cols)
     cols_float = ['Quantidade', 'PU', 'Financeiro']
@@ -197,6 +197,7 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
 
     position['dtposicao'] = position['dtposicao'].astype(str)
     custodia_selic['data ref'] = custodia_selic['data ref'].astype('datetime64[s]').dt.strftime('%Y%m%d')
+    custodia_cetip['data'] = custodia_cetip['data'].astype('datetime64[s]').dt.strftime('%Y%m%d')
 
     recon_selic = position[position['NEW_TIPO'] != 'COTAS'].merge(
         custodia_selic,
@@ -206,9 +207,9 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
         )
 
     recon_cetip = position[position['NEW_TIPO'] == 'COTAS'].merge(
-        custodia_selic,
+        custodia_cetip,
         left_on=['CETIP', 'dtposicao', 'isin'],
-        right_on=['conta', 'data ref', 'isin'],
+        right_on=['codigo', 'data', 'Fundo (IF)'],
         how='left'
         )
 
