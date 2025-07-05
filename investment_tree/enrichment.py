@@ -123,7 +123,8 @@ def enrich_tree(tree_horzt):
         tree_horzt.loc[mask_deep, 'rentab_nominal'] = tree_horzt.loc[mask_deep, col_returns]
 
     base_final_cols = [
-        'NEW_TIPO', 'NEW_NOME_ATIVO', 'NEW_GESTOR_WORD_CLOUD', 'fEMISSOR.NOME_EMISSOR'
+        'NEW_TIPO', 'NEW_NOME_ATIVO', 'NEW_GESTOR_WORD_CLOUD',
+        'fEMISSOR.NOME_EMISSOR', 'fNUMERACA.DESCRICAO'
     ]
     for base_col in base_final_cols:
         create_column_based_on_levels(tree_horzt, f"{base_col}_FINAL", base_col, max_deep)
@@ -137,4 +138,5 @@ def enrich_tree(tree_horzt):
         + ' ' + tree_horzt['NEW_GESTOR_WORD_CLOUD_FINAL'].fillna('')
         + ' ' + tree_horzt['fEMISSOR.NOME_EMISSOR_FINAL'].fillna('')
         + ' ' + tree_horzt['PARENT_FUNDO'].fillna('')
+        + ' ' + tree_horzt['isin'].fillna('')
     )
