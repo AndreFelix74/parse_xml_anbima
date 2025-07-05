@@ -60,18 +60,33 @@ def generate_position_grid(base: pd.DataFrame, range_date) -> pd.DataFrame:
     return merged
 
 
-def update_returns_from_puposicao(range_date, new_data, persisted_returns):
+def compute_returns_from_puposicao(range_date, new_data, persisted_returns):
     """
-    Validates new position data, merges it with persisted returns,
-    fills missing dates, and calculates return (rentab) with Excel-safe precision.
+    Computes a time series of position returns ('rentab') from updated 'puposicao' values.
 
-    Args:
-        range_date: Sequence of dates to generate the time grid.
-        new_data: DataFrame with new position data.
-        persisted_returns: DataFrame with previously stored position data.
+    This function merges newly received position data with previously stored data,
+    fills in missing dates over a specified range, and calculates daily returns 
+    using percentage change. It ensures consistency and handles duplicate checks 
+    before performing the calculation.
+
+    Parameters:
+    ----------
+    range_date : Sequence
+        A sequence of datetime objects representing the target date range.
+
+    new_data : pd.DataFrame
+        DataFrame with new position data. Must contain columns
+            ['isin', 'dtposicao', 'puposicao'].
+
+    persisted_returns : pd.DataFrame
+        Previously stored position data with the same column structure as `new_data`.
 
     Returns:
-        DataFrame with columns: isin, dtposicao, puposicao, rentab
+    -------
+    pd.DataFrame
+        DataFrame with columns ['isin', 'dtposicao', 'puposicao', 'rentab'],
+            where 'rentab' represents the percentage change in 'puposicao'
+            across dates per 'isin'.
     """
     dupl_idx = _find_duplicate_puposicao(new_data)
     if not dupl_idx.empty:

@@ -18,11 +18,15 @@ from logger import log_timing, RUN_ID
 import auxiliary_loaders as aux_loader
 import parse_xml_anbima as parser
 import clean_and_prepare_raw_data as cleaner
-import update_returns_by_puposicao as updt_rentab
 import integrity_checks as checker
 import carteiras_operations as crt
 import enrich_and_classify_data as enricher
 import compute_metrics as metrics
+from returns import (
+    compute_plan_returns_adjustment,
+    compute_returns_from_puposicao,
+    validate_unique_puposicao
+    )
 from investment_tree import build_tree, enrich_tree
 from reporting import assign_governance_struct_keys
 import util as utl
@@ -251,8 +255,18 @@ def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
     return [funds, portfolios]
 
 
-def update_returns_by_isin_dtposicao(intermediate_cfg, funds, portfolios, data_aux_path):
-    with log_timing('enrich', 'update_returns_by_isin_dtposicao') as log:
+def compute_and_persist_isin_returns(intermediate_cfg, funds, portfolios, data_aux_path):
+    """
+    Computes return series by ISIN and saves them to disk.
+
+    This function both returns the computed DataFrame and writes it to the expected location
+    to avoid unnecessary reloading. While this violates the single responsibility principle,
+    it is intentional for performance reasons.
+
+    Returns:
+        pd.DataFrame: Return series per ISIN and date.
+    """
+    with log_timing('plan_returns', 'update_returns_by_isin_dtposicao') as log:
         range_eom = aux_loader.load_range_eom(data_aux_path)
         range_eom = pd.to_datetime(range_eom['DATA_POSICAO'].unique())
 
@@ -264,7 +278,7 @@ def update_returns_by_isin_dtposicao(intermediate_cfg, funds, portfolios, data_a
             portfolios[port_mask][group_cols].drop_duplicates()
             ]).drop_duplicates()
 
-        valid_idx, dupl_idx = updt_rentab.validate_unique_puposicao(isin_data)
+        valid_idx, dupl_idx = validate_unique_puposicao(isin_data)
         if len(dupl_idx) > 0:
             cols = ['isin', 'dtposicao', 'puposicao']
             duplicated_data = isin_data.loc[dupl_idx, cols]
@@ -281,7 +295,7 @@ def update_returns_by_isin_dtposicao(intermediate_cfg, funds, portfolios, data_a
 
         persisted_returns = aux_loader.load_returns_by_puposicao(data_aux_path)
 
-        updated_returns = updt_rentab.update_returns_from_puposicao(
+        updated_returns = compute_returns_from_puposicao(
             range_date=range_eom,
             new_data=isin_data.loc[valid_idx],
             persisted_returns=persisted_returns
@@ -490,63 +504,51 @@ def load_config():
             intermediate_cfg, mec_sac_path]
 
 
-def compute_adjust_plan_returns(intermediate_cfg, tree_hrztl, data_aux_path,
+def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
                                 mec_sac_path):
     with log_timing('plans_returns', 'load_mec_sac'):
         mec_sac = aux_loader.load_mec_sac_last_day_month(mec_sac_path)
 
-    mec_sac['DT'] = pd.to_datetime(mec_sac['DT']).dt.strftime('%Y%m%d')
-
     with log_timing('plans_returns', 'load_dcadplanosac'):
         dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
 
-    dcadplanosac['CODCLI_SAC'] = dcadplanosac['CODCLI_SAC'].astype(str).str.strip()
-    mec_sac['CODCLI'] = mec_sac['CODCLI'].astype(str).str.strip()
-
-    dcadplanosac_mec_sac = dcadplanosac.merge(
-        mec_sac,
-        how='left',
-        left_on='CODCLI_SAC',
-        right_on='CODCLI'
-    )
-
-    dcadplanosac_mec_sac['total_pl'] = (
-        dcadplanosac_mec_sac.groupby(['CNPB', 'DT'])['VL_PATRLIQTOT1']
-        .transform('sum')
-    )
-
-    dcadplanosac_mec_sac['RENTAB_MES_PONDERADA'] = (
-        dcadplanosac_mec_sac['VL_PATRLIQTOT1']
-        / dcadplanosac_mec_sac['total_pl']
-        * dcadplanosac_mec_sac['RENTAB_MES']
+    mec_sac_returns_by_plan, tree_returns_by_plan, plan_returns_adjust = (
+        compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac)
         )
-
-    rentab_mec = dcadplanosac_mec_sac.groupby(['CNPB', 'DT'], as_index=False)['RENTAB_MES_PONDERADA'].sum()
-    rentab_tree = tree_hrztl.groupby(['cnpb', 'dtposicao'], as_index=False)['rentab_ponderada'].sum()
-
-    ajuste = rentab_tree.merge(
-        rentab_mec,
-        left_on=['cnpb', 'dtposicao'],
-        right_on=['CNPB', 'DT'],
-        how='left'
-    )
 
     if intermediate_cfg['save']:
-        with log_timing('parse', 'save_parsed_raw_data') as log:
-            save_intermediate(rentab_mec, 'rentab-plano-mecsac', intermediate_cfg, log)
-            save_intermediate(rentab_tree, 'rentab-plano-tree', intermediate_cfg, log)
-            save_intermediate(ajuste, 'rentab-plano-ajuste', intermediate_cfg, log)
+        with log_timing('tree', 'compute_returns_adjust') as log:
+            save_intermediate(mec_sac_returns_by_plan, 'rentab-plano-mecsac', intermediate_cfg, log)
+            save_intermediate(tree_returns_by_plan, 'rentab-plano-tree', intermediate_cfg, log)
+            save_intermediate(plan_returns_adjust , 'rentab-plano-ajuste', intermediate_cfg, log)
 
-    ajuste['rentab_ponderada'] = (
-        ajuste['RENTAB_MES_PONDERADA']
-        - ajuste['rentab_ponderada']
-        )
+    adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'ajuste_rentab']].copy()
+    adjust_rentab.rename(columns={'ajuste_rentab': 'rentab_ponderada'}, inplace=True)
+    adjust_rentab['nivel'] = 0
+    cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
+                   'NEW_NOME_ATIVO', 'SEARCH', 'NEW_TIPO_FINAL',
+                   'NEW_NOME_ATIVO_FINAL', 'isin']
+    for col in cols_adjust:
+        adjust_rentab[col] = '#AJUSTE'
 
-    return ajuste[['cnpb', 'dtposicao', 'rentab_ponderada']]
+    cols_adjust = ['fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR', 'NEW_GESTOR_WORD_CLOUD',
+                   'NEW_NOME_ATIVO_FINAL', 'NEW_GESTOR_WORD_CLOUD_FINAL',
+                   'fEMISSOR.NOME_EMISSOR_FINAL']
+    for col in cols_adjust:
+        adjust_rentab[col] = 'VIVEST'
+
+    return adjust_rentab
 
 
 def run_pipeline():
-    xml_source_path, xlsx_destination_path, data_aux_path, intermediate_cfg, mec_sac_path = load_config()
+    (
+        xml_source_path,
+        xlsx_destination_path,
+        data_aux_path,
+        intermediate_cfg,
+        mec_sac_path,
+    ) = load_config()
+
 
     setup_folders([xlsx_destination_path])
 
@@ -583,7 +585,7 @@ def run_pipeline():
 
     validate_fund_graph_is_acyclic(funds)
 
-    isin_returns = update_returns_by_isin_dtposicao(intermediate_cfg, funds,
+    isin_returns = compute_and_persist_isin_returns(intermediate_cfg, funds,
                                                     portfolios, data_aux_path)
 
     isin_returns['dtposicao'] = pd.to_datetime(isin_returns['dtposicao']).dt.strftime('%Y%m%d')
@@ -594,14 +596,8 @@ def run_pipeline():
     portfolios = assign_returns(portfolios, isin_returns)
 
     tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
-    adjust_rentab = compute_adjust_plan_returns(intermediate_cfg, tree_hrztl,
+    adjust_rentab = compute_plan_returns_adjust(intermediate_cfg, tree_hrztl,
                                                 data_aux_path, mec_sac_path)
-    adjust_rentab['nivel'] = '0'
-    cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
-                   'NEW_NOME_ATIVO', 'SEARCH', 'NEW_TIPO_FINAL',
-                   'NEW_NOME_ATIVO_FINAL', 'isin']
-    for col in cols_adjust:
-        adjust_rentab[col] = '#AJUSTE'
 
     tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
 
