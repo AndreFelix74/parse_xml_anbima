@@ -157,8 +157,9 @@ def build_tree(funds, portfolios):
         pd.DataFrame: A combined DataFrame representing the horizontal fund tree.
     """
     cols_common = ['dtposicao', 'cnpjfundo', 'nome', 'equity_stake', 'valor_calc',
-                  'isin', 'NEW_TIPO', 'fNUMERACA.DESCRICAO', 'fEMISSOR.NOME_EMISSOR',
-                  'NEW_NOME_ATIVO', 'NEW_GESTOR', 'NEW_GESTOR_WORD_CLOUD', 'rentab']
+                  'isin', 'NEW_TIPO', 'fNUMERACA.DESCRICAO', 'fNUMERACA.TIPO_ATIVO',
+                  'fEMISSOR.NOME_EMISSOR', 'NEW_NOME_ATIVO', 'NEW_GESTOR',
+                  'NEW_GESTOR_WORD_CLOUD', 'rentab']
 
     funds = funds[funds['valor_serie'] == 0][['cnpj'] + cols_common].copy()
 

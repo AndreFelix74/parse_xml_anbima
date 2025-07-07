@@ -124,7 +124,7 @@ def enrich_tree(tree_horzt):
 
     base_final_cols = [
         'NEW_TIPO', 'NEW_NOME_ATIVO', 'NEW_GESTOR_WORD_CLOUD',
-        'fEMISSOR.NOME_EMISSOR', 'fNUMERACA.DESCRICAO'
+        'fEMISSOR.NOME_EMISSOR', 'fNUMERACA.TIPO_ATIVO', 'fNUMERACA.DESCRICAO'
     ]
     for base_col in base_final_cols:
         create_column_based_on_levels(tree_horzt, f"{base_col}_FINAL", base_col, max_deep)
