@@ -9,6 +9,7 @@ Created on Fri May 30 11:33:22 2025
 
 import os
 import re
+import locale
 import multiprocessing
 from collections import defaultdict
 import networkx as nx
@@ -541,6 +542,8 @@ def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
 
 
 def run_pipeline():
+    locale.setlocale(locale.LC_ALL, '')
+
     (
         xml_source_path,
         xlsx_destination_path,
