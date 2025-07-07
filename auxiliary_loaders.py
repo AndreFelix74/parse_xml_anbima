@@ -247,8 +247,8 @@ def load_mec_sac_last_day_month(data_aux_path):
 
     if dfs:
         result = pd.concat(dfs, ignore_index=True)
-        result['CLCLI_CD'] = result['CLCLI_CD'].str.strip()
-        result['CODCLI'] = result['CODCLI'].str.strip()
+        result['CLCLI_CD'] = result['CLCLI_CD'].astype(str).str.strip()
+        result['CODCLI'] = result['CODCLI'].astype(str).str.strip()
         result.rename(columns={
             'compute_0016': 'RENTAB_MES',
             'compute_0017': 'RENTAB_ANO'

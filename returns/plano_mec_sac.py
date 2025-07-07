@@ -47,26 +47,26 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac):
     dcadplanosac['CODCLI_SAC'] = dcadplanosac['CODCLI_SAC'].astype(str).str.strip()
     mec_sac['CODCLI'] = mec_sac['CODCLI'].astype(str).str.strip()
 
-    dcadplanosac_mec_sac = dcadplanosac.merge(
-        mec_sac,
+    mec_sac_dcadplanosac = mec_sac.merge(
+        dcadplanosac,
         how='left',
-        left_on='CODCLI_SAC',
-        right_on='CODCLI'
+        left_on='CODCLI',
+        right_on='CODCLI_SAC'
     )
 
-    dcadplanosac_mec_sac['total_pl'] = (
-        dcadplanosac_mec_sac.groupby(['CNPB', 'DT'])['VL_PATRLIQTOT1']
+    mec_sac_dcadplanosac['total_pl'] = (
+        mec_sac_dcadplanosac.groupby(['CNPB', 'DT'])['VL_PATRLIQTOT1']
         .transform('sum')
     )
 
-    dcadplanosac_mec_sac['RENTAB_MES_PONDERADA'] = (
-        dcadplanosac_mec_sac['VL_PATRLIQTOT1']
-        / dcadplanosac_mec_sac['total_pl']
-        * dcadplanosac_mec_sac['RENTAB_MES']
+    mec_sac_dcadplanosac['RENTAB_MES_PONDERADA'] = (
+        mec_sac_dcadplanosac['VL_PATRLIQTOT1']
+        / mec_sac_dcadplanosac['total_pl']
+        * mec_sac_dcadplanosac['RENTAB_MES']
         )
 
     mec_sac_returns_by_plan = (
-        dcadplanosac_mec_sac
+        mec_sac_dcadplanosac
         .groupby(['CNPB', 'DT'], as_index=False)['RENTAB_MES_PONDERADA']
         .sum()
     )
