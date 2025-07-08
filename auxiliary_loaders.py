@@ -7,6 +7,7 @@ Created on Fri May 30 17:43:29 2025
 """
 
 
+import os
 import pandas as pd
 import data_access as dta
 
@@ -169,3 +170,156 @@ def load_governance_struct(data_aux_path):
     """
     dbaux_path = f"{data_aux_path}dbAux.xlsx"
     return pd.read_excel(dbaux_path, sheet_name='dEstruturaGerencial', dtype=str)
+
+
+def load_range_eom(data_aux_path):
+    """
+    Loads the 'dDataMes' sheet from the dbAux Excel file.
+
+    Args:
+        data_aux_path (str): Path to the directory containing 'dbAux.xlsx'.
+
+    Returns:
+        pd.DataFrame: Loaded DataFrame from the 'dEstruturaGerencial' sheet.
+    """
+    dbaux_path = f"{data_aux_path}dbAux.xlsx"
+    return pd.read_excel(dbaux_path, sheet_name='dDataMes', dtype=str)
+
+
+def load_returns_by_puposicao(data_aux_path):
+    """
+    Loads the saved returns from 'isin_rentab.xlsx' if available, or returns
+    an empty template.
+
+    Args:
+        data_aux_path (str): Path to the directory containing 'isin_rentab.xlsx'.
+
+    Returns:
+        pd.DataFrame: DataFrame with columns ['isin', 'dtposicao',
+                                              'puposicao', 'rentab'].
+                      If the file does not exist, returns an empty DataFrame
+                      with the correct schema.
+    """
+    returns_path = f"{data_aux_path}isin_rentab.xlsx"
+
+    try:
+        returns_by_puposicao = pd.read_excel(returns_path, dtype=str)
+    except FileNotFoundError:
+        returns_by_puposicao = pd.DataFrame({
+            'isin': pd.Series(dtype='str'),
+            'dtposicao': pd.Series(dtype='datetime64[ns]'),
+            'puposicao': pd.Series(dtype='float'),
+            'rentab': pd.Series(dtype='float')
+            })
+
+    return returns_by_puposicao
+
+
+def load_mec_sac_last_day_month(data_aux_path):
+    """
+    Loads the row with the latest DT for each CODCLI from each _mecSAC_*.xlsx file.
+
+    Args:
+        data_aux_path (str): Path to the directory containing the _mecSAC files.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the latest row per CODCLI from each file.
+    """
+    dfs = []
+    columns = ['CLCLI_CD', 'DT', 'VL_PATRLIQTOT1', 'CODCLI', 'NOME',
+               'compute_0016', 'compute_0017']
+
+    for filename in os.listdir(data_aux_path):
+        if filename.startswith('_mecSAC_') and filename.endswith('.xlsx'):
+            file_path = os.path.join(data_aux_path, filename)
+            mec_sac = pd.read_excel(file_path)
+
+            if mec_sac.empty:
+                print(f"Empty mecSAC file: {filename}")
+                continue
+
+            mec_sac['DT'] = pd.to_datetime(mec_sac['DT'], dayfirst=True)
+
+            idx = mec_sac.groupby('CODCLI')['DT'].idxmax()
+            last_day_per_codcli = mec_sac.loc[idx][columns].copy()
+
+            dfs.append(last_day_per_codcli)
+
+    if dfs:
+        result = pd.concat(dfs, ignore_index=True)
+        result['CLCLI_CD'] = result['CLCLI_CD'].astype(str).str.strip()
+        result['CODCLI'] = result['CODCLI'].astype(str).str.strip()
+        result.rename(columns={
+            'compute_0016': 'RENTAB_MES',
+            'compute_0017': 'RENTAB_ANO'
+        }, inplace=True)
+
+        return result
+
+    return pd.DataFrame()
+
+
+def load_cnpb_codcli_mapping(data_aux_path):
+    """
+    Loads the mapping between CNPB (portfolio code) and CODCLI_SAC (client code)
+    by joining dCadPlano and dCadPlanoSAC from dbAux.xlsx.
+
+    Parameters
+    ----------
+    data_aux_path : str
+        Path to the dbAux.xlsx file.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns ['CNPB', 'CODCLI_SAC'].
+    """
+    dcadplano = pd.read_excel(f"{data_aux_path}dbAux.xlsx", sheet_name='dCadPlano')
+    dcadplanosac = pd.read_excel(f"{data_aux_path}dbAux.xlsx", sheet_name='dCadPlanoSAC')
+
+    dcadplano['COD_PLANO'] = dcadplano['COD_PLANO'].astype(str).str.strip()
+    dcadplanosac['COD_PLANO'] = dcadplanosac['COD_PLANO'].astype(str).str.strip()
+    dcadplanosac['CODCLI_SAC'] = dcadplanosac['CODCLI_SAC'].astype(str).str.strip()
+
+    # Convert CNPB columns to string before merging
+    dcadplano['CNPB'] = dcadplano['CNPB'].astype(str).str.strip()
+    dcadplanosac['CNPB'] = dcadplanosac['CNPB'].astype(str).str.strip()
+
+    mapping = dcadplano.merge(
+        dcadplanosac,
+        on='COD_PLANO',
+        how='inner'
+    )
+
+    diffs = mapping.loc[mapping['CNPB_x'] != mapping['CNPB_y'], ['COD_PLANO', 'CNPB_x', 'CNPB_y']]
+    if not diffs.empty:
+        raise ValueError(
+            f"Inconsistent CNPB values found after merging:\n{diffs.to_string(index=False)}"
+        )
+
+    return mapping.rename(columns={'CNPB_x': 'cnpb'})[['cnpb', 'CODCLI_SAC']]
+
+
+def load_dcadplanosac(data_aux_path):
+    """
+    Loads the dCadPlanoSAC sheet from dbAux.xlsx.
+
+    Args:
+        data_aux_path (str): Path to dbAux.xlsx.
+
+    Returns:
+        pd.DataFrame: dCadPlanoSAC sheet as DataFrame.
+    """
+    dcadplanosac = pd.read_excel(f"{data_aux_path}dbAux.xlsx",
+                                 sheet_name='dCadPlanoSAC',
+                                 dtype=str)
+
+    # Substitui carteira com contencioso pela carteira sem contencioso (soh investimentos)
+    dcadplanosac['CODCLI_SAC'] = (
+        dcadplanosac['CODCLI_SAC_INVEST'].where(
+            dcadplanosac['CODCLI_SAC_INVEST'].notnull(),
+            dcadplanosac['CODCLI_SAC']
+        )
+    )
+
+    return dcadplanosac

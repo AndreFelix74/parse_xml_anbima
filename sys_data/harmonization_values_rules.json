@@ -52,20 +52,54 @@
         ],
         "formula": "vlajuste"
     },
-    "OPCOESACOES": {
+    "OPCOESACOES_V": {
         "filters": [
             {
                 "column": "tipo",
                 "value": "opcoesacoes"
+            },
+            {
+                "column": "classeoperacao",
+                "value": "V"
+            }
+        ],
+        "formula": "valorfinanceiro * -1"
+    },
+    "OPCOESACOES_C": {
+        "filters": [
+            {
+                "column": "tipo",
+                "value": "opcoesacoes"
+            },
+            {
+                "column": "classeoperacao",
+                "value": "C"
             }
         ],
         "formula": "valorfinanceiro"
     },
-    "OPCOESDERIV": {
+    "OPCOESDERIV_V": {
         "filters": [
             {
                 "column": "tipo",
                 "value": "opcoesderiv"
+            },
+            {
+                "column": "classeoperacao",
+                "value": "V"
+            }
+        ],
+        "formula": "valorfinanceiro * -1"
+    },
+    "OPCOESDERIV_C": {
+        "filters": [
+            {
+                "column": "tipo",
+                "value": "opcoesderiv"
+            },
+            {
+                "column": "classeoperacao",
+                "value": "C"
             }
         ],
         "formula": "valorfinanceiro"

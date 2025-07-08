@@ -9,9 +9,11 @@ Created on Fri May 30 11:33:22 2025
 
 import os
 import re
+import locale
 import multiprocessing
 from collections import defaultdict
 import networkx as nx
+import pandas as pd
 from logger import log_timing, RUN_ID
 
 import auxiliary_loaders as aux_loader
@@ -21,6 +23,11 @@ import integrity_checks as checker
 import carteiras_operations as crt
 import enrich_and_classify_data as enricher
 import compute_metrics as metrics
+from returns import (
+    compute_plan_returns_adjustment,
+    compute_returns_from_puposicao,
+    validate_unique_puposicao
+    )
 from investment_tree import build_tree, enrich_tree
 from reporting import assign_governance_struct_keys
 import util as utl
@@ -237,6 +244,7 @@ def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
 
         funds = cleaner.clean_data(funds, funds_dtypes, types_to_exclude,
                                    types_series, harmonization_rules)
+
         portfolios = cleaner.clean_data(portfolios, port_dtypes, types_to_exclude,
                                         types_series, harmonization_rules)
 
@@ -248,9 +256,61 @@ def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
     return [funds, portfolios]
 
 
+def compute_and_persist_isin_returns(intermediate_cfg, funds, portfolios, data_aux_path):
+    """
+    Computes return series by ISIN and saves them to disk.
+
+    This function both returns the computed DataFrame and writes it to the expected location
+    to avoid unnecessary reloading. While this violates the single responsibility principle,
+    it is intentional for performance reasons.
+
+    Returns:
+        pd.DataFrame: Return series per ISIN and date.
+    """
+    with log_timing('plan_returns', 'update_returns_by_isin_dtposicao') as log:
+        range_eom = aux_loader.load_range_eom(data_aux_path)
+        range_eom = pd.to_datetime(range_eom['DATA_POSICAO'].unique())
+
+        group_cols = ['isin', 'dtposicao', 'puposicao']
+        funds_mask = funds['isin'].notnull() & (funds['NEW_TIPO'] != 'OVER')
+        port_mask = portfolios['isin'].notnull() & (portfolios['NEW_TIPO'] != 'OVER')
+        isin_data = pd.concat([
+            funds[funds_mask][group_cols].drop_duplicates(),
+            portfolios[port_mask][group_cols].drop_duplicates()
+            ]).drop_duplicates()
+
+        valid_idx, dupl_idx = validate_unique_puposicao(isin_data)
+        if len(dupl_idx) > 0:
+            cols = ['isin', 'dtposicao', 'puposicao']
+            duplicated_data = isin_data.loc[dupl_idx, cols]
+
+            log.warn(
+                'enrich',
+                message='puposicao diferente para mesmo isin e dtposicao.',
+                dados=duplicated_data.to_dict(orient='records')
+            )
+
+            save_intermediate(duplicated_data,
+                              'puposicao_divergente_mesma_data',
+                              intermediate_cfg, log)
+
+        persisted_returns = aux_loader.load_returns_by_puposicao(data_aux_path)
+
+        updated_returns = compute_returns_from_puposicao(
+            range_date=range_eom,
+            new_data=isin_data.loc[valid_idx],
+            persisted_returns=persisted_returns
+        )
+
+        returns_path = f"{data_aux_path}isin_rentab"
+        save_df(updated_returns, returns_path, 'xlsx')
+
+    return updated_returns
+
+
 def check_values_integrity(intermediate_cfg, entity, entity_name, invested, group_keys):
     investor_holdings_cols = ['cnpjfundo', 'qtdisponivel', 'dtposicao', 'isin',
-                              'NOME_ATIVO', 'puposicao']
+                              'nome', 'puposicao']
 
     with log_timing('check', f"check_puposicao_consistency_{entity_name}") as log:
         investor_holdings = entity[entity['cnpjfundo'].notnull()][investor_holdings_cols].copy()
@@ -263,7 +323,7 @@ def check_values_integrity(intermediate_cfg, entity, entity_name, invested, grou
                               intermediate_cfg, log)
 
     with log_timing('check', f"check_pl_consistency_{entity_name}") as log:
-        divergent_pl = checker.check_composition_consistency(entity, group_keys)
+        divergent_pl = checker.check_composition_consistency(entity, group_keys, 0.01 / 100.0)
 
         if not divergent_pl.empty:
             log.warn('check', dados=divergent_pl.to_dict(orient="records"))
@@ -324,7 +384,6 @@ def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
         if alerts:
             log.warning(f"Classification alerts for funds: {alerts}")
 
-
     if intermediate_cfg['save']:
         with log_timing('enrich', 'save_enriched_data') as log:
             save_intermediate(funds, 'fundos-enriched', intermediate_cfg, log)
@@ -369,6 +428,39 @@ def validate_fund_graph_is_acyclic(funds):
         raise ValueError(f"Cycle detected in fund relationships: {cycle}") from excpt
 
 
+def assign_returns(entity, isin_returns):
+    """
+    Assigns return values to a fund or portfolio DataFrame using ISIN and date of position.
+    For assets of type 'OVER', the return is manually calculated using the ratio between 
+    'compromisso_puretorno' and 'pucompra', minus one.
+
+    Args:
+        entity (pd.DataFrame): DataFrame representing either funds or portfolios. Must contain:
+            'isin', 'dtposicao', 'NEW_TIPO', 'pucompra', and 'compromisso_puretorno'.
+        isin_returns (pd.DataFrame): DataFrame containing return data with columns:
+            'isin', 'dtposicao', and 'rentab'.
+
+    Returns:
+        pd.DataFrame: The updated entity DataFrame with the 'rentab' column assigned accordingly.
+    """
+    entity = entity.merge(
+        isin_returns[['isin', 'dtposicao', 'rentab']],
+        on=['isin', 'dtposicao'],
+        how='left',
+        suffixes=['', '_rentab']
+    )
+
+    mask_over = entity['NEW_TIPO'] == 'OVER'
+
+    if mask_over.any():
+        entity.loc[mask_over, 'rentab'] = ((
+            entity.loc[mask_over, 'compromisso_puretorno']
+            / entity.loc[mask_over, 'pucompra']
+        ) ** 21) - 1
+
+    return entity
+
+
 def build_horizontal_tree(funds, portfolios, data_aux_path):
     with log_timing('tree', 'build_tree'):
         tree_horzt = build_tree(funds, portfolios)
@@ -394,6 +486,9 @@ def load_config():
     data_aux_path = config['Paths']['data_aux_path']
     data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
 
+    mec_sac_path = config['Paths']['mec_sac_path']
+    mec_sac_path = f"{os.path.dirname(utl.format_path(mec_sac_path))}/"
+
     if not config.has_section('Debug'):
         raise KeyError('Missing [Debug] section in config.ini')
 
@@ -406,11 +501,57 @@ def load_config():
         'file_format': config['Paths'].get('destination_file_extension')
     }
 
-    return [xml_source_path, xlsx_destination_path, data_aux_path, intermediate_cfg]
+    return [xml_source_path, xlsx_destination_path, data_aux_path,
+            intermediate_cfg, mec_sac_path]
+
+
+def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
+                                mec_sac_path):
+    with log_timing('plans_returns', 'load_mec_sac'):
+        mec_sac = aux_loader.load_mec_sac_last_day_month(mec_sac_path)
+
+    with log_timing('plans_returns', 'load_dcadplanosac'):
+        dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
+
+    mec_sac_returns_by_plan, tree_returns_by_plan, plan_returns_adjust = (
+        compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac)
+        )
+
+    if intermediate_cfg['save']:
+        with log_timing('tree', 'compute_returns_adjust') as log:
+            save_intermediate(mec_sac_returns_by_plan, 'rentab-plano-mecsac', intermediate_cfg, log)
+            save_intermediate(tree_returns_by_plan, 'rentab-plano-tree', intermediate_cfg, log)
+            save_intermediate(plan_returns_adjust , 'rentab-plano-ajuste', intermediate_cfg, log)
+
+    adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'ajuste_rentab']].copy()
+    adjust_rentab.rename(columns={'ajuste_rentab': 'rentab_ponderada'}, inplace=True)
+    adjust_rentab['nivel'] = 0
+    cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
+                   'NEW_NOME_ATIVO', 'SEARCH', 'NEW_TIPO_FINAL',
+                   'NEW_NOME_ATIVO_FINAL', 'isin']
+    for col in cols_adjust:
+        adjust_rentab[col] = '#AJUSTE'
+
+    cols_adjust = ['fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR', 'NEW_GESTOR_WORD_CLOUD',
+                   'NEW_NOME_ATIVO_FINAL', 'NEW_GESTOR_WORD_CLOUD_FINAL',
+                   'fEMISSOR.NOME_EMISSOR_FINAL']
+    for col in cols_adjust:
+        adjust_rentab[col] = 'VIVEST'
+
+    return adjust_rentab
 
 
 def run_pipeline():
-    xml_source_path, xlsx_destination_path, data_aux_path, intermediate_cfg = load_config()
+    locale.setlocale(locale.LC_ALL, '')
+
+    (
+        xml_source_path,
+        xlsx_destination_path,
+        data_aux_path,
+        intermediate_cfg,
+        mec_sac_path,
+    ) = load_config()
+
 
     setup_folders([xlsx_destination_path])
 
@@ -430,6 +571,9 @@ def run_pipeline():
                                               types_to_exclude, types_series,
                                               harmonization_rules)
 
+    check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
+    check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
+
     name_standardization_rules = dta.read('name_standardization_rules')
     new_tipo_rules = dta.read('enrich_de_para_tipos')
     gestor_name_stopwords = dta.read('gestor_name_stopwords')
@@ -440,14 +584,25 @@ def run_pipeline():
                                data_aux_path, new_tipo_rules, gestor_name_stopwords,
                                name_standardization_rules)
 
-    check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
-    check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf'])
-
     compute_metrics(funds, portfolios, types_series)
 
     validate_fund_graph_is_acyclic(funds)
 
+    isin_returns = compute_and_persist_isin_returns(intermediate_cfg, funds,
+                                                    portfolios, data_aux_path)
+
+    isin_returns['dtposicao'] = pd.to_datetime(isin_returns['dtposicao']).dt.strftime('%Y%m%d')
+    isin_returns['isin'] = isin_returns['isin'].astype(str)
+    isin_returns['rentab'] = isin_returns['rentab'].astype(float)
+
+    funds = assign_returns(funds, isin_returns)
+    portfolios = assign_returns(portfolios, isin_returns)
+
     tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
+    adjust_rentab = compute_plan_returns_adjust(intermediate_cfg, tree_hrztl,
+                                                data_aux_path, mec_sac_path)
+
+    tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
 
     with log_timing('finish', 'save_final_files'):
         file_frmt = intermediate_cfg['file_format']

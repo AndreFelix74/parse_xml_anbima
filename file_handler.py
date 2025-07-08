@@ -7,7 +7,25 @@ Created on Wed May 21 08:52:18 2025
 """
 
 
+import locale
 import pandas as pd
+
+
+def get_csv_separators():
+    """
+    Determines the appropriate field and decimal separators based on the system locale.
+
+    Returns
+    -------
+    tuple
+        A tuple (field_sep, decimal_sep) where:
+        - field_sep: str, separator for fields in CSV (',' or ';')
+        - decimal_sep: str, decimal mark ('.' or ',')
+    """
+    conv = locale.localeconv()
+    decimal_sep = conv['decimal_point']
+    field_sep = ';' if decimal_sep == ',' else ','
+    return field_sep, decimal_sep
 
 
 def load_df(file_path, file_format, dtype=None):
@@ -38,7 +56,8 @@ def load_df(file_path, file_format, dtype=None):
     full_path = f"{file_path}.{file_format}"
 
     if file_format == 'csv':
-        return pd.read_csv(full_path, dtype=dtype, sep=';', encoding='utf-8')
+        field_sep, decimal_sep = get_csv_separators()
+        return pd.read_csv(full_path, dtype=dtype, sep=field_sep, decimal=decimal_sep, encoding='utf-8')
 
     if file_format == 'xlsx':
         return pd.read_excel(full_path, dtype=dtype)
@@ -73,7 +92,14 @@ def save_df(dtfrm, file_path, file_format):
     full_path = f"{file_path}.{file_format}"
 
     if file_format == 'csv':
-        dtfrm.to_csv(full_path, index=False, sep=';', decimal=",", encoding='utf-8')
+        field_sep, decimal_sep = get_csv_separators()
+        dtfrm.to_csv(full_path,
+                     index=False,
+                     sep=field_sep,
+                     decimal=decimal_sep,
+                     encoding='utf-8',
+                     float_format="%.15f"
+                    )
     elif file_format == 'xlsx':
         dtfrm.to_excel(full_path, index=False)
     else:

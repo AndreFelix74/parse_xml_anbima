@@ -7,33 +7,6 @@ Created on Wed May 14 16:55:27 2025
 """
 
 
-def _apply_calculations_to_new_rows(current, mask, deep):
-    """
-    Applies in-place calculations to rows resulting from a successful merge
-    ('both') at the current recursion depth.
-
-    Args:
-        current (pd.DataFrame): DataFrame containing the merged investment tree
-        structure.
-        mask (pd.Series): Boolean Series identifying the rows that originated
-        from both sides of the merge.
-        deep (int): Current recursion depth, used to access level-specific columns.
-    """
-    current.loc[mask, 'nivel'] = deep + 1
-    current.loc[mask, 'equity_stake'] *= current.loc[mask, f"equity_stake_nivel_{deep+1}"].fillna(1)
-    current.loc[mask, 'valor_calc'] = (
-        current.loc[mask, f"valor_calc_nivel_{deep+1}"]
-        * current.loc[mask, 'equity_stake'].fillna(1)
-    )
-
-    current.loc[mask, 'composicao'] *= current.loc[mask, f"composicao_nivel_{deep+1}"].fillna(1)
-    current.loc[mask, 'isin'] = current.loc[mask, f"isin_nivel_{deep+1}"]
-
-    sufix = '' if deep == 0 else f"_nivel_{deep}"
-    current.loc[mask, 'PARENT_FUNDO'] = current.loc[mask, f"NEW_NOME_ATIVO{sufix}"]
-    current.loc[mask, 'PARENT_FUNDO_GESTOR'] = current.loc[mask, f"NEW_GESTOR{sufix}"]
-
-
 def build_tree_horizontal(portfolios, funds, deep=0):
     """
     Recursively builds a horizontal investment tree by merging portfolio and
@@ -64,7 +37,12 @@ def build_tree_horizontal(portfolios, funds, deep=0):
 
     mask = current['_merge'] == 'both'
 
-    _apply_calculations_to_new_rows(current, mask, deep)
+    current.loc[mask, 'nivel'] = deep + 1
+
+    #as tres linhas abaixo devem ser movidas para o enriquecimento.
+    sufix = '' if deep == 0 else f"_nivel_{deep}"
+    current.loc[mask, 'PARENT_FUNDO'] = current.loc[mask, f"NEW_NOME_ATIVO{sufix}"]
+    current.loc[mask, 'PARENT_FUNDO_GESTOR'] = current.loc[mask, f"NEW_GESTOR{sufix}"]
 
     current.drop(columns=['_merge'], inplace=True)
 
@@ -178,23 +156,19 @@ def build_tree(funds, portfolios):
     Returns:
         pd.DataFrame: A combined DataFrame representing the horizontal fund tree.
     """
-    cols_funds = ['cnpj', 'dtposicao', 'cnpjfundo', 'equity_stake', 'composicao',
-                  'valor_calc', 'isin', 'NEW_TIPO', 'fNUMERACA.DESCRICAO',
+    cols_common = ['dtposicao', 'cnpjfundo', 'nome', 'equity_stake', 'valor_calc',
+                  'isin', 'NEW_TIPO', 'fNUMERACA.DESCRICAO', 'fNUMERACA.TIPO_ATIVO',
                   'fEMISSOR.NOME_EMISSOR', 'NEW_NOME_ATIVO', 'NEW_GESTOR',
-                  'NEW_GESTOR_WORD_CLOUD']
+                  'NEW_GESTOR_WORD_CLOUD', 'rentab']
 
-    funds = funds[funds['valor_serie'] == 0][cols_funds].copy()
+    funds = funds[funds['valor_serie'] == 0][['cnpj'] + cols_common].copy()
 
-    cols_port = ['cnpjcpf', 'codcart', 'cnpb', 'dtposicao', 'nome', 'cnpjfundo',
-                 'equity_stake', 'composicao', 'valor_calc', 'isin',
-                 'NEW_TIPO', 'NEW_NOME_ATIVO', 'fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR',
-                 'NEW_GESTOR_WORD_CLOUD']
+    cols_port = ['cnpjcpf', 'codcart', 'cnpb']
 
     portfolios = portfolios[(portfolios['flag_rateio'] == 0) &
-                            (portfolios['valor_serie'] == 0)][cols_port].copy()
+                            (portfolios['valor_serie'] == 0)][cols_port + cols_common].copy()
 
     portfolios['nivel'] = 0
-    portfolios['fNUMERACA.DESCRICAO'] = ''
     portfolios['cnpj'] = ''
 
     return build_tree_horizontal(portfolios.copy(), funds)
