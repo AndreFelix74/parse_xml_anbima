@@ -140,7 +140,12 @@ def run_pipeline():
         how='left'
     )
 
-    save_df(performance_returns_adjust, f"{xlsx_destination_path}ajsute_desempenho", 'csv')
+    performance_returns_adjust['ajuste_rentab'] = (
+        performance_returns_adjust['RENTAB_MES_PONDERADA_DESEMPENHO']
+        - performance_returns_adjust['RENTAB_MES_PONDERADA']
+        )
+
+    save_df(performance_returns_adjust, f"{xlsx_destination_path}ajuste_desempenho", 'csv')
     
 
 if __name__ == "__main__":
