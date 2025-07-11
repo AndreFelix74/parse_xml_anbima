@@ -323,3 +323,68 @@ def load_dcadplanosac(data_aux_path):
     )
 
     return dcadplanosac
+
+
+def load_performance_struct(data_aux_path):
+    """
+    Loads the 'dEstruturaDesempenho' sheet from the dbAux Excel file.
+
+    Args:
+        data_aux_path (str): Path to the directory containing 'dbAux.xlsx'.
+
+    Returns:
+        pd.DataFrame: Loaded DataFrame from the 'dEstruturaDesempenho' sheet.
+    """
+    dbaux_path = f"{data_aux_path}dbAux.xlsx"
+    return pd.read_excel(dbaux_path, sheet_name='dEstruturaDesempenho', dtype=str)
+
+
+def load_performance(performance_path):
+    raw_data = []
+
+    for filename in os.listdir(performance_path):
+        if filename.startswith('Desempenho'):
+            file_path = os.path.join(performance_path, filename)
+            try:
+                raw_sheet = pd.read_excel(file_path, sheet_name='Resumo', header=None)
+            except Exception as excp:
+                print('')
+                print(f"Erro ao abrir o arquivo {file_path}")
+                print(excp)
+                continue
+
+            if raw_sheet.empty:
+                print(f"Empty performance file: {filename}")
+                continue
+
+            raw_data.append(raw_sheet)
+
+    if not raw_data:
+        return pd.DataFrame()
+
+    performance = pd.concat(raw_data, ignore_index=True)
+
+    performance = performance[
+        (~performance[2].str.contains("total", case=False, na=False)) &
+        (~performance[2].isin(['Patrimônio de Investimentos', 'Patrimônio Total'])) &
+        (performance[2].notnull()) &
+        (performance[3].notnull())
+    ][[2, 3, 4, 5, 6]].copy()
+
+    performance.columns = ['PERFIL_BASE', 'PL', 'RATIO', 'RETORNO_MES', 'RETORNO_YTD']
+
+    mask = performance['RETORNO_MES'] == 'Rentabilidade'
+    performance.loc[mask, 'PLANO'] = performance.loc[mask, 'PERFIL_BASE'].str.upper()
+    performance.loc[mask, 'DATA'] = performance.loc[mask, 'PL']
+    performance['PLANO'] = performance['PLANO'].ffill()
+    performance['DATA'] = performance['DATA'].ffill()
+
+    for col in ['PL', 'RATIO', 'RETORNO_MES', 'RETORNO_YTD']:
+        performance[col] = pd.to_numeric(performance[col], errors='coerce').fillna(0)
+
+    performance = performance[performance['PL'] != 0]
+    performance[['RETORNO_MES', 'RETORNO_YTD', 'PL']] = performance[['RETORNO_MES', 'RETORNO_YTD', 'PL']].fillna(0)
+
+    performance['PERFIL_BASE'] = performance['PERFIL_BASE'].astype(str).str.strip().str.upper()
+
+    return performance
