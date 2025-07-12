@@ -50,6 +50,8 @@ def run_pipeline():
     with log_timing('plans_returns', 'load_dcadplanosac'):
         dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
 
+    dcadplanosac['CODCLI_SAC'] = dcadplanosac['CODCLI_SAC'].astype(str).str.strip()
+
     with log_timing('performance', 'load_struct'):
         struct = aux_loader.load_performance_struct(data_aux_path)
 
@@ -67,6 +69,7 @@ def run_pipeline():
 
     mec_sac['MES_ANO'] = mec_sac['DT'].dt.strftime('%B-%Y')
     mec_sac['MES_ANO'] = mec_sac['MES_ANO'].replace(months_ptbr, regex=True)
+    mec_sac['CODCLI'] = mec_sac['CODCLI'].astype(str).str.strip()
 
     with log_timing('performance', 'load_performance'):
         performance = aux_loader.load_performance(performance_path)
