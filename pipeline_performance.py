@@ -149,7 +149,12 @@ def run_pipeline():
         )
 
     save_df(performance_returns_adjust, f"{xlsx_destination_path}ajuste_desempenho", 'csv')
-    
+
+    save_df(mec_sac, 'mecsac', 'csv')
+    save_df(dcadplanosac, 'dcadplanosac', 'csv')
+    save_df(struct, 'struct', 'csv')
+    save_df(mec_sac_returns_by_plan, 'rentab-plano-mecsac', 'csv')
+
 
 if __name__ == "__main__":
     with log_timing('full', 'all_process'):
