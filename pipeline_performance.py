@@ -18,6 +18,7 @@ import util as utl
 from file_handler import save_df
 
 import pandas as pd
+from pandas._libs.tslibs.timestamps import Timestamp
 
 
 def prepare_paths():
@@ -81,7 +82,11 @@ def process_performance(performance, struct):
 
     performance = parse_data_mes_ano_pt(performance)
     performance = performance.merge(struct, how='left', on='PERFIL_BASE', suffixes=('', '_estr'))
-    
+
+    performance['PLANO'] = performance['PLANO'].str.replace('-', ' ', regex=False)
+    performance['PLANO'] = performance['PLANO'].str.replace(r'\s+', ' ', regex=True)
+    performance['PLANO'] = performance['PLANO'].str.strip()
+
     return performance[performance['TIPO_PERFIL_BASE'] != 'A']
 
 
@@ -142,7 +147,7 @@ def merge_and_adjust_returns(perf_grouped, mec_sac_returns, plano_de_para):
 
 def parse_data_mes_ano_pt(performance, col='DATA'):
     """
-    Converts a column with Portuguese month-year strings (e.g., 'janeiro-25', 'fevereiro-2024')
+    Converts a column with mixed formats (datetime or 'mes-ano' strings in Portuguese)
     into datetime objects with the first day of the corresponding month.
 
     Args:
@@ -153,7 +158,7 @@ def parse_data_mes_ano_pt(performance, col='DATA'):
         pd.DataFrame: Same DataFrame with the column converted to datetime.
 
     Raises:
-        RuntimeError: If an invalid format or month is encountered, including full row context.
+        RuntimeError: If a non-datetime and non-parseable string is encountered.
     """
     meses_pt = {
         'janeiro': 1, 'fevereiro': 2, 'março': 3, 'abril': 4,
@@ -161,37 +166,34 @@ def parse_data_mes_ano_pt(performance, col='DATA'):
         'setembro': 9, 'outubro': 10, 'novembro': 11, 'dezembro': 12
     }
 
-    meses = []
-    anos = []
+    datas_convertidas = []
 
     for idx, valor in performance[col].items():
         try:
-            valor = str(valor).strip().lower()
-            match = re.match(r'^([a-zçã]+)-(\d{2}|\d{4})$', valor)
+            if isinstance(valor, (pd.Timestamp, Timestamp)):
+                # Já é datetime
+                datas_convertidas.append(valor.replace(day=1))
+                continue
+
+            valor_str = str(valor).strip().lower()
+            match = re.match(r'^([a-zçã]+)-(\d{2}|\d{4})$', valor_str)
             if not match:
-                raise ValueError(f"invalid format '{valor}' (expected 'mes-aa' or 'mes-aaaa')")
+                raise ValueError(f"invalid format '{valor_str}' (expected 'mes-aa' or 'mes-aaaa')")
 
             mes_nome, ano_str = match.groups()
             if mes_nome not in meses_pt:
                 raise ValueError(f"invalid month name '{mes_nome}'")
 
             mes = meses_pt[mes_nome]
-            ano = int(ano_str[-2:]) + 2000
-            meses.append(mes)
-            anos.append(ano)
-        except ValueError as e:
+            ano = int(ano_str[-2:]) + 2000  # força para 20xx
+            datas_convertidas.append(pd.Timestamp(year=ano, month=mes, day=1))
+
+        except Exception as e:
             linha = performance.loc[idx].to_dict()
-            raise RuntimeError(f"Error parsing {col} at row {idx}: {e}\nRow content: {linha}")
+            print(f"Error parsing {col} at row {idx}: {e}\nRow content: {linha}")
 
-    performance[col] = pd.to_datetime({
-        'year': anos,
-        'month': meses,
-        'day': 1
-    })
-
+    performance[col] = pd.Series(datas_convertidas, index=performance.index)
     return performance
-
-
 
 
 def run_pipeline():
