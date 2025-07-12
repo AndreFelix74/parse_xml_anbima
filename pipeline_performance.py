@@ -93,7 +93,9 @@ def process_performance(performance, struct):
     
     # Trata o ano (converte para dois dígitos inteiros, e depois para quatro dígitos)
     performance['ano'] = performance['ano_str'].str[-2:].astype(int) + 2000
-    performance.loc[performance['ano'] < 100, 'ano'] += 2000  # assume anos < 100 como dois dígitos
+    performance['ano'] = (
+        pd.to_numeric(performance['ano_str'].str[-2:], errors='coerce') + 2000
+    )
     
     # Converte para datetime (primeiro dia do mês)
     performance['DATA'] = pd.to_datetime(
@@ -178,7 +180,8 @@ def run_pipeline():
     perf_grouped = calc_performance_returns(performance)
 
     perf_adjusted = merge_and_adjust_returns(perf_grouped, mec_sac_returns, plano_de_para)
-    save_df(perf_adjusted, f"{paths['xlsx']}ajuste_desempenho", 'csv')
+    result = pd.concat([performance, perf_adjusted])
+    save_df(result, f"{paths['xlsx']}ajuste_desempenho", 'csv')
 
 
 if __name__ == "__main__":
