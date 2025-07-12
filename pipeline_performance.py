@@ -7,6 +7,7 @@ Created on Tue Jul  8 16:51:15 2025
 """
 
 
+import re
 import os
 import locale
 from logger import log_timing
@@ -78,31 +79,9 @@ def process_performance(performance, struct):
     mask_cd = performance['TIPO_PLANO'].isin(['', 'AGRESSIVO', 'MODERADO', 'CONSERVADOR'])
     performance.loc[mask_cd, 'TIPO_PLANO'] = 'CD'
 
+    performance = parse_data_mes_ano_pt(performance)
     performance = performance.merge(struct, how='left', on='PERFIL_BASE', suffixes=('', '_estr'))
     
-    meses_pt = {
-        'janeiro': 1, 'fevereiro': 2, 'março': 3, 'abril': 4,
-        'maio': 5, 'junho': 6, 'julho': 7, 'agosto': 8,
-        'setembro': 9, 'outubro': 10, 'novembro': 11, 'dezembro': 12
-    }
-    
-    performance[['mes_nome', 'ano_str']] = performance['DATA'].str.lower().str.strip().str.split('-', expand=True)
-    
-    # Converte mês
-    performance['mes'] = performance['mes_nome'].map(meses_pt)
-    
-    # Trata o ano (converte para dois dígitos inteiros, e depois para quatro dígitos)
-    performance['ano'] = performance['ano_str'].str[-2:].astype(int) + 2000
-    performance['ano'] = (
-        pd.to_numeric(performance['ano_str'].str[-2:], errors='coerce') + 2000
-    )
-    
-    # Converte para datetime (primeiro dia do mês)
-    performance['DATA'] = pd.to_datetime(
-        dict(year=performance['ano'], month=performance['mes'], day=1),
-        errors='coerce'
-    )
-
     return performance[performance['TIPO_PERFIL_BASE'] != 'A']
 
 
@@ -159,6 +138,60 @@ def merge_and_adjust_returns(perf_grouped, mec_sac_returns, plano_de_para):
     )
     merged['ajuste_rentab'] = merged['RENTAB_MES_PONDERADA_DESEMPENHO'] - merged['RENTAB_MES_PONDERADA']
     return merged
+
+
+def parse_data_mes_ano_pt(performance, col='DATA'):
+    """
+    Converts a column with Portuguese month-year strings (e.g., 'janeiro-25', 'fevereiro-2024')
+    into datetime objects with the first day of the corresponding month.
+
+    Args:
+        performance (pd.DataFrame): The DataFrame containing the date column.
+        col (str): Name of the column to convert (default: 'DATA').
+
+    Returns:
+        pd.DataFrame: Same DataFrame with the column converted to datetime.
+
+    Raises:
+        RuntimeError: If an invalid format or month is encountered, including full row context.
+    """
+    meses_pt = {
+        'janeiro': 1, 'fevereiro': 2, 'março': 3, 'abril': 4,
+        'maio': 5, 'junho': 6, 'julho': 7, 'agosto': 8,
+        'setembro': 9, 'outubro': 10, 'novembro': 11, 'dezembro': 12
+    }
+
+    meses = []
+    anos = []
+
+    for idx, valor in performance[col].items():
+        try:
+            valor = str(valor).strip().lower()
+            match = re.match(r'^([a-zçã]+)-(\d{2}|\d{4})$', valor)
+            if not match:
+                raise ValueError(f"invalid format '{valor}' (expected 'mes-aa' or 'mes-aaaa')")
+
+            mes_nome, ano_str = match.groups()
+            if mes_nome not in meses_pt:
+                raise ValueError(f"invalid month name '{mes_nome}'")
+
+            mes = meses_pt[mes_nome]
+            ano = int(ano_str[-2:]) + 2000
+            meses.append(mes)
+            anos.append(ano)
+        except ValueError as e:
+            linha = performance.loc[idx].to_dict()
+            raise RuntimeError(f"Error parsing {col} at row {idx}: {e}\nRow content: {linha}")
+
+    performance[col] = pd.to_datetime({
+        'year': anos,
+        'month': meses,
+        'day': 1
+    })
+
+    return performance
+
+
 
 
 def run_pipeline():
