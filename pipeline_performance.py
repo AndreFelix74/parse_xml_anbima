@@ -7,7 +7,6 @@ Created on Tue Jul  8 16:51:15 2025
 """
 
 
-import re
 import os
 import locale
 from logger import log_timing
@@ -53,26 +52,20 @@ def load_auxiliary_data(paths):
         dcadplanosac = aux_loader.load_dcadplanosac(paths['aux'])
 
     with log_timing('performance', 'load_struct'):
-        struct = aux_loader.load_performance_struct(paths['aux'])
-        struct['PERFIL_BASE'] = struct['PERFIL_BASE'].astype(str).str.strip().str.upper()
+        struct_perform = aux_loader.load_performance_struct(paths['aux'])
 
-    with log_timing('performance', 'load_mec_sac'):
-        mec_sac = aux_loader.load_mec_sac_last_day_month(paths['mec_sac'])
-        mec_sac['MES_ANO'] = mec_sac['DT'].dt.to_period('M').dt.to_timestamp()
-
-    return plano_de_para, dcadplanosac, struct, mec_sac
+    return plano_de_para, dcadplanosac, struct_perform
 
 
-def process_performance(performance, struct):
+def standardize_plans_performance(performance):
     """
-    Clean and merge the performance dataset with struct definitions.
+    Clean the performance dataset.
 
     Args:
         performance (DataFrame): Raw performance data.
-        struct (DataFrame): Struct data for merging.
 
     Returns:
-        DataFrame: Filtered and enriched performance dataset.
+        None: Changes in place.
     """
     performance['TIPO_PLANO'] = performance['PLANO'].str.split('-').str[1].fillna('').str.strip()
     performance.loc[performance['PLANO'] == 'ROCHOPREV', 'TIPO_PLANO'] = 'CV'
@@ -80,17 +73,12 @@ def process_performance(performance, struct):
     mask_cd = performance['TIPO_PLANO'].isin(['', 'AGRESSIVO', 'MODERADO', 'CONSERVADOR'])
     performance.loc[mask_cd, 'TIPO_PLANO'] = 'CD'
 
-    performance = parse_data_mes_ano_pt(performance)
-    performance = performance.merge(struct, how='left', on='PERFIL_BASE', suffixes=('', '_estr'))
-
     performance['PLANO'] = performance['PLANO'].str.replace('-', ' ', regex=False)
     performance['PLANO'] = performance['PLANO'].str.replace(r'\s+', ' ', regex=True)
     performance['PLANO'] = performance['PLANO'].str.strip()
 
-    return performance[performance['TIPO_PERFIL_BASE'] != 'A']
 
-
-def calc_mec_sac_returns(mec_sac, dcadplanosac):
+def calc_mec_sac_returns(mec_sac_dcadplanosac):
     """
     Calculate weighted monthly returns for each plan from mec_sac and dcadplanosac.
 
@@ -101,10 +89,17 @@ def calc_mec_sac_returns(mec_sac, dcadplanosac):
     Returns:
         DataFrame: Weighted monthly returns by plan and period.
     """
-    df = mec_sac.merge(dcadplanosac, how='left', left_on='CODCLI', right_on='CODCLI_SAC')
-    df['total_pl'] = df.groupby(['NOME_PLANO_KEY_DESEMPENHO', 'MES_ANO'])['VL_PATRLIQTOT1'].transform('sum')
-    df['RENTAB_MES_PONDERADA'] = (df['VL_PATRLIQTOT1'] / df['total_pl']) * df['RENTAB_MES']
-    return df.groupby(['NOME_PLANO_KEY_DESEMPENHO', 'MES_ANO'], as_index=False)['RENTAB_MES_PONDERADA'].sum()
+    mec_sac_dcadplanosac['total_pl'] = mec_sac_dcadplanosac.groupby(
+        ['NOME_PLANO_KEY_DESEMPENHO', 'DT'])['VL_PATRLIQTOT1'].transform('sum')
+
+    mec_sac_dcadplanosac['RENTAB_MES_PONDERADA'] = (
+        (mec_sac_dcadplanosac['VL_PATRLIQTOT1']
+         / mec_sac_dcadplanosac['total_pl'])
+        * mec_sac_dcadplanosac['RENTAB_MES']
+    )
+
+    return mec_sac_dcadplanosac.groupby(
+        ['NOME_PLANO_KEY_DESEMPENHO', 'DT'], as_index=False)['RENTAB_MES_PONDERADA'].sum()
 
 
 def calc_performance_returns(performance):
@@ -118,83 +113,77 @@ def calc_performance_returns(performance):
         DataFrame: Aggregated performance return by plan and date.
     """
     performance['total_pl'] = performance.groupby(['PLANO', 'DATA'])['PL'].transform('sum')
-    performance['RENTAB_MES_PONDERADA_DESEMPENHO'] = (performance['PL'] / performance['total_pl']) * performance['RETORNO_MES']
-    return performance.groupby(['PLANO', 'DATA'], as_index=False)['RENTAB_MES_PONDERADA_DESEMPENHO'].sum()
+    performance['RENTAB_MES_PONDERADA_DESEMPENHO'] = (
+        (performance['PL']
+         / performance['total_pl'])
+        * performance['RETORNO_MES']
+        )
+
+    return performance.groupby(
+        ['PLANO', 'DATA'], as_index=False)['RENTAB_MES_PONDERADA_DESEMPENHO'].sum()
 
 
-def merge_and_adjust_returns(perf_grouped, mec_sac_returns, plano_de_para):
+def parse_date_pt(performance):
     """
-    Merge performance and MEC/SAC returns and compute adjustment differences.
-
-    Args:
-        perf_grouped (DataFrame): Aggregated performance returns.
-        mec_sac_returns (DataFrame): Aggregated MEC/SAC returns.
-        plano_de_para (dict): Renaming dictionary for plan names.
-
-    Returns:
-        DataFrame: Final merged and adjusted dataset with rentability difference.
+    Converte coluna com datas em datetime ou 'mes-ano' (pt-br) para datetime no formato primeiro dia do mês.
     """
-    perf_grouped['NEW_PLANO'] = perf_grouped['PLANO'].map(plano_de_para).fillna(perf_grouped['PLANO'])
-    merged = perf_grouped.merge(
-        mec_sac_returns,
-        left_on=['NEW_PLANO', 'DATA'],
-        right_on=['NOME_PLANO_KEY_DESEMPENHO', 'MES_ANO'],
-        how='left'
-    )
-    merged['ajuste_rentab'] = merged['RENTAB_MES_PONDERADA_DESEMPENHO'] - merged['RENTAB_MES_PONDERADA']
-    return merged
-
-
-def parse_data_mes_ano_pt(performance, col='DATA'):
-    """
-    Converts a column with mixed formats (datetime or 'mes-ano' strings in Portuguese)
-    into datetime objects with the first day of the corresponding month.
-
-    Args:
-        performance (pd.DataFrame): The DataFrame containing the date column.
-        col (str): Name of the column to convert (default: 'DATA').
-
-    Returns:
-        pd.DataFrame: Same DataFrame with the column converted to datetime.
-
-    Raises:
-        RuntimeError: If a non-datetime and non-parseable string is encountered.
-    """
-    meses_pt = {
+    months_pt = {
         'janeiro': 1, 'fevereiro': 2, 'março': 3, 'abril': 4,
         'maio': 5, 'junho': 6, 'julho': 7, 'agosto': 8,
         'setembro': 9, 'outubro': 10, 'novembro': 11, 'dezembro': 12
     }
+    parsed_date = pd.Series(pd.NaT, index=performance.index)
 
-    datas_convertidas = []
+    coerced_datetime = pd.to_datetime(performance['DATA'], format='%d/%m/%Y', errors='coerce')
 
-    for idx, valor in performance[col].items():
-        try:
-            if isinstance(valor, (pd.Timestamp, Timestamp)):
-                # Já é datetime
-                datas_convertidas.append(valor.replace(day=1))
-                continue
+    parsed_date[coerced_datetime.notna()] = coerced_datetime[coerced_datetime.notna()].dt.to_period('M').dt.to_timestamp()
 
-            valor_str = str(valor).strip().lower()
-            match = re.match(r'^([a-zçã]+)-(\d{2}|\d{4})$', valor_str)
-            if not match:
-                raise ValueError(f"invalid format '{valor_str}' (expected 'mes-aa' or 'mes-aaaa')")
+    series_str = performance['DATA'].astype(str).str.strip().str.lower()
 
-            mes_nome, ano_str = match.groups()
-            if mes_nome not in meses_pt:
-                raise ValueError(f"invalid month name '{mes_nome}'")
+    regex_aa = r'^([a-zçã]+)-(\d{2})$'
+    regex_aaaa = r'^([a-zçã]+)-(\d{4})$'
 
-            mes = meses_pt[mes_nome]
-            ano = int(ano_str[-2:]) + 2000  # força para 20xx
-            datas_convertidas.append(pd.Timestamp(year=ano, month=mes, day=1))
+    extract_aa = series_str.str.extract(regex_aa)
+    extract_aaaa = series_str.str.extract(regex_aaaa)
 
-        except Exception as e:
-            linha = performance.loc[idx].to_dict()
-            print(f"Error parsing {col} at row {idx}: {e}\nRow content: {linha}")
+    mask = extract_aa.notna().all(axis=1)
+    if mask.any():
+        mes = extract_aa.loc[mask, 0].map(months_pt).astype('Int64')
+        ano = extract_aa.loc[mask, 1].astype(int) + 2000
+        parsed_date[mask] = pd.to_datetime({'year': ano, 'month': mes, 'day': 1})
 
-    performance[col] = pd.Series(datas_convertidas, index=performance.index)
-    return performance
+    mask = extract_aaaa.notna().all(axis=1)
+    if mask.any():
+        mes = extract_aaaa.loc[mask, 0].map(months_pt).astype('Int64')
+        ano = extract_aaaa.loc[mask, 1].astype(int)
+        parsed_date[mask] = pd.to_datetime({'year': ano, 'month': mes, 'day': 1})
 
+    performance['DATA'] = parsed_date
+
+    erros = parsed_date.isna()
+    if erros.any():
+        print(f"[parse_data_mes_ano_pt] Erros em {erros.sum()} linhas:")
+        print(performance.loc[erros, 'DATA'])
+
+
+def calc_adjust(perf_returns_by_plan, mec_sac_returns):
+    merged = perf_returns_by_plan.merge(
+        mec_sac_returns,
+        left_on=['NEW_PLANO', 'DATA'],
+        right_on=['NOME_PLANO_KEY_DESEMPENHO', 'DT'],
+        how='left'
+    )
+
+    merged['ajuste_rentab'] = (
+        merged['RENTAB_MES_PONDERADA_DESEMPENHO']
+        - merged['RENTAB_MES_PONDERADA']
+        )
+
+    merged.rename(columns={'ajuste_rentab': 'RETORNO_MES'}, inplace=True)
+    cols_adjust = ['PLANO', 'DATA', 'NEW_PLANO', 'NOME_PLANO_KEY_DESEMPENHO',
+                   'RETORNO_MES']
+    return merged[cols_adjust]
+        
 
 def run_pipeline():
     """
@@ -205,17 +194,37 @@ def run_pipeline():
     locale.setlocale(locale.LC_ALL, '')
     paths = prepare_paths()
 
-    plano_de_para, dcadplanosac, struct, mec_sac = load_auxiliary_data(paths)
+    plano_de_para, dcadplanosac, struct_perform = load_auxiliary_data(paths)
+    struct_perform['PERFIL_BASE'] = struct_perform['PERFIL_BASE'].astype(str).str.strip().str.upper()
+
+    with log_timing('performance', 'load_mec_sac'):
+        mec_sac = aux_loader.load_mec_sac_last_day_month(paths['mec_sac'])
+
+    mec_sac['DT'] = mec_sac['DT'].dt.to_period('M').dt.to_timestamp()
 
     with log_timing('performance', 'load_performance'):
         performance = aux_loader.load_performance(paths['performance'])
 
-    performance = process_performance(performance, struct)
-    mec_sac_returns = calc_mec_sac_returns(mec_sac, dcadplanosac)
-    perf_grouped = calc_performance_returns(performance)
+    standardize_plans_performance(performance)
+    parse_date_pt(performance)
 
-    perf_adjusted = merge_and_adjust_returns(perf_grouped, mec_sac_returns, plano_de_para)
-    result = pd.concat([performance, perf_adjusted])
+    mec_sac_dcadplanosac = mec_sac.merge(
+        dcadplanosac,
+        how='left',
+        left_on='CODCLI',
+        right_on='CODCLI_SAC'
+        )
+    mec_sac_returns = calc_mec_sac_returns(mec_sac_dcadplanosac)
+
+    perf_returns_by_plan = calc_performance_returns(performance)
+    perf_returns_by_plan['NEW_PLANO'] = perf_returns_by_plan['PLANO'].map(
+        plano_de_para).fillna(perf_returns_by_plan['PLANO'])
+
+    performance_adjust = calc_adjust(perf_returns_by_plan, mec_sac_returns)
+    result = pd.concat([performance, performance_adjust])
+
+    result = result.merge(struct_perform, how='left', on='PERFIL_BASE', suffixes=('', '_estr'))
+    result = result[result['TIPO_PERFIL_BASE'] != 'A']
     save_df(result, f"{paths['xlsx']}ajuste_desempenho", 'csv')
 
 
