@@ -57,7 +57,7 @@ def load_auxiliary_data(paths):
     return plano_de_para, dcadplanosac, struct_perform
 
 
-def standardize_performance_plans(performance):
+def standardize_performance_plans(performance, plano_de_para):
     """
     Clean the performance dataset.
 
@@ -67,15 +67,21 @@ def standardize_performance_plans(performance):
     Returns:
         None: Changes in place.
     """
-    performance['TIPO_PLANO'] = performance['PLANO'].str.split('-').str[1].fillna('').str.strip()
-    performance.loc[performance['PLANO'] == 'ROCHOPREV', 'TIPO_PLANO'] = 'CV'
+    performance['PLANO'] = performance['PLANO'].str.upper().str.strip()
 
+    performance['TIPO_PLANO'] = performance['PLANO'].str.split('-').str[1].fillna('').str.strip()
+
+    performance.loc[performance['PLANO'] == 'ROCHEPREV', 'TIPO_PLANO'] = 'CV'
     mask_cd = performance['TIPO_PLANO'].isin(['', 'AGRESSIVO', 'MODERADO', 'CONSERVADOR'])
     performance.loc[mask_cd, 'TIPO_PLANO'] = 'CD'
 
+
     performance['PLANO'] = performance['PLANO'].str.replace('-', ' ', regex=False)
-    performance['PLANO'] = performance['PLANO'].str.replace(r'\s+', ' ', regex=True)
+    performance['PLANO'] = performance['PLANO'].str.replace(r'\s+', ' ', regex=True).str.strip()
     performance['PLANO'] = performance['PLANO'].str.strip()
+
+    performance['PLANO'] = performance['PLANO'].map(
+        plano_de_para).fillna(performance['PLANO'])
 
 
 def calc_mec_sac_returns(mec_sac_dcadplanosac):
@@ -113,7 +119,8 @@ def calc_performance_returns(performance):
         DataFrame: Aggregated performance return by plan and date.
     """
     weighted_returns = performance.copy()
-    weighted_returns['total_pl'] = weighted_returns.groupby(['PLANO', 'DATA'])['PL'].transform('sum')
+    cols_group = ['PLANO', 'DATA', 'TIPO_PLANO']
+    weighted_returns['total_pl'] = weighted_returns.groupby(cols_group)['PL'].transform('sum')
     weighted_returns['RENTAB_MES_PONDERADA_DESEMPENHO'] = (
         (weighted_returns['PL']
          / weighted_returns['total_pl'])
@@ -183,21 +190,22 @@ def calc_adjust(perf_returns_by_plan, mec_sac_returns):
 
     Args:
         perf_returns_by_plan (pd.DataFrame): A DataFrame containing monthly performance returns
-            per plan, with columns like 'NEW_PLANO' and 'DATA'.
+            per plan, with columns like 'PLANO' and 'DATA'.
         mec_sac_returns (pd.DataFrame): A DataFrame with reference or adjusted returns,
             containing columns like 'NOME_PLANO_KEY_DESEMPENHO' and 'DT'.
 
     Returns:
         pd.DataFrame: A DataFrame with the columns:
+            - 'PERFIL_BASE'
             - 'PLANO'
             - 'DATA'
-            - 'NEW_PLANO'
+            - 'PLANO'
             - 'NOME_PLANO_KEY_DESEMPENHO'
             - 'RETORNO_MES': the difference between the reference and original monthly return.
     """
     merged = perf_returns_by_plan.merge(
         mec_sac_returns,
-        left_on=['NEW_PLANO', 'DATA'],
+        left_on=['PLANO', 'DATA'],
         right_on=['NOME_PLANO_KEY_DESEMPENHO', 'DT'],
         how='left'
     )
@@ -208,7 +216,8 @@ def calc_adjust(perf_returns_by_plan, mec_sac_returns):
         )
 
     merged.rename(columns={'ajuste_rentab': 'RETORNO_MES'}, inplace=True)
-    cols_adjust = ['PLANO', 'DATA', 'NEW_PLANO', 'NOME_PLANO_KEY_DESEMPENHO',
+    merged['PERFIL_BASE'] = '#AJUSTE'
+    cols_adjust = ['PERFIL_BASE','PLANO', 'DATA', 'NOME_PLANO_KEY_DESEMPENHO',
                    'RETORNO_MES']
     return merged[cols_adjust]
 
@@ -238,7 +247,7 @@ def run_pipeline():
     with log_timing('performance', 'load_performance'):
         performance = aux_loader.load_performance(paths['performance'])
 
-    standardize_performance_plans(performance)
+    standardize_performance_plans(performance, plano_de_para)
     parse_date_pt(performance)
 
     mec_sac_dcadplanosac = mec_sac.merge(
@@ -250,8 +259,6 @@ def run_pipeline():
     mec_sac_returns = calc_mec_sac_returns(mec_sac_dcadplanosac)
 
     perf_returns_by_plan = calc_performance_returns(performance)
-    perf_returns_by_plan['NEW_PLANO'] = perf_returns_by_plan['PLANO'].map(
-        plano_de_para).fillna(perf_returns_by_plan['PLANO'])
 
     performance_adjust = calc_adjust(perf_returns_by_plan, mec_sac_returns)
     result = pd.concat([performance, performance_adjust])
