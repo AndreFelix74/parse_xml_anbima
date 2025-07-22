@@ -57,7 +57,7 @@ def load_auxiliary_data(paths):
     return plano_de_para, dcadplanosac, struct_perform
 
 
-def standardize_plans_performance(performance):
+def standardize_performance_plans(performance):
     """
     Clean the performance dataset.
 
@@ -112,14 +112,15 @@ def calc_performance_returns(performance):
     Returns:
         DataFrame: Aggregated performance return by plan and date.
     """
-    performance['total_pl'] = performance.groupby(['PLANO', 'DATA'])['PL'].transform('sum')
-    performance['RENTAB_MES_PONDERADA_DESEMPENHO'] = (
-        (performance['PL']
-         / performance['total_pl'])
-        * performance['RETORNO_MES']
+    weighted_returns = performance.copy()
+    weighted_returns['total_pl'] = weighted_returns.groupby(['PLANO', 'DATA'])['PL'].transform('sum')
+    weighted_returns['RENTAB_MES_PONDERADA_DESEMPENHO'] = (
+        (weighted_returns['PL']
+         / weighted_returns['total_pl'])
+        * weighted_returns['RETORNO_MES']
         )
 
-    return performance.groupby(
+    return weighted_returns.groupby(
         ['PLANO', 'DATA'], as_index=False)['RENTAB_MES_PONDERADA_DESEMPENHO'].sum()
 
 
@@ -237,7 +238,7 @@ def run_pipeline():
     with log_timing('performance', 'load_performance'):
         performance = aux_loader.load_performance(paths['performance'])
 
-    standardize_plans_performance(performance)
+    standardize_performance_plans(performance)
     parse_date_pt(performance)
 
     mec_sac_dcadplanosac = mec_sac.merge(
