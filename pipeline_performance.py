@@ -9,6 +9,7 @@ Created on Tue Jul  8 16:51:15 2025
 
 import os
 import locale
+import pandas as pd
 from logger import log_timing
 
 import auxiliary_loaders as aux_loader
@@ -16,8 +17,6 @@ import data_access as dta
 import util as utl
 from file_handler import save_df
 
-import pandas as pd
-from pandas._libs.tslibs.timestamps import Timestamp
 
 
 def prepare_paths():
@@ -25,7 +24,8 @@ def prepare_paths():
     Load and format all relevant directory paths from the config.ini file.
 
     Returns:
-        dict: A dictionary containing cleaned paths for xlsx output, auxiliary data, mec_sac data, and performance data.
+        dict: A dictionary containing cleaned paths for xlsx output,
+            auxiliary data, mec_sac data, and performance data.
     """
     config = utl.load_config('config.ini')
     return {
@@ -125,7 +125,8 @@ def calc_performance_returns(performance):
 
 def parse_date_pt(performance):
     """
-    Converte coluna com datas em datetime ou 'mes-ano' (pt-br) para datetime no formato primeiro dia do mês.
+    Converte coluna com datas em datetime ou 'mes-ano' (pt-br) para datetime
+        no formato primeiro dia do mês.
     """
     months_pt = {
         'janeiro': 1, 'fevereiro': 2, 'março': 3, 'abril': 4,
@@ -136,7 +137,11 @@ def parse_date_pt(performance):
 
     coerced_datetime = pd.to_datetime(performance['DATA'], format='%d/%m/%Y', errors='coerce')
 
-    parsed_date[coerced_datetime.notna()] = coerced_datetime[coerced_datetime.notna()].dt.to_period('M').dt.to_timestamp()
+    parsed_date[coerced_datetime.notna()] = (
+        coerced_datetime[coerced_datetime.notna()]
+        .dt.to_period('M')
+        .dt.to_timestamp()
+    )
 
     series_str = performance['DATA'].astype(str).str.strip().str.lower()
 
@@ -167,6 +172,28 @@ def parse_date_pt(performance):
 
 
 def calc_adjust(perf_returns_by_plan, mec_sac_returns):
+    """
+    Calculates the monthly return adjustment by comparing two sources of performance data.
+
+    This function merges performance returns by plan with another dataset containing
+    adjusted returns (e.g., from a different calculation method or data source),
+    computes the monthly difference between them, and returns a simplified DataFrame
+    with relevant columns.
+
+    Args:
+        perf_returns_by_plan (pd.DataFrame): A DataFrame containing monthly performance returns
+            per plan, with columns like 'NEW_PLANO' and 'DATA'.
+        mec_sac_returns (pd.DataFrame): A DataFrame with reference or adjusted returns,
+            containing columns like 'NOME_PLANO_KEY_DESEMPENHO' and 'DT'.
+
+    Returns:
+        pd.DataFrame: A DataFrame with the columns:
+            - 'PLANO'
+            - 'DATA'
+            - 'NEW_PLANO'
+            - 'NOME_PLANO_KEY_DESEMPENHO'
+            - 'RETORNO_MES': the difference between the reference and original monthly return.
+    """
     merged = perf_returns_by_plan.merge(
         mec_sac_returns,
         left_on=['NEW_PLANO', 'DATA'],
@@ -183,7 +210,7 @@ def calc_adjust(perf_returns_by_plan, mec_sac_returns):
     cols_adjust = ['PLANO', 'DATA', 'NEW_PLANO', 'NOME_PLANO_KEY_DESEMPENHO',
                    'RETORNO_MES']
     return merged[cols_adjust]
-        
+
 
 def run_pipeline():
     """
@@ -195,7 +222,12 @@ def run_pipeline():
     paths = prepare_paths()
 
     plano_de_para, dcadplanosac, struct_perform = load_auxiliary_data(paths)
-    struct_perform['PERFIL_BASE'] = struct_perform['PERFIL_BASE'].astype(str).str.strip().str.upper()
+    struct_perform['PERFIL_BASE'] = (
+        struct_perform['PERFIL_BASE']
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
 
     with log_timing('performance', 'load_mec_sac'):
         mec_sac = aux_loader.load_mec_sac_last_day_month(paths['mec_sac'])
