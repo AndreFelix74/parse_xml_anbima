@@ -264,6 +264,7 @@ def run_pipeline():
     with log_timing('performance', 'load_performance'):
         performance = aux_loader.load_performance(paths['performance'])
 
+    performance = performance[~performance['PLANO'].str.contains('TOTAL', case=False, na=False)]
     standardize_performance_plans(performance, plano_de_para)
     parse_date_pt(performance)
     performance = merge_and_filter_struct(performance, struct_perform)
