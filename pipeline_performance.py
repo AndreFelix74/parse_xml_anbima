@@ -94,12 +94,12 @@ def calc_mec_sac_returns(mec_sac_dcadplanosac):
     Returns:
         DataFrame: Weighted monthly returns by plan and period.
     """
-    mec_sac_dcadplanosac['total_pl'] = mec_sac_dcadplanosac.groupby(
+    mec_sac_dcadplanosac['TOTAL_PL'] = mec_sac_dcadplanosac.groupby(
         ['NOME_PLANO_KEY_DESEMPENHO', 'DT'])['VL_PATRLIQTOT1'].transform('sum')
 
     mec_sac_dcadplanosac['RENTAB_MES_PONDERADA'] = (
         (mec_sac_dcadplanosac['VL_PATRLIQTOT1']
-         / mec_sac_dcadplanosac['total_pl'])
+         / mec_sac_dcadplanosac['TOTAL_PL'])
         * mec_sac_dcadplanosac['RENTAB_MES']
     )
 
@@ -119,15 +119,16 @@ def calc_performance_returns(performance):
     """
     weighted_returns = performance.copy()
     cols_group = ['PLANO', 'DATA', 'TIPO_PLANO']
-    weighted_returns['total_pl'] = weighted_returns.groupby(cols_group)['PL'].transform('sum')
+    weighted_returns['TOTAL_PL'] = weighted_returns.groupby(cols_group)['PL'].transform('sum')
     weighted_returns['RENTAB_MES_PONDERADA_DESEMPENHO'] = (
         (weighted_returns['PL']
-         / weighted_returns['total_pl'])
+         / weighted_returns['TOTAL_PL'])
         * weighted_returns['RETORNO_MES']
         )
 
-    return weighted_returns.groupby(
-        ['PLANO', 'DATA', 'TIPO_PLANO'], as_index=False)['RENTAB_MES_PONDERADA_DESEMPENHO'].sum()
+    cols_group = ['PLANO', 'DATA', 'TIPO_PLANO', 'TOTAL_PL']
+    return weighted_returns.groupby(cols_group
+                                    , as_index=False)['RENTAB_MES_PONDERADA_DESEMPENHO'].sum()
 
 
 def parse_date_pt(performance):
@@ -217,7 +218,7 @@ def calc_adjust(perf_returns_by_plan, mec_sac_returns):
     merged.rename(columns={'ajuste_rentab': 'RETORNO_MES'}, inplace=True)
     merged['PERFIL_BASE'] = '#AJUSTE'
     cols_adjust = ['PERFIL_BASE','PLANO', 'DATA', 'TIPO_PLANO',
-                   'NOME_PLANO_KEY_DESEMPENHO', 'RETORNO_MES']
+                   'NOME_PLANO_KEY_DESEMPENHO', 'RETORNO_MES', 'TOTAL_PL']
     return merged[cols_adjust]
 
 
