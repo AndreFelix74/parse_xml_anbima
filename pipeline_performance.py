@@ -261,6 +261,7 @@ def run_pipeline():
     perf_returns_by_plan = calc_performance_returns(performance)
 
     performance_adjust = calc_adjust(perf_returns_by_plan, mec_sac_returns)
+    performance_adjust['RETORNO_MES'] = performance_adjust['RETORNO_MES'].fillna(0)
     result = pd.concat([performance, performance_adjust])
 
     result = result.merge(struct_perform, how='left', on='PERFIL_BASE', suffixes=('', '_estr'))
