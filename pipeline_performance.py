@@ -94,17 +94,17 @@ def calc_mec_sac_returns(mec_sac_dcadplanosac):
     Returns:
         DataFrame: Weighted monthly returns by plan and period.
     """
-    mec_sac_dcadplanosac['TOTAL_PL'] = mec_sac_dcadplanosac.groupby(
+    mec_sac_dcadplanosac['total_pl_mec_sac'] = mec_sac_dcadplanosac.groupby(
         ['NOME_PLANO_KEY_DESEMPENHO', 'DT'])['VL_PATRLIQTOT1'].transform('sum')
 
     mec_sac_dcadplanosac['RENTAB_MES_PONDERADA'] = (
         (mec_sac_dcadplanosac['VL_PATRLIQTOT1']
-         / mec_sac_dcadplanosac['TOTAL_PL'])
+         / mec_sac_dcadplanosac['total_pl_mec_sac'])
         * mec_sac_dcadplanosac['RENTAB_MES']
     )
 
     return mec_sac_dcadplanosac.groupby(
-        ['NOME_PLANO_KEY_DESEMPENHO', 'DT'], as_index=False)['RENTAB_MES_PONDERADA'].sum()
+        ['NOME_PLANO_KEY_DESEMPENHO', 'DT', 'total_pl_mec_sac'], as_index=False)['RENTAB_MES_PONDERADA'].sum()
 
 
 def calc_performance_returns(performance):
@@ -222,6 +222,23 @@ def calc_adjust(perf_returns_by_plan, mec_sac_returns):
     return merged[cols_adjust]
 
 
+def merge_and_filter_struct(dfrm, struct_perform):
+    """
+    Performs a left merge between the input DataFrame and the struct_perform DataFrame
+    using the 'PERFIL_BASE' column, then filters out rows where 'TIPO_PERFIL_BASE' is 'A'.
+
+    Args:
+        df (pd.DataFrame): The input DataFrame to be merged and filtered.
+        struct_perform (pd.DataFrame): DataFrame containing structural profile information,
+                                       including 'PERFIL_BASE' and 'TIPO_PERFIL_BASE' columns.
+
+    Returns:
+        pd.DataFrame: The resulting DataFrame after merging and filtering.
+    """
+    dfrm = dfrm.merge(struct_perform, how='left', on='PERFIL_BASE')
+    return dfrm[dfrm['TIPO_PERFIL_BASE'] != 'A']
+
+
 def run_pipeline():
     """
     Main execution pipeline that processes auxiliary files and performance data,
@@ -249,6 +266,7 @@ def run_pipeline():
 
     standardize_performance_plans(performance, plano_de_para)
     parse_date_pt(performance)
+    performance = merge_and_filter_struct(performance, struct_perform)
 
     mec_sac_dcadplanosac = mec_sac.merge(
         dcadplanosac,
@@ -262,7 +280,8 @@ def run_pipeline():
 
     performance_adjust = calc_adjust(perf_returns_by_plan, mec_sac_returns)
     performance_adjust['RETORNO_MES'] = performance_adjust['RETORNO_MES'].fillna(0)
-    
+    performance_adjust = merge_and_filter_struct(performance_adjust, struct_perform)
+
     result = pd.concat([performance, performance_adjust])
     result['TOTAL_PL'] = result['TOTAL_PL'].fillna(0)
 
