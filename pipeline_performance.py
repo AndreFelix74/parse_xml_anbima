@@ -262,8 +262,9 @@ def run_pipeline():
 
     performance_adjust = calc_adjust(perf_returns_by_plan, mec_sac_returns)
     performance_adjust['RETORNO_MES'] = performance_adjust['RETORNO_MES'].fillna(0)
-    performance_adjust['TOTAL_PL'] = performance_adjust['TOTAL_PL'].fillna(0)
+    
     result = pd.concat([performance, performance_adjust])
+    result['TOTAL_PL'] = result['TOTAL_PL'].fillna(0)
 
     result = result.merge(struct_perform, how='left', on='PERFIL_BASE', suffixes=('', '_estr'))
     result = result[result['TIPO_PERFIL_BASE'] != 'A']
