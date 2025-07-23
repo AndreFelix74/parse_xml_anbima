@@ -94,17 +94,17 @@ def calc_mec_sac_returns(mec_sac_dcadplanosac):
     Returns:
         DataFrame: Weighted monthly returns by plan and period.
     """
-    mec_sac_dcadplanosac['total_pl_mec_sac'] = mec_sac_dcadplanosac.groupby(
+    mec_sac_dcadplanosac['TOTAL_PL_MEC_SAC'] = mec_sac_dcadplanosac.groupby(
         ['NOME_PLANO_KEY_DESEMPENHO', 'DT'])['VL_PATRLIQTOT1'].transform('sum')
 
-    mec_sac_dcadplanosac['RENTAB_MES_PONDERADA'] = (
+    mec_sac_dcadplanosac['RENTAB_MES_PONDERADA_MEC_SAC'] = (
         (mec_sac_dcadplanosac['VL_PATRLIQTOT1']
-         / mec_sac_dcadplanosac['total_pl_mec_sac'])
+         / mec_sac_dcadplanosac['TOTAL_PL_MEC_SAC'])
         * mec_sac_dcadplanosac['RENTAB_MES']
     )
 
     return mec_sac_dcadplanosac.groupby(
-        ['NOME_PLANO_KEY_DESEMPENHO', 'DT', 'total_pl_mec_sac'], as_index=False)['RENTAB_MES_PONDERADA'].sum()
+        ['NOME_PLANO_KEY_DESEMPENHO', 'DT', 'TOTAL_PL_MEC_SAC'], as_index=False)['RENTAB_MES_PONDERADA_MEC_SAC'].sum()
 
 
 def calc_performance_returns(performance):
@@ -119,14 +119,14 @@ def calc_performance_returns(performance):
     """
     weighted_returns = performance[performance['PERFIL_N2'] != 'Previdenciário'].copy()
     cols_group = ['PLANO', 'DATA', 'TIPO_PLANO']
-    weighted_returns['TOTAL_PL'] = weighted_returns.groupby(cols_group)['PL'].transform('sum')
+    weighted_returns['TOTAL_PL_DESEMPENHO'] = weighted_returns.groupby(cols_group)['PL'].transform('sum')
     weighted_returns['RENTAB_MES_PONDERADA_DESEMPENHO'] = (
         (weighted_returns['PL']
-         / weighted_returns['TOTAL_PL'])
+         / weighted_returns['TOTAL_PL_DESEMPENHO'])
         * weighted_returns['RETORNO_MES']
         )
 
-    cols_group = ['PLANO', 'DATA', 'TIPO_PLANO', 'TOTAL_PL']
+    cols_group = ['PLANO', 'DATA', 'TIPO_PLANO', 'TOTAL_PL_DESEMPENHO']
     return weighted_returns.groupby(cols_group
                                     , as_index=False)['RENTAB_MES_PONDERADA_DESEMPENHO'].sum()
 
@@ -211,14 +211,14 @@ def calc_adjust(perf_returns_by_plan, mec_sac_returns):
     )
 
     merged['ajuste_rentab'] = (
-        merged['RENTAB_MES_PONDERADA_DESEMPENHO']
-        - merged['RENTAB_MES_PONDERADA']
+        merged['RENTAB_MES_PONDERADA_MEC_SAC']
+        - merged['RENTAB_MES_PONDERADA_DESEMPENHO']
         )
 
     merged.rename(columns={'ajuste_rentab': 'RETORNO_MES'}, inplace=True)
     merged['PERFIL_BASE'] = '#AJUSTE'
     cols_adjust = ['PERFIL_BASE','PLANO', 'DATA', 'TIPO_PLANO',
-                   'NOME_PLANO_KEY_DESEMPENHO', 'RETORNO_MES', 'TOTAL_PL']
+                   'NOME_PLANO_KEY_DESEMPENHO', 'RETORNO_MES', 'TOTAL_PL_DESEMPENHO']
     return merged[cols_adjust]
 
 
@@ -280,11 +280,9 @@ def run_pipeline():
     perf_returns_by_plan = calc_performance_returns(performance)
 
     performance_adjust = calc_adjust(perf_returns_by_plan, mec_sac_returns)
-    performance_adjust['RETORNO_MES'] = performance_adjust['RETORNO_MES'].fillna(0)
     performance_adjust = merge_and_filter_struct(performance_adjust, struct_perform)
 
     result = pd.concat([performance, performance_adjust])
-    result['TOTAL_PL'] = result['TOTAL_PL'].fillna(0)
 
     result = result.merge(struct_perform, how='left', on='PERFIL_BASE', suffixes=('', '_estr'))
     result = result[result['TIPO_PERFIL_BASE'] != 'A']
