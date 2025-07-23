@@ -264,7 +264,7 @@ def run_pipeline():
 
     result = result.merge(struct_perform, how='left', on='PERFIL_BASE', suffixes=('', '_estr'))
     result = result[result['TIPO_PERFIL_BASE'] != 'A']
-    save_df(result, f"{paths['xlsx']}ajuste_desempenho", 'csv')
+    save_df(result, f"{paths['xlsx']}desempenho", 'csv')
 
 
 if __name__ == "__main__":
