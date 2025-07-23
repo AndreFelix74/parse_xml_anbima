@@ -117,7 +117,7 @@ def calc_performance_returns(performance):
     Returns:
         DataFrame: Aggregated performance return by plan and date.
     """
-    weighted_returns = performance.copy()
+    weighted_returns = performance[performance['PERFIL_N2'] != 'Previdenciário'].copy()
     cols_group = ['PLANO', 'DATA', 'TIPO_PLANO']
     weighted_returns['TOTAL_PL'] = weighted_returns.groupby(cols_group)['PL'].transform('sum')
     weighted_returns['RENTAB_MES_PONDERADA_DESEMPENHO'] = (
