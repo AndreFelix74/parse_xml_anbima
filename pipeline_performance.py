@@ -71,17 +71,16 @@ def standardize_performance_plans(performance, plano_de_para):
 
     performance['TIPO_PLANO'] = performance['PLANO'].str.split('-').str[1].fillna('').str.strip()
 
+    performance['PLANO'] = performance['PLANO'].map(
+        plano_de_para).fillna(performance['PLANO'])
+
     performance.loc[performance['PLANO'] == 'ROCHEPREV', 'TIPO_PLANO'] = 'CV'
     mask_cd = performance['TIPO_PLANO'].isin(['', 'AGRESSIVO', 'MODERADO', 'CONSERVADOR'])
     performance.loc[mask_cd, 'TIPO_PLANO'] = 'CD'
 
-
     performance['PLANO'] = performance['PLANO'].str.replace('-', ' ', regex=False)
     performance['PLANO'] = performance['PLANO'].str.replace(r'\s+', ' ', regex=True).str.strip()
     performance['PLANO'] = performance['PLANO'].str.strip()
-
-    performance['PLANO'] = performance['PLANO'].map(
-        plano_de_para).fillna(performance['PLANO'])
 
 
 def calc_mec_sac_returns(mec_sac_dcadplanosac):
