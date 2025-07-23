@@ -365,7 +365,6 @@ def load_performance(performance_path):
     performance = pd.concat(raw_data, ignore_index=True)
 
     performance = performance[
-        (~performance[2].str.contains("total", case=False, na=False)) &
         (~performance[2].isin(['Patrimônio de Investimentos', 'Patrimônio Total'])) &
         (performance[2].notnull()) &
         (performance[3].notnull())
