@@ -128,7 +128,7 @@ def calc_performance_returns(performance):
         )
 
     return weighted_returns.groupby(
-        ['PLANO', 'DATA'], as_index=False)['RENTAB_MES_PONDERADA_DESEMPENHO'].sum()
+        ['PLANO', 'DATA', 'TIPO_PLANO'], as_index=False)['RENTAB_MES_PONDERADA_DESEMPENHO'].sum()
 
 
 def parse_date_pt(performance):
@@ -217,8 +217,8 @@ def calc_adjust(perf_returns_by_plan, mec_sac_returns):
 
     merged.rename(columns={'ajuste_rentab': 'RETORNO_MES'}, inplace=True)
     merged['PERFIL_BASE'] = '#AJUSTE'
-    cols_adjust = ['PERFIL_BASE','PLANO', 'DATA', 'NOME_PLANO_KEY_DESEMPENHO',
-                   'RETORNO_MES']
+    cols_adjust = ['PERFIL_BASE','PLANO', 'DATA', 'TIPO_PLANO',
+                   'NOME_PLANO_KEY_DESEMPENHO', 'RETORNO_MES']
     return merged[cols_adjust]
 
 
