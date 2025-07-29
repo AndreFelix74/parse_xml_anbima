@@ -98,13 +98,17 @@ def calc_mec_sac_returns(mec_sac_dcadplanosac):
         ['NOME_PLANO_KEY_DESEMPENHO', 'DT'])['VL_PATRLIQTOT1'].transform('sum')
 
     mec_sac_dcadplanosac['RENTAB_MES_PONDERADA_MEC_SAC'] = (
-        (mec_sac_dcadplanosac['VL_PATRLIQTOT1']
+        ((mec_sac_dcadplanosac['VL_PATRLIQTOT1']
+          - mec_sac_dcadplanosac['VL_ENTRADAS']
+          + mec_sac_dcadplanosac['VL_SAIDAS']
+          )
          / mec_sac_dcadplanosac['TOTAL_PL_MEC_SAC'])
         * mec_sac_dcadplanosac['RENTAB_MES']
     )
 
-    return mec_sac_dcadplanosac.groupby(
-        ['NOME_PLANO_KEY_DESEMPENHO', 'DT', 'TOTAL_PL_MEC_SAC'], as_index=False)['RENTAB_MES_PONDERADA_MEC_SAC'].sum()
+    cols_group = ['NOME_PLANO_KEY_DESEMPENHO', 'DT', 'TOTAL_PL_MEC_SAC']
+    return mec_sac_dcadplanosac.groupby(cols_group,
+                                        as_index=False)['RENTAB_MES_PONDERADA_MEC_SAC'].sum()
 
 
 def calc_performance_returns(performance):
@@ -119,16 +123,18 @@ def calc_performance_returns(performance):
     """
     weighted_returns = performance[performance['PERFIL_N2'] != 'Previdenciário'].copy()
     cols_group = ['PLANO', 'DATA', 'TIPO_PLANO']
-    weighted_returns['TOTAL_PL_DESEMPENHO'] = weighted_returns.groupby(cols_group)['PL'].transform('sum')
-    weighted_returns['RENTAB_MES_PONDERADA_DESEMPENHO'] = (
+    weighted_returns['TOTAL_PL_DESEMPENHO'] = (
+        weighted_returns.groupby(cols_group)['PL'].transform('sum')
+        )
+    weighted_returns['RETORNO_MES'] = (
         (weighted_returns['PL']
          / weighted_returns['TOTAL_PL_DESEMPENHO'])
         * weighted_returns['RETORNO_MES']
         )
 
     cols_group = ['PLANO', 'DATA', 'TIPO_PLANO', 'TOTAL_PL_DESEMPENHO']
-    return weighted_returns.groupby(cols_group
-                                    , as_index=False)['RENTAB_MES_PONDERADA_DESEMPENHO'].sum()
+    return weighted_returns.groupby(cols_group,
+                                    as_index=False)['RETORNO_MES'].sum()
 
 
 def parse_date_pt(performance):
@@ -264,7 +270,8 @@ def run_pipeline():
     with log_timing('performance', 'load_performance'):
         performance = aux_loader.load_performance(paths['performance'])
 
-    performance = performance[~performance['PLANO'].str.contains('TOTAL', case=False, na=False)]
+    mask = ~performance['PLANO'].str.contains('TOTAL', case=False, na=False)
+    performance = performance[mask]
     standardize_performance_plans(performance, plano_de_para)
     parse_date_pt(performance)
     performance = merge_and_filter_struct(performance, struct_perform)
