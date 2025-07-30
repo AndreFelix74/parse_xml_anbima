@@ -69,12 +69,11 @@ def standardize_performance_plans(performance, plano_de_para):
     """
     performance['PLANO'] = performance['PLANO'].str.upper().str.strip()
 
-    performance['TIPO_PLANO'] = performance['PLANO'].str.split('-').str[1].fillna('').str.strip()
-
     performance['PLANO'] = performance['PLANO'].map(
         plano_de_para).fillna(performance['PLANO'])
 
-    performance.loc[performance['PLANO'] == 'ROCHEPREV', 'TIPO_PLANO'] = 'CV'
+    performance['TIPO_PLANO'] = performance['PLANO'].str.split('-').str[1].fillna('').str.strip()
+
     mask_cd = performance['TIPO_PLANO'].isin(['', 'AGRESSIVO', 'MODERADO', 'CONSERVADOR'])
     performance.loc[mask_cd, 'TIPO_PLANO'] = 'CD'
 
