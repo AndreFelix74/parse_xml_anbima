@@ -227,7 +227,7 @@ def load_mec_sac_last_day_month(data_aux_path):
     """
     dfs = []
     columns = ['CLCLI_CD', 'DT', 'VL_PATRLIQTOT1', 'CODCLI', 'NOME',
-               'compute_0016', 'compute_0017']
+               'compute_0016', 'compute_0017', 'VL_SAIDAS', 'VL_ENTRADAS']
 
     for filename in os.listdir(data_aux_path):
         if filename.startswith('_mecSAC_') and filename.endswith('.xlsx'):

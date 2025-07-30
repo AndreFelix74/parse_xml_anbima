@@ -126,7 +126,7 @@ def calc_performance_returns(performance):
     weighted_returns['TOTAL_PL_DESEMPENHO'] = (
         weighted_returns.groupby(cols_group)['PL'].transform('sum')
         )
-    weighted_returns['RETORNO_MES'] = (
+    weighted_returns['RETORNO_MES_PONDERADO_DESEMPENHO'] = (
         (weighted_returns['PL']
          / weighted_returns['TOTAL_PL_DESEMPENHO'])
         * weighted_returns['RETORNO_MES']
@@ -134,7 +134,7 @@ def calc_performance_returns(performance):
 
     cols_group = ['PLANO', 'DATA', 'TIPO_PLANO', 'TOTAL_PL_DESEMPENHO']
     return weighted_returns.groupby(cols_group,
-                                    as_index=False)['RETORNO_MES'].sum()
+                                    as_index=False)['RETORNO_MES_PONDERADO_DESEMPENHO'].sum()
 
 
 def parse_date_pt(performance):
@@ -218,7 +218,7 @@ def calc_adjust(perf_returns_by_plan, mec_sac_returns):
 
     merged['ajuste_rentab'] = (
         merged['RENTAB_MES_PONDERADA_MEC_SAC']
-        - merged['RENTAB_MES_PONDERADA_DESEMPENHO']
+        - merged['RETORNO_MES_PONDERADO_DESEMPENHO']
         )
 
     merged.rename(columns={'ajuste_rentab': 'RETORNO_MES'}, inplace=True)
