@@ -98,10 +98,7 @@ def calc_mec_sac_returns(mec_sac_dcadplanosac):
         ['NOME_PLANO_KEY_DESEMPENHO', 'DT'])['VL_PATRLIQTOT1'].transform('sum')
 
     mec_sac_dcadplanosac['RENTAB_MES_PONDERADA_MEC_SAC'] = (
-        ((mec_sac_dcadplanosac['VL_PATRLIQTOT1']
-          - mec_sac_dcadplanosac['VL_ENTRADAS']
-          + mec_sac_dcadplanosac['VL_SAIDAS']
-          )
+        (mec_sac_dcadplanosac['VL_PATRLIQTOT1']
          / mec_sac_dcadplanosac['TOTAL_PL_MEC_SAC'])
         * mec_sac_dcadplanosac['RENTAB_MES']
     )
