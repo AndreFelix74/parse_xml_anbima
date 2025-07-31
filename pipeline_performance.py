@@ -185,14 +185,9 @@ def calc_adjust(perf_returns_by_plan, mec_sac_returns):
     """
     Calculates the monthly return adjustment by comparing two sources of performance data.
 
-    This function merges performance returns by plan with another dataset containing
-    adjusted returns (e.g., from a different calculation method or data source),
-    computes the monthly difference between them, and returns a simplified DataFrame
-    with relevant columns.
-
     Args:
-        perf_returns_by_plan (pd.DataFrame): A DataFrame containing monthly performance returns
-            per plan, with columns like 'PLANO' and 'DATA'.
+        perf_returns_by_plan (pd.DataFrame): A DataFrame containing monthly performance
+            returns per plan, with columns like 'PLANO' and 'DATA'.
         mec_sac_returns (pd.DataFrame): A DataFrame with reference or adjusted returns,
             containing columns like 'NOME_PLANO_KEY_DESEMPENHO' and 'DT'.
 
@@ -204,6 +199,7 @@ def calc_adjust(perf_returns_by_plan, mec_sac_returns):
             - 'PLANO'
             - 'NOME_PLANO_KEY_DESEMPENHO'
             - 'RETORNO_MES': the difference between the reference and original monthly return.
+            - 'PL': the difference between the reference and original monthly return.
     """
     merged = perf_returns_by_plan.merge(
         mec_sac_returns,
@@ -217,10 +213,16 @@ def calc_adjust(perf_returns_by_plan, mec_sac_returns):
         - merged['RETORNO_MES_PONDERADO_DESEMPENHO']
         )
 
+    merged['ajuste_pl'] = (
+        merged['TOTAL_PL_MEC_SAC']
+        - merged['TOTAL_PL_DESEMPENHO']
+        )
+
     merged.rename(columns={'ajuste_rentab': 'RETORNO_MES'}, inplace=True)
+    merged.rename(columns={'ajuste_pl': 'PL'}, inplace=True)
     merged['PERFIL_BASE'] = '#AJUSTE'
-    cols_adjust = ['PERFIL_BASE','PLANO', 'DATA', 'TIPO_PLANO',
-                   'NOME_PLANO_KEY_DESEMPENHO', 'RETORNO_MES', 'TOTAL_PL_DESEMPENHO']
+    cols_adjust = ['PERFIL_BASE','PLANO', 'DATA', 'TIPO_PLANO', 'NOME_PLANO_KEY_DESEMPENHO',
+                   'RETORNO_MES', 'PL', 'TOTAL_PL_MEC_SAC']
     return merged[cols_adjust]
 
 
@@ -268,6 +270,7 @@ def run_pipeline():
 
     mask = ~performance['PLANO'].str.contains('TOTAL', case=False, na=False)
     performance = performance[mask]
+    performance['PL'] *= 1_000 # as planilhas de desempenho estao em milhares
     standardize_performance_plans(performance, plano_de_para)
     parse_date_pt(performance)
     performance = merge_and_filter_struct(performance, struct_perform)
@@ -287,8 +290,6 @@ def run_pipeline():
 
     result = pd.concat([performance, performance_adjust])
 
-    result = result.merge(struct_perform, how='left', on='PERFIL_BASE', suffixes=('', '_estr'))
-    result = result[result['TIPO_PERFIL_BASE'] != 'A']
     save_df(result, f"{paths['xlsx']}desempenho", 'csv')
 
 
