@@ -314,10 +314,16 @@ def load_dcadplanosac(data_aux_path):
                                  sheet_name='dCadPlanoSAC',
                                  dtype=str)
 
+    dcadplanosac['CODCLI_SAC_INVEST'] = (
+        dcadplanosac['CODCLI_SAC_INVEST']
+        .astype(str).str.strip()
+        .replace('', pd.NA)
+    )
+    
     # Substitui carteira com contencioso pela carteira sem contencioso (soh investimentos)
     dcadplanosac['CODCLI_SAC'] = (
         dcadplanosac['CODCLI_SAC_INVEST'].where(
-            dcadplanosac['CODCLI_SAC_INVEST'].notnull(),
+            dcadplanosac['CODCLI_SAC_INVEST'].notna(),
             dcadplanosac['CODCLI_SAC']
         )
     )
