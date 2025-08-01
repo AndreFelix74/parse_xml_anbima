@@ -221,8 +221,8 @@ def calc_adjust(perf_returns_by_plan, mec_sac_returns):
     merged.rename(columns={'ajuste_rentab': 'RETORNO_MES'}, inplace=True)
     merged.rename(columns={'ajuste_pl': 'PL'}, inplace=True)
     merged['PERFIL_BASE'] = '#AJUSTE'
-    cols_adjust = ['PERFIL_BASE','PLANO', 'DATA', 'TIPO_PLANO', 'NOME_PLANO_KEY_DESEMPENHO',
-                   'RETORNO_MES', 'PL', 'TOTAL_PL_MEC_SAC']
+    cols_adjust = ['PERFIL_BASE','PLANO', 'DATA', 'TIPO_PLANO',
+                   'NOME_PLANO_KEY_DESEMPENHO', 'RETORNO_MES', 'PL', 'TOTAL_PL_MEC_SAC']
     return merged[cols_adjust]
 
 
@@ -275,6 +275,8 @@ def run_pipeline():
     parse_date_pt(performance)
     performance = merge_and_filter_struct(performance, struct_perform)
 
+    perf_returns_by_plan = calc_performance_returns(performance)
+
     mec_sac_dcadplanosac = mec_sac.merge(
         dcadplanosac,
         how='left',
@@ -282,8 +284,6 @@ def run_pipeline():
         right_on='CODCLI_SAC'
         )
     mec_sac_returns = calc_mec_sac_returns(mec_sac_dcadplanosac)
-
-    perf_returns_by_plan = calc_performance_returns(performance)
 
     performance_adjust = calc_adjust(perf_returns_by_plan, mec_sac_returns)
     performance_adjust = merge_and_filter_struct(performance_adjust, struct_perform)
