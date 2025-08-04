@@ -10,7 +10,7 @@ Created on Tue Jul  8 16:51:15 2025
 import os
 import locale
 import pandas as pd
-from logger import log_timing
+from logger import log_timing, RUN_ID
 
 import auxiliary_loaders as aux_loader
 import data_access as dta
@@ -18,22 +18,73 @@ import util as utl
 from file_handler import save_df
 
 
+def save_intermediate(dtfrm, filename, config, log):
+    """
+    Saves an intermediate DataFrame to a unique RUN_ID subfolder.
+
+    Parameters
+    ----------
+    dtfrm : pandas.DataFrame
+        DataFrame to be saved.
+    name : str
+        Base filename (without extension).
+    config : configparser.ConfigParser
+        Config object with [Debug] and [Paths] sections.
+    run_id : str
+        Unique identifier for this pipeline execution.
+
+    Returns
+    -------
+    str
+        Full path of saved file.
+
+    Raises
+    ------
+    KeyError
+        If required configuration keys or sections are missing.
+    ValueError
+        If file writing is disabled by configuration.
+    """
+    run_folder = os.path.join(config['output_path'], RUN_ID)
+    os.makedirs(run_folder, exist_ok=True)
+
+    full_path = os.path.join(run_folder, filename)
+    save_df(dtfrm, full_path, config['file_format'])
+
+    log.info('intermediate_files_saved', arquivo=f"{full_path}.{config['file_format']}")
+
 
 def prepare_paths():
     """
     Load and format all relevant directory paths from the config.ini file.
 
     Returns:
-        dict: A dictionary containing cleaned paths for xlsx output,
-            auxiliary data, mec_sac data, and performance data.
+        tuple: (paths dict, intermediate_cfg dict)
     """
     config = utl.load_config('config.ini')
-    return {
+
+    # Verificações de seções obrigatórias
+    if not config.has_section('Paths'):
+        raise KeyError('Missing [Paths] section in config.ini')
+
+    if not config.has_section('Debug'):
+        raise KeyError('Missing [Debug] section in config.ini')
+
+    paths = {
         'xlsx': f"{os.path.dirname(utl.format_path(config['Paths']['xlsx_destination_path']))}/",
         'aux': f"{os.path.dirname(utl.format_path(config['Paths']['data_aux_path']))}/",
         'mec_sac': f"{os.path.dirname(utl.format_path(config['Paths']['mec_sac_path']))}/",
         'performance': f"{os.path.dirname(utl.format_path(config['Paths']['performance_path']))}/"
     }
+
+    intermediate_cfg = {
+        'save': config['Debug'].get('write_intermediate_files', '').lower() == 'yes',
+        'output_path': config['Debug'].get('intermediate_output_path'),
+        'file_format': config['Paths'].get('destination_file_extension')
+    }
+
+    return paths, intermediate_cfg
+
 
 
 def load_auxiliary_data(paths):
@@ -256,7 +307,7 @@ def run_pipeline():
     and saves the final adjustment file.
     """
     locale.setlocale(locale.LC_ALL, '')
-    paths = prepare_paths()
+    paths, intermediate_cfg = prepare_paths()    
 
     plano_de_para, dcadplanosac, struct_perform = load_auxiliary_data(paths)
     struct_perform['PERFIL_BASE'] = (
@@ -295,6 +346,13 @@ def run_pipeline():
     performance_adjust = merge_and_filter_struct(performance_adjust, struct_perform)
 
     result = pd.concat([performance, performance_adjust])
+
+    if intermediate_cfg['save']:
+        with log_timing('performance', 'save_intermediate_files') as log:
+            save_intermediate(performance, 'desempenho-raw', intermediate_cfg, log)
+            save_intermediate(mec_sac, 'mec_sac-raw', intermediate_cfg, log)
+            save_intermediate(perf_returns_by_plan, 'perf_returns_by_plan-raw', intermediate_cfg, log)
+            save_intermediate(mec_sac_returns, 'mec_sac_returns-raw', intermediate_cfg, log)
 
     save_df(result, f"{paths['xlsx']}desempenho", 'csv')
 
