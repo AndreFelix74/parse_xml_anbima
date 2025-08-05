@@ -214,7 +214,7 @@ def load_auxiliary_data(paths):
     plano_de_para = dta.read('planos_desempenho_renaming')
 
     with log_timing('load', 'dcadplanosac'):
-        dcadplanosac = aux_loader.load_dcadplanosac(paths['aux'])
+        dcadplanosac = aux_loader.load_dcadplanosac(paths['aux'], 'contencioso')
 
     with log_timing('load', 'struct'):
         struct_perform = aux_loader.load_performance_struct(paths['aux'])
