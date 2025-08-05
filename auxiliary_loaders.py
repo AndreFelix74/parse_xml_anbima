@@ -339,35 +339,51 @@ def load_performance_struct(data_aux_path):
     return pd.read_excel(dbaux_path, sheet_name='dEstruturaDesempenho', dtype=str)
 
 
-def load_performance(performance_path):
-    raw_data = []
+def load_performance(file_path):
+    """
+    Loads and processes the 'Resumo' sheet from an Excel performance file.
 
-    for filename in os.listdir(performance_path):
-        if filename.startswith('Desempenho'):
-            file_path = os.path.join(performance_path, filename)
-            try:
-                raw_sheet = pd.read_excel(file_path, sheet_name='Resumo', header=None)
-            except Exception as excp:
-                print('')
-                print(f"Erro ao abrir o arquivo {file_path}")
-                print(excp)
-                continue
+    The function extracts relevant performance data, cleans and normalizes
+    the values, and returns a structured DataFrame. Rows that do not contain
+    valid performance records are filtered out. It ensures that numeric 
+    columns are converted properly and missing values are handled.
 
-            if raw_sheet.empty:
-                print(f"Empty performance file: {filename}")
-                continue
-
-            raw_data.append(raw_sheet)
-
+    Args:
+        file_path (str): Path to the Excel file containing the performance data.
     if not raw_data:
+    Returns:
+        pd.DataFrame: A DataFrame with the following columns:
+            - PERFIL_BASE (str): Standardized portfolio profile name.
+            - PL (float): Patrimonial value of the portfolio.
+            - RATIO (float): Portfolio ratio indicator.
+            - RETORNO_MES (float): Monthly return percentage.
+            - RETORNO_YTD (float): Year-to-date return percentage.
+            - PLANO (str): Portfolio plan name, forward-filled as needed.
+            - DATA (str | float | datetime): Reference date, forward-filled
+              and converted according to detected data type.
+    Notes:
+        - The function ignores rows labeled as 'Patrimônio de Investimentos'
+          or 'Patrimônio Total'.
+        - If the Excel file cannot be read or contains no data, an empty 
+          DataFrame is returned.
+        - All numeric fields are coerced to floats, with invalid values set to 0.
+    """
+    try:
+        raw_sheet = pd.read_excel(file_path, sheet_name='Resumo', header=None)
+    except Exception as excp:
+        print('')
+        print(f"Error opening file: {file_path}")
+        print(excp)
         return pd.DataFrame()
 
-    performance = pd.concat(raw_data, ignore_index=True)
+    if raw_sheet.empty:
+        print(f"Empty file: {file_path}")
+        return pd.DataFrame()
 
-    performance = performance[
-        (~performance[2].isin(['Patrimônio de Investimentos', 'Patrimônio Total'])) &
-        (performance[2].notnull()) &
-        (performance[3].notnull())
+    performance = raw_sheet[
+        (~raw_sheet[2].isin(['Patrimônio de Investimentos', 'Patrimônio Total'])) &
+        (raw_sheet[2].notnull()) &
+        (raw_sheet[3].notnull())
     ][[2, 3, 4, 5, 6]].copy()
 
     performance.columns = ['PERFIL_BASE', 'PL', 'RATIO', 'RETORNO_MES', 'RETORNO_YTD']
@@ -376,13 +392,21 @@ def load_performance(performance_path):
     performance.loc[mask, 'PLANO'] = performance.loc[mask, 'PERFIL_BASE'].str.upper()
     performance.loc[mask, 'DATA'] = performance.loc[mask, 'PL']
     performance['PLANO'] = performance['PLANO'].ffill()
-    performance['DATA'] = performance['DATA'].ffill()
+
+    col = performance['DATA']
+    if pd.api.types.is_datetime64_any_dtype(col):
+        performance['DATA'] = col.ffill()
+    elif pd.api.types.is_numeric_dtype(col):
+        performance['DATA'] = col.ffill()
+    else:
+        performance['DATA'] = col.astype("string").ffill()
 
     for col in ['PL', 'RATIO', 'RETORNO_MES', 'RETORNO_YTD']:
         performance[col] = pd.to_numeric(performance[col], errors='coerce').fillna(0)
 
     performance = performance[performance['PL'] != 0]
-    performance[['RETORNO_MES', 'RETORNO_YTD', 'PL']] = performance[['RETORNO_MES', 'RETORNO_YTD', 'PL']].fillna(0)
+    cols_result = ['RETORNO_MES', 'RETORNO_YTD', 'PL']
+    performance[cols_result] = performance[cols_result].fillna(0)
 
     performance['PERFIL_BASE'] = performance['PERFIL_BASE'].astype(str).str.strip().str.upper()
 

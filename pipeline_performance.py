@@ -9,8 +9,10 @@ Created on Tue Jul  8 16:51:15 2025
 
 import os
 import locale
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor
 import pandas as pd
-from logger import log_timing
+from logger import log_timing, RUN_ID
 
 import auxiliary_loaders as aux_loader
 import data_access as dta
@@ -18,22 +20,148 @@ import util as utl
 from file_handler import save_df
 
 
+def save_intermediate(dtfrm, filename, config, log):
+    """
+    Saves an intermediate DataFrame to a unique RUN_ID subfolder.
+    Parameters
+    ----------
+    dtfrm : pandas.DataFrame
+        DataFrame to be saved.
+    name : str
+        Base filename (without extension).
+    config : configparser.ConfigParser
+        Config object with [Debug] and [Paths] sections.
+    run_id : str
+        Unique identifier for this pipeline execution.
+    Returns
+    -------
+    str
+        Full path of saved file.
+    Raises
+    ------
+    KeyError
+        If required configuration keys or sections are missing.
+    ValueError
+        If file writing is disabled by configuration.
+    """
+    run_folder = os.path.join(config['output_path'], RUN_ID)
+    os.makedirs(run_folder, exist_ok=True)
+
+    full_path = os.path.join(run_folder, filename)
+    save_df(dtfrm, full_path, config['file_format'])
+
+    log.info('intermediate_files_saved', arquivo=f"{full_path}.{config['file_format']}")
+
 
 def prepare_paths():
     """
     Load and format all relevant directory paths from the config.ini file.
 
     Returns:
-        dict: A dictionary containing cleaned paths for xlsx output,
-            auxiliary data, mec_sac data, and performance data.
+        tuple: (paths dict, intermediate_cfg dict)
     """
     config = utl.load_config('config.ini')
-    return {
+
+    if not config.has_section('Paths'):
+        raise KeyError('Missing [Paths] section in config.ini')
+
+    if not config.has_section('Debug'):
+        raise KeyError('Missing [Debug] section in config.ini')
+
+    paths = {
         'xlsx': f"{os.path.dirname(utl.format_path(config['Paths']['xlsx_destination_path']))}/",
         'aux': f"{os.path.dirname(utl.format_path(config['Paths']['data_aux_path']))}/",
         'mec_sac': f"{os.path.dirname(utl.format_path(config['Paths']['mec_sac_path']))}/",
         'performance': f"{os.path.dirname(utl.format_path(config['Paths']['performance_path']))}/"
     }
+
+    intermediate_cfg = {
+        'save': config['Debug'].get('write_intermediate_files', '').lower() == 'yes',
+        'output_path': config['Debug'].get('intermediate_output_path'),
+        'file_format': config['Paths'].get('destination_file_extension')
+    }
+
+    return paths, intermediate_cfg
+
+
+def find_all_performance_files(files_path):
+    """
+    Recursively finds all files Desempenho, and returns metadata.
+    Args:
+        files_path (str): Root directory.
+    Returns:
+        dict: {
+            full_path (str): {
+                'filename': str,
+                'mtime': float
+            }
+        }
+    """
+    return {
+        os.path.join(root, file): {
+            'filename': file,
+            'mtime': os.path.getmtime(os.path.join(root, file))
+        }
+        for root, _, files in os.walk(files_path)
+        for file in files
+        if file.lower().startswith('desempenho')
+    }
+
+
+def find_all_mecsac_files(files_path):
+    """
+    Recursively finds all files mec_sac, and returns metadata.
+    Args:
+        files_path (str): Root directory.
+    Returns:
+        dict: {
+            full_path (str): {
+                'filename': str,
+                'mtime': float
+            }
+        }
+    """
+    return {
+        os.path.join(root, file): {
+            'filename': file,
+            'mtime': os.path.getmtime(os.path.join(root, file))
+        }
+        for root, _, files in os.walk(files_path)
+        for file in files
+        if file.startswith('_mecSAC_') and file.endswith('.xlsx')
+    }
+
+
+def load_performance(intermediate_cfg, performance_source_path, plano_de_para, processes):
+    with log_timing('load', 'find_performance_files') as log:
+        all_performance_files = find_all_performance_files(performance_source_path)
+
+        log.info(
+            'load',
+            total=len(all_performance_files),
+        )
+
+    with log_timing('load', 'load_performance_content') as log:
+        with ProcessPoolExecutor(max_workers=processes) as executor:
+            dfs = list(executor.map(aux_loader.load_performance, all_performance_files))
+
+    performance = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
+    if intermediate_cfg['save']:
+        with log_timing('load', 'save_performance_raw_data') as log:
+            save_intermediate(performance, 'desempenho-raw', intermediate_cfg, log)
+
+    mask = ~performance['PLANO'].str.contains('TOTAL', case=False, na=False)
+    performance = performance[mask]
+    performance['PL'] *= 1_000 # as planilhas de desempenho estao em milhares
+    standardize_performance_plans(performance, plano_de_para)
+    parse_date_pt(performance)
+
+    if intermediate_cfg['save']:
+        with log_timing('load', 'save_performance_parsed_data') as log:
+            save_intermediate(performance, 'desempenho-parsed', intermediate_cfg, log)
+
+    return performance
 
 
 def load_auxiliary_data(paths):
@@ -143,17 +271,25 @@ def parse_date_pt(performance):
         'maio': 5, 'junho': 6, 'julho': 7, 'agosto': 8,
         'setembro': 9, 'outubro': 10, 'novembro': 11, 'dezembro': 12
     }
+
+    coerced_datetime = pd.to_datetime(performance['DATA'], errors='coerce', dayfirst=True)
+    mask_dt = coerced_datetime.notna()
+
     parsed_date = pd.Series(pd.NaT, index=performance.index)
 
-    coerced_datetime = pd.to_datetime(performance['DATA'], format='%d/%m/%Y', errors='coerce')
-
-    parsed_date[coerced_datetime.notna()] = (
-        coerced_datetime[coerced_datetime.notna()]
+    parsed_date[mask_dt] = (
+        coerced_datetime[mask_dt]
         .dt.to_period('M')
         .dt.to_timestamp()
     )
 
-    series_str = performance['DATA'].astype(str).str.strip().str.lower()
+    mask_remaining = ~mask_dt
+    series_str = (
+        performance.loc[mask_remaining, 'DATA']
+        .astype(str)
+        .str.strip()
+        .str.lower()
+    )
 
     regex_aa = r'^([a-zçã]+)-(\d{2})$'
     regex_aaaa = r'^([a-zçã]+)-(\d{4})$'
@@ -165,13 +301,17 @@ def parse_date_pt(performance):
     if mask.any():
         mes = extract_aa.loc[mask, 0].map(months_pt).astype('Int64')
         ano = extract_aa.loc[mask, 1].astype(int) + 2000
-        parsed_date[mask] = pd.to_datetime({'year': ano, 'month': mes, 'day': 1})
+        parsed_date.loc[mask.index] = pd.to_datetime(
+            {'year': ano, 'month': mes, 'day': 1}
+        )
 
     mask = extract_aaaa.notna().all(axis=1)
     if mask.any():
         mes = extract_aaaa.loc[mask, 0].map(months_pt).astype('Int64')
         ano = extract_aaaa.loc[mask, 1].astype(int)
-        parsed_date[mask] = pd.to_datetime({'year': ano, 'month': mes, 'day': 1})
+        parsed_date.loc[mask.index] = pd.to_datetime(
+            {'year': ano, 'month': mes, 'day': 1}
+        )
 
     performance['DATA'] = parsed_date
 
@@ -248,7 +388,7 @@ def run_pipeline():
     and saves the final adjustment file.
     """
     locale.setlocale(locale.LC_ALL, '')
-    paths = prepare_paths()
+    paths, intermediate_cfg = prepare_paths()
 
     plano_de_para, dcadplanosac, struct_perform = load_auxiliary_data(paths)
     struct_perform['PERFIL_BASE'] = (
@@ -263,13 +403,11 @@ def run_pipeline():
 
     mec_sac['DT'] = mec_sac['DT'].dt.to_period('M').dt.to_timestamp()
 
-    with log_timing('performance', 'load_performance'):
-        performance = aux_loader.load_performance(paths['performance'])
+    processes = min(8, multiprocessing.cpu_count())
+    
+    performance = load_performance(intermediate_cfg, paths['performance'],
+                                   plano_de_para, processes)
 
-    mask = ~performance['PLANO'].str.contains('TOTAL', case=False, na=False)
-    performance = performance[mask]
-    standardize_performance_plans(performance, plano_de_para)
-    parse_date_pt(performance)
     performance = merge_and_filter_struct(performance, struct_perform)
 
     mec_sac_dcadplanosac = mec_sac.merge(
@@ -287,8 +425,13 @@ def run_pipeline():
 
     result = pd.concat([performance, performance_adjust])
 
-    result = result.merge(struct_perform, how='left', on='PERFIL_BASE', suffixes=('', '_estr'))
-    result = result[result['TIPO_PERFIL_BASE'] != 'A']
+    if intermediate_cfg['save']:
+        with log_timing('performance', 'save_intermediate_files') as log:
+            save_intermediate(perf_returns_by_plan, 'perf_returns_by_plan-raw',
+                              intermediate_cfg, log)
+            save_intermediate(mec_sac_returns, 'mec_sac_returns-raw',
+                              intermediate_cfg, log)
+
     save_df(result, f"{paths['xlsx']}desempenho", 'csv')
 
 
