@@ -384,28 +384,24 @@ def calc_adjust(perf_returns_by_plan, mec_sac_returns):
         how='left'
     )
 
-    adjust_pl = adjust_returns.copy()
-
     adjust_returns['ajuste_rentab'] = (
         adjust_returns['RENTAB_MES_PONDERADA_MEC_SAC']
         - adjust_returns['RETORNO_MES_PONDERADO_DESEMPENHO']
         )
 
-    adjust_pl['ajuste_pl'] = (
-        adjust_pl['TOTAL_PL_MEC_SAC']
-        - adjust_pl['TOTAL_PL_DESEMPENHO']
+    adjust_returns['ajuste_pl'] = (
+        adjust_returns['TOTAL_PL_MEC_SAC']
+        - adjust_returns['TOTAL_PL_DESEMPENHO']
         )
 
-    adjust_returns.rename(columns={'ajuste_rentab': 'RETORNO_MES'}, inplace=True)
+    adjust_returns.rename(columns={'ajuste_rentab': 'RETORNO_MES',
+                                   'ajuste_pl': 'PL',}, inplace=True)
     adjust_returns['PERFIL_BASE'] = '#AJUSTE'
 
-    adjust_pl.rename(columns={'ajuste_pl': 'PL'}, inplace=True)
-    adjust_pl['PERFIL_BASE'] = '#AJUSTE_PL'
     cols_adjust = ['PERFIL_BASE','PLANO', 'DATA', 'TIPO_PLANO',
                    'NOME_PLANO_KEY_DESEMPENHO', 'RETORNO_MES', 'PL', 'TOTAL_PL_MEC_SAC']
 
-    result = pd.concat([adjust_returns, adjust_pl])
-    return result[cols_adjust]
+    return adjust_returns[cols_adjust]
 
 
 def merge_and_filter_struct(dfrm, struct_perform):
