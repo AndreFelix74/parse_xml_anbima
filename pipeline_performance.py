@@ -9,6 +9,8 @@ Created on Tue Jul  8 16:51:15 2025
 
 import os
 import locale
+import multiprocessing
+from concurrent.futures import ProcessPoolExecutor
 import pandas as pd
 from logger import log_timing, RUN_ID
 
@@ -86,6 +88,118 @@ def prepare_paths():
     return paths, intermediate_cfg
 
 
+def find_all_performance_files(files_path):
+    """
+    Recursively finds all files Desempenho, and returns metadata.
+
+    Args:
+        files_path (str): Root directory.
+
+    Returns:
+        dict: {
+            full_path (str): {
+                'filename': str,
+                'mtime': float
+            }
+        }
+    """
+    return {
+        os.path.join(root, file): {
+            'filename': file,
+            'mtime': os.path.getmtime(os.path.join(root, file))
+        }
+        for root, _, files in os.walk(files_path)
+        for file in files
+        if file.lower().startswith('desempenho')
+    }
+
+
+def find_all_mecsac_files(files_path):
+    """
+    Recursively finds all files mec_sac, and returns metadata.
+
+    Args:
+        files_path (str): Root directory.
+
+    Returns:
+        dict: {
+            full_path (str): {
+                'filename': str,
+                'mtime': float
+            }
+        }
+    """
+    return {
+        os.path.join(root, file): {
+            'filename': file,
+            'mtime': os.path.getmtime(os.path.join(root, file))
+        }
+        for root, _, files in os.walk(files_path)
+        for file in files
+        if file.startswith('_mecSAC_') and file.endswith('.xlsx')
+    }
+
+
+def load_performance(intermediate_cfg, performance_source_path, plano_de_para, processes):
+    with log_timing('load', 'find_performance_files') as log:
+        all_performance_files = find_all_performance_files(performance_source_path)
+
+        log.info(
+            'load',
+            total=len(all_performance_files),
+        )
+
+    with log_timing('load', 'load_performance_content') as log:
+        with ProcessPoolExecutor(max_workers=processes) as executor:
+            dfs = list(executor.map(aux_loader.load_performance, all_performance_files))
+
+    performance = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
+    if intermediate_cfg['save']:
+        with log_timing('load', 'save_performance_raw_data') as log:
+            save_intermediate(performance, 'desempenho-raw', intermediate_cfg, log)
+
+    mask = ~performance['PLANO'].str.contains('TOTAL', case=False, na=False)
+    performance = performance[mask]
+    performance['PL'] *= 1_000 # as planilhas de desempenho estao em milhares
+    standardize_performance_plans(performance, plano_de_para)
+    parse_date_pt(performance)
+
+    if intermediate_cfg['save']:
+        with log_timing('load', 'save_performance_parsed_data') as log:
+            save_intermediate(performance, 'desempenho-parsed', intermediate_cfg, log)
+
+    return performance
+
+
+def load_mecsac(intermediate_cfg, mec_source_path, processes):
+    with log_timing('load', 'find_mecsac_files') as log:
+        all_mecsac_files = find_all_mecsac_files(mec_source_path)
+
+        log.info(
+            'load',
+            total=len(all_mecsac_files),
+        )
+
+    with log_timing('load', 'load_mecsac_content') as log:
+        with ProcessPoolExecutor(max_workers=processes) as executor:
+            dfs = list(executor.map(aux_loader.load_mecsac_last_day_month_by_file,
+                                    all_mecsac_files))
+
+    mec_sac = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
+    if intermediate_cfg['save']:
+        with log_timing('load', 'save_mec_raw_data') as log:
+            save_intermediate(mec_sac, 'mec_sac-raw', intermediate_cfg, log)
+
+    mec_sac['DT'] = mec_sac['DT'].dt.to_period('M').dt.to_timestamp()
+
+    if intermediate_cfg['save']:
+        with log_timing('load', 'save_mec_parsed_data') as log:
+            save_intermediate(mec_sac, 'mec_sac-parsed', intermediate_cfg, log)
+
+    return mec_sac
+
 
 def load_auxiliary_data(paths):
     """
@@ -99,10 +213,10 @@ def load_auxiliary_data(paths):
     """
     plano_de_para = dta.read('planos_desempenho_renaming')
 
-    with log_timing('plans_returns', 'load_dcadplanosac'):
+    with log_timing('load', 'dcadplanosac'):
         dcadplanosac = aux_loader.load_dcadplanosac(paths['aux'])
 
-    with log_timing('performance', 'load_struct'):
+    with log_timing('load', 'struct'):
         struct_perform = aux_loader.load_performance_struct(paths['aux'])
 
     return plano_de_para, dcadplanosac, struct_perform
@@ -194,17 +308,24 @@ def parse_date_pt(performance):
         'maio': 5, 'junho': 6, 'julho': 7, 'agosto': 8,
         'setembro': 9, 'outubro': 10, 'novembro': 11, 'dezembro': 12
     }
+
+    coerced_datetime = pd.to_datetime(performance['DATA'], errors='coerce', dayfirst=True)
+    mask_dt = coerced_datetime.notna()
+
     parsed_date = pd.Series(pd.NaT, index=performance.index)
-
-    coerced_datetime = pd.to_datetime(performance['DATA'], format='%d/%m/%Y', errors='coerce')
-
-    parsed_date[coerced_datetime.notna()] = (
-        coerced_datetime[coerced_datetime.notna()]
+    parsed_date[mask_dt] = (
+        coerced_datetime[mask_dt]
         .dt.to_period('M')
         .dt.to_timestamp()
     )
 
-    series_str = performance['DATA'].astype(str).str.strip().str.lower()
+    mask_remaining = ~mask_dt
+    series_str = (
+        performance.loc[mask_remaining, 'DATA']
+        .astype(str)
+        .str.strip()
+        .str.lower()
+    )
 
     regex_aa = r'^([a-zçã]+)-(\d{2})$'
     regex_aaaa = r'^([a-zçã]+)-(\d{4})$'
@@ -216,19 +337,23 @@ def parse_date_pt(performance):
     if mask.any():
         mes = extract_aa.loc[mask, 0].map(months_pt).astype('Int64')
         ano = extract_aa.loc[mask, 1].astype(int) + 2000
-        parsed_date[mask] = pd.to_datetime({'year': ano, 'month': mes, 'day': 1})
+        parsed_date.loc[mask.index] = pd.to_datetime(
+            {'year': ano, 'month': mes, 'day': 1}
+        )
 
     mask = extract_aaaa.notna().all(axis=1)
     if mask.any():
         mes = extract_aaaa.loc[mask, 0].map(months_pt).astype('Int64')
         ano = extract_aaaa.loc[mask, 1].astype(int)
-        parsed_date[mask] = pd.to_datetime({'year': ano, 'month': mes, 'day': 1})
+        parsed_date.loc[mask.index] = pd.to_datetime(
+            {'year': ano, 'month': mes, 'day': 1}
+        )
 
     performance['DATA'] = parsed_date
 
     erros = parsed_date.isna()
     if erros.any():
-        print(f"[parse_data_mes_ano_pt] Erros em {erros.sum()} linhas:")
+        print(f"[parse_date_pt] Erros em {erros.sum()} linhas:")
         print(performance.loc[erros, 'DATA'])
 
 
@@ -278,7 +403,7 @@ def calc_adjust(perf_returns_by_plan, mec_sac_returns):
     adjust_pl['PERFIL_BASE'] = '#AJUSTE_PL'
     cols_adjust = ['PERFIL_BASE','PLANO', 'DATA', 'TIPO_PLANO',
                    'NOME_PLANO_KEY_DESEMPENHO', 'RETORNO_MES', 'PL', 'TOTAL_PL_MEC_SAC']
-    
+
     result = pd.concat([adjust_returns, adjust_pl])
     return result[cols_adjust]
 
@@ -307,7 +432,7 @@ def run_pipeline():
     and saves the final adjustment file.
     """
     locale.setlocale(locale.LC_ALL, '')
-    paths, intermediate_cfg = prepare_paths()    
+    paths, intermediate_cfg = prepare_paths()
 
     plano_de_para, dcadplanosac, struct_perform = load_auxiliary_data(paths)
     struct_perform['PERFIL_BASE'] = (
@@ -317,42 +442,38 @@ def run_pipeline():
         .str.upper()
     )
 
-    with log_timing('performance', 'load_mec_sac'):
-        mec_sac = aux_loader.load_mec_sac_last_day_month(paths['mec_sac'])
+    processes = min(8, multiprocessing.cpu_count())
 
-    mec_sac['DT'] = mec_sac['DT'].dt.to_period('M').dt.to_timestamp()
+    mec_sac = load_mecsac(intermediate_cfg, paths['mec_sac'], processes)
 
-    with log_timing('performance', 'load_performance'):
-        performance = aux_loader.load_performance(paths['performance'])
+    performance = load_performance(intermediate_cfg, paths['performance'],
+                                   plano_de_para, processes)
 
-    mask = ~performance['PLANO'].str.contains('TOTAL', case=False, na=False)
-    performance = performance[mask]
-    performance['PL'] *= 1_000 # as planilhas de desempenho estao em milhares
-    standardize_performance_plans(performance, plano_de_para)
-    parse_date_pt(performance)
-    performance = merge_and_filter_struct(performance, struct_perform)
+    with log_timing('performance', 'computations') as log:
+        performance = merge_and_filter_struct(performance, struct_perform)
 
-    perf_returns_by_plan = calc_performance_returns(performance)
+        perf_returns_by_plan = calc_performance_returns(performance)
 
-    mec_sac_dcadplanosac = mec_sac.merge(
-        dcadplanosac,
-        how='left',
-        left_on='CODCLI',
-        right_on='CODCLI_SAC'
-        )
-    mec_sac_returns = calc_mec_sac_returns(mec_sac_dcadplanosac)
+        mec_sac_dcadplanosac = mec_sac.merge(
+            dcadplanosac,
+            how='left',
+            left_on='CODCLI',
+            right_on='CODCLI_SAC'
+            )
+        mec_sac_returns = calc_mec_sac_returns(mec_sac_dcadplanosac)
 
-    performance_adjust = calc_adjust(perf_returns_by_plan, mec_sac_returns)
-    performance_adjust = merge_and_filter_struct(performance_adjust, struct_perform)
+        performance_adjust = calc_adjust(perf_returns_by_plan, mec_sac_returns)
+        performance_adjust = merge_and_filter_struct(performance_adjust,
+                                                     struct_perform)
 
-    result = pd.concat([performance, performance_adjust])
+        result = pd.concat([performance, performance_adjust])
 
     if intermediate_cfg['save']:
         with log_timing('performance', 'save_intermediate_files') as log:
-            save_intermediate(performance, 'desempenho-raw', intermediate_cfg, log)
-            save_intermediate(mec_sac, 'mec_sac-raw', intermediate_cfg, log)
-            save_intermediate(perf_returns_by_plan, 'perf_returns_by_plan-raw', intermediate_cfg, log)
-            save_intermediate(mec_sac_returns, 'mec_sac_returns-raw', intermediate_cfg, log)
+            save_intermediate(perf_returns_by_plan, 'perf_returns_by_plan-raw',
+                              intermediate_cfg, log)
+            save_intermediate(mec_sac_returns, 'mec_sac_returns-raw',
+                              intermediate_cfg, log)
 
     save_df(result, f"{paths['xlsx']}desempenho", 'csv')
 

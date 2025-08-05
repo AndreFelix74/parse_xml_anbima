@@ -215,6 +215,40 @@ def load_returns_by_puposicao(data_aux_path):
     return returns_by_puposicao
 
 
+def load_mecsac_last_day_month_by_file(file_path):
+    """
+    Loads the row with the latest DT for one _mecSAC_*.xlsx file.
+
+    Args:
+        data_aux_path (str): Path to the directory containing the _mecSAC files.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the latest row per CODCLI from each file.
+    """
+    columns = ['CLCLI_CD', 'DT', 'VL_PATRLIQTOT1', 'CODCLI', 'NOME',
+               'compute_0016', 'compute_0017']
+
+    mec_sac = pd.read_excel(file_path)
+
+    if mec_sac.empty:
+        print(f"Empty mecSAC file: {file_path}")
+        return pd.DataFrame()
+
+    mec_sac['DT'] = pd.to_datetime(mec_sac['DT'], dayfirst=True)
+
+    idx = mec_sac.groupby('CODCLI')['DT'].idxmax()
+    result = mec_sac.loc[idx][columns].copy()
+
+    result['CLCLI_CD'] = result['CLCLI_CD'].astype(str).str.strip()
+    result['CODCLI'] = result['CODCLI'].astype(str).str.strip()
+    result.rename(columns={
+        'compute_0016': 'RENTAB_MES',
+        'compute_0017': 'RENTAB_ANO'
+    }, inplace=True)
+
+    return result
+
+
 def load_mec_sac_last_day_month(data_aux_path):
     """
     Loads the row with the latest DT for each CODCLI from each _mecSAC_*.xlsx file.
@@ -226,35 +260,15 @@ def load_mec_sac_last_day_month(data_aux_path):
         pd.DataFrame: DataFrame containing the latest row per CODCLI from each file.
     """
     dfs = []
-    columns = ['CLCLI_CD', 'DT', 'VL_PATRLIQTOT1', 'CODCLI', 'NOME',
-               'compute_0016', 'compute_0017']
 
     for filename in os.listdir(data_aux_path):
         if filename.startswith('_mecSAC_') and filename.endswith('.xlsx'):
             file_path = os.path.join(data_aux_path, filename)
-            mec_sac = pd.read_excel(file_path)
 
-            if mec_sac.empty:
-                print(f"Empty mecSAC file: {filename}")
-                continue
-
-            mec_sac['DT'] = pd.to_datetime(mec_sac['DT'], dayfirst=True)
-
-            idx = mec_sac.groupby('CODCLI')['DT'].idxmax()
-            last_day_per_codcli = mec_sac.loc[idx][columns].copy()
-
-            dfs.append(last_day_per_codcli)
+            dfs.append(load_mecsac_last_day_month_by_file(file_path))
 
     if dfs:
-        result = pd.concat(dfs, ignore_index=True)
-        result['CLCLI_CD'] = result['CLCLI_CD'].astype(str).str.strip()
-        result['CODCLI'] = result['CODCLI'].astype(str).str.strip()
-        result.rename(columns={
-            'compute_0016': 'RENTAB_MES',
-            'compute_0017': 'RENTAB_ANO'
-        }, inplace=True)
-
-        return result
+        return pd.concat(dfs, ignore_index=True)
 
     return pd.DataFrame()
 
@@ -345,35 +359,52 @@ def load_performance_struct(data_aux_path):
     return pd.read_excel(dbaux_path, sheet_name='dEstruturaDesempenho', dtype=str)
 
 
-def load_performance(performance_path):
-    raw_data = []
+def load_performance(file_path):
+    """
+    Loads and processes the 'Resumo' sheet from an Excel performance file.
 
-    for filename in os.listdir(performance_path):
-        if filename.startswith('Desempenho'):
-            file_path = os.path.join(performance_path, filename)
-            try:
-                raw_sheet = pd.read_excel(file_path, sheet_name='Resumo', header=None)
-            except Exception as excp:
-                print('')
-                print(f"Erro ao abrir o arquivo {file_path}")
-                print(excp)
-                continue
+    The function extracts relevant performance data, cleans and normalizes
+    the values, and returns a structured DataFrame. Rows that do not contain
+    valid performance records are filtered out. It ensures that numeric 
+    columns are converted properly and missing values are handled.
 
-            if raw_sheet.empty:
-                print(f"Empty performance file: {filename}")
-                continue
+    Args:
+        file_path (str): Path to the Excel file containing the performance data.
 
-            raw_data.append(raw_sheet)
+    Returns:
+        pd.DataFrame: A DataFrame with the following columns:
+            - PERFIL_BASE (str): Standardized portfolio profile name.
+            - PL (float): Patrimonial value of the portfolio.
+            - RATIO (float): Portfolio ratio indicator.
+            - RETORNO_MES (float): Monthly return percentage.
+            - RETORNO_YTD (float): Year-to-date return percentage.
+            - PLANO (str): Portfolio plan name, forward-filled as needed.
+            - DATA (str | float | datetime): Reference date, forward-filled
+              and converted according to detected data type.
 
-    if not raw_data:
+    Notes:
+        - The function ignores rows labeled as 'Patrimônio de Investimentos'
+          or 'Patrimônio Total'.
+        - If the Excel file cannot be read or contains no data, an empty 
+          DataFrame is returned.
+        - All numeric fields are coerced to floats, with invalid values set to 0.
+    """
+    try:
+        raw_sheet = pd.read_excel(file_path, sheet_name='Resumo', header=None)
+    except Exception as excp:
+        print('')
+        print(f"Error opening file: {file_path}")
+        print(excp)
         return pd.DataFrame()
 
-    performance = pd.concat(raw_data, ignore_index=True)
+    if raw_sheet.empty:
+        print(f"Empty file: {file_path}")
+        return pd.DataFrame()
 
-    performance = performance[
-        (~performance[2].isin(['Patrimônio de Investimentos', 'Patrimônio Total'])) &
-        (performance[2].notnull()) &
-        (performance[3].notnull())
+    performance = raw_sheet[
+        (~raw_sheet[2].isin(['Patrimônio de Investimentos', 'Patrimônio Total'])) &
+        (raw_sheet[2].notnull()) &
+        (raw_sheet[3].notnull())
     ][[2, 3, 4, 5, 6]].copy()
 
     performance.columns = ['PERFIL_BASE', 'PL', 'RATIO', 'RETORNO_MES', 'RETORNO_YTD']
@@ -382,13 +413,21 @@ def load_performance(performance_path):
     performance.loc[mask, 'PLANO'] = performance.loc[mask, 'PERFIL_BASE'].str.upper()
     performance.loc[mask, 'DATA'] = performance.loc[mask, 'PL']
     performance['PLANO'] = performance['PLANO'].ffill()
-    performance['DATA'] = performance['DATA'].ffill()
+
+    col = performance['DATA']
+    if pd.api.types.is_datetime64_any_dtype(col):
+        performance['DATA'] = col.ffill()
+    elif pd.api.types.is_numeric_dtype(col):
+        performance['DATA'] = col.ffill()
+    else:
+        performance['DATA'] = col.astype("string").ffill()
 
     for col in ['PL', 'RATIO', 'RETORNO_MES', 'RETORNO_YTD']:
         performance[col] = pd.to_numeric(performance[col], errors='coerce').fillna(0)
 
     performance = performance[performance['PL'] != 0]
-    performance[['RETORNO_MES', 'RETORNO_YTD', 'PL']] = performance[['RETORNO_MES', 'RETORNO_YTD', 'PL']].fillna(0)
+    cols_result = ['RETORNO_MES', 'RETORNO_YTD', 'PL']
+    performance[cols_result] = performance[cols_result].fillna(0)
 
     performance['PERFIL_BASE'] = performance['PERFIL_BASE'].astype(str).str.strip().str.upper()
 
