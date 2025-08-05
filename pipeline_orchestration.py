@@ -207,7 +207,7 @@ def merge_aux_data(cleaned, dcadplano, aux_asset, cad_fi_cvm, col_join_cad_fi_cv
 
 
 def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys):
-    with log_timing('parse', 'load_xml_files') as log:
+    with log_timing('parse', 'find_xml_files') as log:
         all_xml_files = find_all_files(xml_source_path, '.xml')
         xml_files_to_process, xml_discarted = select_latest_xml_by_cnpj_and_date(all_xml_files)
 
