@@ -89,4 +89,9 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac):
         - plan_returns_adjust['rentab_ponderada']
         )
 
+    plan_returns_adjust['ajuste_rentab_fator'] = (
+        plan_returns_adjust['RENTAB_MES_PONDERADA']
+        / plan_returns_adjust['rentab_ponderada']
+        )
+
     return [mec_sac_returns_by_plan, tree_returns_by_plan, plan_returns_adjust]
