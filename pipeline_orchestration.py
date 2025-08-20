@@ -276,8 +276,9 @@ def compute_and_persist_isin_returns(intermediate_cfg, funds, portfolios, data_a
         port_mask = portfolios['isin'].notnull() & (portfolios['NEW_TIPO'] != 'OVER')
         isin_data = pd.concat([
             funds[funds_mask][group_cols].drop_duplicates(),
-            portfolios[port_mask][group_cols].drop_duplicates()
-            ]).drop_duplicates()
+            portfolios[port_mask][group_cols].drop_duplicates(),
+            ],
+            ignore_index=True).drop_duplicates()
 
         valid_idx, dupl_idx = validate_unique_puposicao(isin_data)
         if len(dupl_idx) > 0:
@@ -295,6 +296,10 @@ def compute_and_persist_isin_returns(intermediate_cfg, funds, portfolios, data_a
                               intermediate_cfg, log)
 
         persisted_returns = aux_loader.load_returns_by_puposicao(data_aux_path)
+
+        if intermediate_cfg['save']:
+            with log_timing('foo', 'save_isin_returns') as log:
+                save_intermediate(isin_data.loc[valid_idx], 'isin-return-xml', intermediate_cfg, log)
 
         updated_returns = compute_returns_from_puposicao(
             range_date=range_eom,
