@@ -54,20 +54,20 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac):
         right_on='CODCLI_SAC'
     )
 
-    mec_sac_dcadplanosac['total_pl'] = (
+    mec_sac_dcadplanosac['TOTAL_PL_MEC_SAC'] = (
         mec_sac_dcadplanosac.groupby(['CNPB', 'DT'])['VL_PATRLIQTOT1']
         .transform('sum')
     )
 
-    mec_sac_dcadplanosac['RENTAB_MES_PONDERADA'] = (
+    mec_sac_dcadplanosac['RENTAB_DIA_PONDERADA_MEC_SAC'] = (
         mec_sac_dcadplanosac['VL_PATRLIQTOT1']
-        / mec_sac_dcadplanosac['total_pl']
-        * mec_sac_dcadplanosac['RENTAB_MES']
+        / mec_sac_dcadplanosac['TOTAL_PL_MEC_SAC']
+        * mec_sac_dcadplanosac['RENTAB_DIA']
         )
 
     mec_sac_returns_by_plan = (
         mec_sac_dcadplanosac
-        .groupby(['CNPB', 'DT'], as_index=False)['RENTAB_MES_PONDERADA']
+        .groupby(['CNPB', 'DT'], as_index=False)['RENTAB_DIA_PONDERADA_MEC_SAC']
         .sum()
     )
 
@@ -85,12 +85,12 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac):
     )
 
     plan_returns_adjust['ajuste_rentab'] = (
-        plan_returns_adjust['RENTAB_MES_PONDERADA']
+        plan_returns_adjust['RENTAB_DIA_PONDERADA_MEC_SAC']
         - plan_returns_adjust['rentab_ponderada']
         )
 
     plan_returns_adjust['ajuste_rentab_fator'] = (
-        plan_returns_adjust['RENTAB_MES_PONDERADA']
+        plan_returns_adjust['RENTAB_DIA_PONDERADA_MEC_SAC']
         / plan_returns_adjust['rentab_ponderada']
         )
 
