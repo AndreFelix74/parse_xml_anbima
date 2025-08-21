@@ -227,7 +227,7 @@ def load_mec_sac_last_day_month(data_aux_path):
     """
     dfs = []
     columns = ['CLCLI_CD', 'DT', 'VL_PATRLIQTOT1', 'CODCLI', 'NOME',
-               'compute_0016', 'compute_0017']
+               'compute_0015', 'compute_0016', 'compute_0017']
 
     for filename in os.listdir(data_aux_path):
         if filename.startswith('_mecSAC_') and filename.endswith('.xlsx'):
@@ -240,8 +240,7 @@ def load_mec_sac_last_day_month(data_aux_path):
 
             mec_sac['DT'] = pd.to_datetime(mec_sac['DT'], dayfirst=True)
 
-            idx = mec_sac.groupby('CODCLI')['DT'].idxmax()
-            last_day_per_codcli = mec_sac.loc[idx][columns].copy()
+            last_day_per_codcli = mec_sac[columns].copy()
 
             dfs.append(last_day_per_codcli)
 
@@ -250,6 +249,7 @@ def load_mec_sac_last_day_month(data_aux_path):
         result['CLCLI_CD'] = result['CLCLI_CD'].astype(str).str.strip()
         result['CODCLI'] = result['CODCLI'].astype(str).str.strip()
         result.rename(columns={
+            'compute_0015': 'RENTAB_DIA',
             'compute_0016': 'RENTAB_MES',
             'compute_0017': 'RENTAB_ANO'
         }, inplace=True)
