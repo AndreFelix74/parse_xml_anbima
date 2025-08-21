@@ -299,7 +299,8 @@ def compute_and_persist_isin_returns(intermediate_cfg, funds, portfolios, data_a
 
         if intermediate_cfg['save']:
             with log_timing('foo', 'save_isin_returns') as log:
-                save_intermediate(isin_data.loc[valid_idx], 'isin-return-xml', intermediate_cfg, log)
+                save_intermediate(isin_data.loc[valid_idx], 'isin-return-xml',
+                                  intermediate_cfg, log)
 
         updated_returns = compute_returns_from_puposicao(
             range_date=range_eom,
@@ -528,7 +529,8 @@ def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
             save_intermediate(tree_returns_by_plan, 'rentab-plano-tree', intermediate_cfg, log)
             save_intermediate(plan_returns_adjust , 'rentab-plano-ajuste', intermediate_cfg, log)
 
-    adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'ajuste_rentab', 'ajuste_rentab_fator']].copy()
+    adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'ajuste_rentab',
+                                         'ajuste_rentab_fator']].copy()
     adjust_rentab.rename(columns={'ajuste_rentab': 'rentab_ponderada'}, inplace=True)
     adjust_rentab['nivel'] = 0
     cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
