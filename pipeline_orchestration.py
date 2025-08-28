@@ -207,7 +207,7 @@ def merge_aux_data(cleaned, dcadplano, aux_asset, cad_fi_cvm, col_join_cad_fi_cv
 
 
 def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys):
-    with log_timing('parse', 'load_xml_files') as log:
+    with log_timing('parse', 'find_xml_files') as log:
         all_xml_files = find_all_files(xml_source_path, '.xml')
         xml_files_to_process, xml_discarted = select_latest_xml_by_cnpj_and_date(all_xml_files)
 
@@ -470,8 +470,11 @@ def assign_returns(entity, isin_returns):
 def build_horizontal_tree(funds, portfolios, data_aux_path):
     with log_timing('tree', 'build_tree'):
         tree_horzt = build_tree(funds, portfolios)
+
+    with log_timing('tree', 'enrich_tree'):
         enrich_tree(tree_horzt)
 
+    with log_timing('tree', 'governance_struct'):
         governance_struct = aux_loader.load_governance_struct(data_aux_path)
         governance_struct = governance_struct[governance_struct['KEY_VEICULO'].notna()]
 
