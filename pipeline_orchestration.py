@@ -605,6 +605,12 @@ def run_pipeline():
     funds = assign_returns(funds, isin_returns)
     portfolios = assign_returns(portfolios, isin_returns)
 
+    if intermediate_cfg['save']:
+        with log_timing('debug', 'save_final_files'):
+            file_frmt = intermediate_cfg['file_format']
+            save_df(funds, f"{xlsx_destination_path}fundos", file_frmt)
+            save_df(portfolios, f"{xlsx_destination_path}carteiras", file_frmt)
+
     tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
     adjust_rentab = compute_plan_returns_adjust(intermediate_cfg, tree_hrztl,
                                                 data_aux_path, mec_sac_path)
@@ -623,8 +629,6 @@ def run_pipeline():
 
     with log_timing('finish', 'save_final_files'):
         file_frmt = intermediate_cfg['file_format']
-        save_df(funds, f"{xlsx_destination_path}fundos", file_frmt)
-        save_df(portfolios, f"{xlsx_destination_path}carteiras", file_frmt)
         save_df(tree_hrztl, f"{xlsx_destination_path}arvore_carteiras", file_frmt)
 
 
