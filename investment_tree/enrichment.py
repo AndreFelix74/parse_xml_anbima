@@ -46,11 +46,17 @@ def create_column_based_on_levels(tree_hrzt, new_col, base_col, deep):
     Returns:
         pd.DataFrame: The original DataFrame with the new column added.
     """
-    cascading_cols = [f"{base_col}_nivel_{i}" for i in range(deep, 0, -1)]
-    cascading_cols.append(base_col)
+    tree_hrzt[new_col] = None
+    unresolved = tree_hrzt[new_col].isna()
 
-    tree_hrzt[new_col] = tree_hrzt[cascading_cols].bfill(axis=1).iloc[:, 0]
+    for i in range(deep, -1, -1):
+        suffix = '' if i == 0 else f"_nivel_{i}"
+        col = f"{base_col}{suffix}"
 
+        mask = unresolved & tree_hrzt[col].notna()
+        tree_hrzt.loc[mask, new_col] = tree_hrzt.loc[mask, col]
+        unresolved &= ~mask
+        
 
 def fill_level_columns_forward(tree_hrzt, base_col, deep):
     """

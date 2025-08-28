@@ -207,7 +207,7 @@ def merge_aux_data(cleaned, dcadplano, aux_asset, cad_fi_cvm, col_join_cad_fi_cv
 
 
 def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys):
-    with log_timing('parse', 'load_xml_files') as log:
+    with log_timing('parse', 'find_xml_files') as log:
         all_xml_files = find_all_files(xml_source_path, '.xml')
         xml_files_to_process, xml_discarted = select_latest_xml_by_cnpj_and_date(all_xml_files)
 
@@ -276,8 +276,9 @@ def compute_and_persist_isin_returns(intermediate_cfg, funds, portfolios, data_a
         port_mask = portfolios['isin'].notnull() & (portfolios['NEW_TIPO'] != 'OVER')
         isin_data = pd.concat([
             funds[funds_mask][group_cols].drop_duplicates(),
-            portfolios[port_mask][group_cols].drop_duplicates()
-            ]).drop_duplicates()
+            portfolios[port_mask][group_cols].drop_duplicates(),
+            ],
+            ignore_index=True).drop_duplicates()
 
         valid_idx, dupl_idx = validate_unique_puposicao(isin_data)
         if len(dupl_idx) > 0:
@@ -295,6 +296,11 @@ def compute_and_persist_isin_returns(intermediate_cfg, funds, portfolios, data_a
                               intermediate_cfg, log)
 
         persisted_returns = aux_loader.load_returns_by_puposicao(data_aux_path)
+
+        if intermediate_cfg['save']:
+            with log_timing('debug', 'save_isin_returns') as log:
+                save_intermediate(isin_data.loc[valid_idx], 'isin-return-xml',
+                                  intermediate_cfg, log)
 
         updated_returns = compute_returns_from_puposicao(
             range_date=range_eom,
@@ -464,8 +470,11 @@ def assign_returns(entity, isin_returns):
 def build_horizontal_tree(funds, portfolios, data_aux_path):
     with log_timing('tree', 'build_tree'):
         tree_horzt = build_tree(funds, portfolios)
+
+    with log_timing('tree', 'enrich_tree'):
         enrich_tree(tree_horzt)
 
+    with log_timing('tree', 'governance_struct'):
         governance_struct = aux_loader.load_governance_struct(data_aux_path)
         governance_struct = governance_struct[governance_struct['KEY_VEICULO'].notna()]
 
@@ -523,7 +532,8 @@ def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
             save_intermediate(tree_returns_by_plan, 'rentab-plano-tree', intermediate_cfg, log)
             save_intermediate(plan_returns_adjust , 'rentab-plano-ajuste', intermediate_cfg, log)
 
-    adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'ajuste_rentab']].copy()
+    adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'ajuste_rentab',
+                                         'ajuste_rentab_fator']].copy()
     adjust_rentab.rename(columns={'ajuste_rentab': 'rentab_ponderada'}, inplace=True)
     adjust_rentab['nivel'] = 0
     cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
@@ -602,12 +612,22 @@ def run_pipeline():
     adjust_rentab = compute_plan_returns_adjust(intermediate_cfg, tree_hrztl,
                                                 data_aux_path, mec_sac_path)
 
+    tree_hrztl = tree_hrztl.merge(
+        adjust_rentab[['cnpb', 'dtposicao', 'ajuste_rentab_fator']],
+        on=['cnpb', 'dtposicao'],
+        how='left',
+        )
+    tree_hrztl['rentab_ponderada_ajustada'] = (
+        tree_hrztl['rentab_ponderada']
+        * tree_hrztl['ajuste_rentab_fator']
+        )
+
     tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
 
     with log_timing('finish', 'save_final_files'):
         file_frmt = intermediate_cfg['file_format']
-        save_df(funds, f"{xlsx_destination_path}fundos", file_frmt)
         save_df(portfolios, f"{xlsx_destination_path}carteiras", file_frmt)
+        save_df(funds,      f"{xlsx_destination_path}fundos",    file_frmt)
         save_df(tree_hrztl, f"{xlsx_destination_path}arvore_carteiras", file_frmt)
 
 
