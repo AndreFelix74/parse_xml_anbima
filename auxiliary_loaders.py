@@ -215,6 +215,38 @@ def load_returns_by_puposicao(data_aux_path):
     return returns_by_puposicao
 
 
+def load_mecsac_file(file_path):
+    """
+    Loads the row with the latest DT for one _mecSAC_*.xlsx file.
+
+    Args:
+        data_aux_path (str): Path to the directory containing the _mecSAC files.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the latest row per CODCLI from each file.
+    """
+    columns = ['CLCLI_CD', 'DT', 'VL_PATRLIQTOT1', 'CODCLI', 'NOME',
+               'compute_0015', 'compute_0016', 'compute_0017']
+    mec_sac = pd.read_excel(file_path)
+
+    if mec_sac.empty:
+        print(f"Empty mecSAC file: {file_path}")
+        return pd.DataFrame()
+    mec_sac['DT'] = pd.to_datetime(mec_sac['DT'], dayfirst=True)
+
+    result = mec_sac[columns].copy()
+
+    result['CLCLI_CD'] = result['CLCLI_CD'].astype(str).str.strip()
+    result['CODCLI'] = result['CODCLI'].astype(str).str.strip()
+    result.rename(columns={
+        'compute_0015': 'RENTAB_DIA',
+        'compute_0016': 'RENTAB_MES',
+        'compute_0017': 'RENTAB_ANO'
+    }, inplace=True)
+
+    return result
+
+
 def load_mec_sac_last_day_month(data_aux_path):
     """
     Loads the row with the latest DT for each CODCLI from each _mecSAC_*.xlsx file.
@@ -226,8 +258,6 @@ def load_mec_sac_last_day_month(data_aux_path):
         pd.DataFrame: DataFrame containing the latest row per CODCLI from each file.
     """
     dfs = []
-    columns = ['CLCLI_CD', 'DT', 'VL_PATRLIQTOT1', 'CODCLI', 'NOME',
-               'compute_0015', 'compute_0016', 'compute_0017']
 
     for filename in os.listdir(data_aux_path):
         if filename.startswith('_mecSAC_') and filename.endswith('.xlsx'):
@@ -240,21 +270,10 @@ def load_mec_sac_last_day_month(data_aux_path):
 
             mec_sac['DT'] = pd.to_datetime(mec_sac['DT'], dayfirst=True)
 
-            last_day_per_codcli = mec_sac[columns].copy()
-
-            dfs.append(last_day_per_codcli)
+            dfs.append(load_mecsac_file(file_path))
 
     if dfs:
-        result = pd.concat(dfs, ignore_index=True)
-        result['CLCLI_CD'] = result['CLCLI_CD'].astype(str).str.strip()
-        result['CODCLI'] = result['CODCLI'].astype(str).str.strip()
-        result.rename(columns={
-            'compute_0015': 'RENTAB_DIA',
-            'compute_0016': 'RENTAB_MES',
-            'compute_0017': 'RENTAB_ANO'
-        }, inplace=True)
-
-        return result
+        return pd.concat(dfs, ignore_index=True)
 
     return pd.DataFrame()
 
@@ -308,7 +327,8 @@ def load_dcadplanosac(data_aux_path):
         data_aux_path (str): Path to dbAux.xlsx.
 
     Returns:
-        pd.DataFrame: dCadPlanoSAC sheet as DataFrame.
+        pd.DataFrame: A DataFrame containing the dCadPlanoSAC sheet with
+        portfolio codes adjusted according to the selected portfolio_type.
     """
     dcadplanosac = pd.read_excel(f"{data_aux_path}dbAux.xlsx",
                                  sheet_name='dCadPlanoSAC',
