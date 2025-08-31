@@ -11,6 +11,7 @@ import os
 import re
 import locale
 import multiprocessing
+from concurrent.futures import ProcessPoolExecutor
 from collections import defaultdict
 import networkx as nx
 import pandas as pd
@@ -515,9 +516,12 @@ def load_config():
 
 
 def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
-                                mec_sac_path):
-    with log_timing('plans_returns', 'load_mec_sac'):
-        mec_sac = aux_loader.load_mec_sac_last_day_month(mec_sac_path)
+                                mec_sac_path, processes):
+    mec_sac = load_mecsac(intermediate_cfg, mec_sac_path, processes)
+
+    if intermediate_cfg['save']:
+        with log_timing('load', 'save_mec_raw_data') as log:
+            save_intermediate(mec_sac, 'mec_sac-raw', intermediate_cfg, log)
 
     with log_timing('plans_returns', 'load_dcadplanosac'):
         dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
@@ -610,7 +614,8 @@ def run_pipeline():
 
     tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
     adjust_rentab = compute_plan_returns_adjust(intermediate_cfg, tree_hrztl,
-                                                data_aux_path, mec_sac_path)
+                                                data_aux_path, mec_sac_path,
+                                                processes)
 
     tree_hrztl = tree_hrztl.merge(
         adjust_rentab[['cnpb', 'dtposicao', 'ajuste_rentab_fator']],
