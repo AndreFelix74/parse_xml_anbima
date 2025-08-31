@@ -111,6 +111,60 @@ def find_all_files(files_path, file_ext):
     }
 
 
+
+def find_all_mecsac_files(files_path):
+    """
+    Recursively finds all files mec_sac, and returns metadata.
+
+    Args:
+        files_path (str): Root directory.
+
+    Returns:
+        dict: {
+            full_path (str): {
+                'filename': str,
+                'mtime': float
+            }
+        }
+    """
+    return {
+        os.path.join(root, file): {
+            'filename': file,
+            'mtime': os.path.getmtime(os.path.join(root, file))
+        }
+        for root, _, files in os.walk(files_path)
+        for file in files
+        if file.startswith('_mecSAC_') and file.endswith('.xlsx')
+    }
+
+
+def load_mecsac(intermediate_cfg, mec_source_path, processes):
+    with log_timing('load', 'find_mecsac_files') as log:
+        all_mecsac_files = find_all_mecsac_files(mec_source_path)
+
+        log.info(
+            'load',
+            total=len(all_mecsac_files),
+        )
+
+    with log_timing('load', 'load_mecsac_content') as log:
+        with ProcessPoolExecutor(max_workers=processes) as executor:
+            dfs = list(executor.map(aux_loader.load_mecsac_file,
+                                    all_mecsac_files))
+
+    mec_sac = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
+    if intermediate_cfg['save']:
+        with log_timing('load', 'save_mec_raw_data') as log:
+            save_intermediate(mec_sac, 'mec_sac-raw', intermediate_cfg, log)
+
+    if intermediate_cfg['save']:
+        with log_timing('load', 'save_mec_parsed_data') as log:
+            save_intermediate(mec_sac, 'mec_sac-parsed', intermediate_cfg, log)
+
+    return mec_sac
+
+
 def select_latest_xml_by_cnpj_and_date(files_info):
     """
     Given a dict of {file_path: {'filename': str, 'mtime': float}}, return the most recent
