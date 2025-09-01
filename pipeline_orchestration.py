@@ -514,10 +514,10 @@ def assign_returns(entity, isin_returns):
     mask_over = entity['NEW_TIPO'] == 'OVER'
 
     if mask_over.any():
-        entity.loc[mask_over, 'rentab'] = ((
+        entity.loc[mask_over, 'rentab'] = (
             entity.loc[mask_over, 'compromisso_puretorno']
             / entity.loc[mask_over, 'pucompra']
-        ) ** 21) - 1
+        ) - 1
 
     return entity
 
@@ -627,13 +627,13 @@ def run_pipeline():
     daily_keys = header_daily_values.keys()
     types_series = [key for key, value in header_daily_values.items() if value.get('serie', False)]
 
-    types_to_exclude = dta.read('types_to_exclude')
-    harmonization_rules = dta.read('harmonization_values_rules')
-
     processes = min(8, multiprocessing.cpu_count())
 
     funds, portfolios = parse_files(intermediate_cfg, xml_source_path,
                                     processes, daily_keys)
+
+    types_to_exclude = dta.read('types_to_exclude')
+    harmonization_rules = dta.read('harmonization_values_rules')
 
     funds, portfolios = clean_and_prepare_raw(intermediate_cfg, funds, portfolios,
                                               types_to_exclude, types_series,
