@@ -111,7 +111,6 @@ def find_all_files(files_path, file_ext):
     }
 
 
-
 def find_all_mecsac_files(files_path):
     """
     Recursively finds all files mec_sac, and returns metadata.
