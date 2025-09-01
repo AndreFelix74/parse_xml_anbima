@@ -180,6 +180,50 @@ def clean_gestor_names_for_wordcloud(entity, stopwords=None):
     entity['NEW_GESTOR_WORD_CLOUD'] = entity['NEW_GESTOR'].apply(clean_text)
 
 
+def fix_isin_asterisk(joined, col_base):
+    """
+    Replace invalid ISIN values represented by asterisks in a DataFrame.
+
+    The function searches for rows where the 'isin' column contains only 
+    asterisks (e.g., "********") and attempts to replace them with valid 
+    ISINs found in other rows that share the same base key (`col_base`), 
+    such as 'codativo' or 'cnpjfundo'.
+
+    Only keys (`col_base` values) that are associated with a single unique 
+    ISIN in the dataset are considered. Keys mapping to multiple different 
+    ISINs are ignored to avoid ambiguous replacements.
+
+    Parameters
+    ----------
+    joined : pandas.DataFrame
+        DataFrame containing at least the columns 'isin' and the base column.
+    col_base : str
+        Column name used as the reference key to map valid ISINs 
+        (e.g., "codativo" or "cnpjfundo").
+
+    Returns
+    -------
+    pandas.DataFrame
+        The same DataFrame with asterisk ISINs replaced in place 
+        where a unique mapping could be found.
+    """
+    def _unique_map(df, key, val):
+        group = df.groupby(key, dropna=True)[val].nunique()
+        uniq_keys = group[group == 1].index
+        src = df[df[key].isin(uniq_keys)].drop_duplicates(key)
+        return dict(zip(src[key], src[val]))
+
+    mask_asterisk = joined['isin'].astype(str).str.fullmatch(r"\*+")
+
+    map_src = _unique_map(
+        joined.loc[~mask_asterisk & joined[col_base].notna(), [col_base, 'isin']],
+        col_base, 'isin'
+    )
+
+    mask = mask_asterisk & joined[col_base].notna()
+    joined.loc[mask, 'isin'] = joined.loc[mask, col_base].map(map_src)
+
+
 def enrich_and_classify(joined, tipos_serie, name_standardization_rules,
                         new_tipo_rules, gestor_name_stopwords):
     """
@@ -208,6 +252,9 @@ def enrich_and_classify(joined, tipos_serie, name_standardization_rules,
         classification process.
     """
     joined['FLAG_SERIE'] = np.where(joined['tipo'].isin(tipos_serie), 'SIM', 'NAO')
+
+    fix_isin_asterisk(joined, 'codativo')
+    fix_isin_asterisk(joined, 'cnpjfundo')
 
     alerts = classify_new_tipo(joined, new_tipo_rules)
     add_vencimento_tpf(joined)
