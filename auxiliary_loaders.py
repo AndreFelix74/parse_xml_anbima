@@ -268,9 +268,11 @@ def load_mec_sac_last_day_month(data_aux_path):
                 print(f"Empty mecSAC file: {filename}")
                 continue
 
-            mec_sac['DT'] = pd.to_datetime(mec_sac['DT'], dayfirst=True)
+            mec_sac = load_mecsac_file(file_path)
+            idx = mec_sac.groupby('CODCLI')['DT'].idxmax()
+            last_day_per_codcli = mec_sac.loc[idx].copy()
 
-            dfs.append(load_mecsac_file(file_path))
+            dfs.append(last_day_per_codcli)
 
     if dfs:
         return pd.concat(dfs, ignore_index=True)
