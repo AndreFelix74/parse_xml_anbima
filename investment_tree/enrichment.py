@@ -100,9 +100,10 @@ def enrich_tree(tree_horzt):
 
     accumulate_columns_by_level(tree_horzt, 'equity_stake', 'equity_stake', max_deep)
 
-    for i in range(1, max_deep + 1):
+    for i in range(0, max_deep + 1):
+        suffix = '' if i == 0 else f"_nivel_{i}"
         mask_deep = tree_horzt['nivel'] == i
-        col_name = f"valor_calc_nivel_{i}"
+        col_name = f"valor_calc{suffix}"
         tree_horzt.loc[mask_deep, 'valor_calc_proporcional'] = (
             tree_horzt.loc[mask_deep, col_name]
             * tree_horzt.loc[mask_deep, 'equity_stake']
