@@ -56,7 +56,7 @@ def create_column_based_on_levels(tree_hrzt, new_col, base_col, deep):
         mask = unresolved & tree_hrzt[col].notna()
         tree_hrzt.loc[mask, new_col] = tree_hrzt.loc[mask, col]
         unresolved &= ~mask
-        
+
 
 def fill_level_columns_forward(tree_hrzt, base_col, deep):
     """
@@ -103,18 +103,18 @@ def enrich_tree(tree_horzt):
     for i in range(1, max_deep + 1):
         mask_deep = tree_horzt['nivel'] == i
         col_name = f"valor_calc_nivel_{i}"
-        tree_horzt.loc[mask_deep, 'valor_calc'] = (
+        tree_horzt.loc[mask_deep, 'valor_calc_proporcional'] = (
             tree_horzt.loc[mask_deep, col_name]
             * tree_horzt.loc[mask_deep, 'equity_stake']
         )
 
     tree_horzt['total_invest'] = (
-        tree_horzt.groupby(['cnpb', 'dtposicao'])['valor_calc']
+        tree_horzt.groupby(['cnpb', 'dtposicao'])['valor_calc_proporcional']
         .transform('sum')
     )
 
     tree_horzt['composicao'] = (
-        tree_horzt['valor_calc']
+        tree_horzt['valor_calc_proporcional']
         / tree_horzt['total_invest']
     )
 

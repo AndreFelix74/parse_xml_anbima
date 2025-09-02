@@ -138,7 +138,7 @@ def find_all_mecsac_files(files_path):
     }
 
 
-def load_mecsac(intermediate_cfg, mec_source_path, processes):
+def load_mecsac(mec_source_path, processes):
     with log_timing('load', 'find_mecsac_files') as log:
         all_mecsac_files = find_all_mecsac_files(mec_source_path)
 
@@ -153,14 +153,6 @@ def load_mecsac(intermediate_cfg, mec_source_path, processes):
                                     all_mecsac_files))
 
     mec_sac = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
-
-    if intermediate_cfg['save']:
-        with log_timing('load', 'save_mec_raw_data') as log:
-            save_intermediate(mec_sac, 'mec_sac-raw', intermediate_cfg, log)
-
-    if intermediate_cfg['save']:
-        with log_timing('load', 'save_mec_parsed_data') as log:
-            save_intermediate(mec_sac, 'mec_sac-parsed', intermediate_cfg, log)
 
     return mec_sac
 
@@ -571,11 +563,7 @@ def load_config():
 
 def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
                                 mec_sac_path, processes):
-    mec_sac = load_mecsac(intermediate_cfg, mec_sac_path, processes)
-
-    if intermediate_cfg['save']:
-        with log_timing('load', 'save_mec_raw_data') as log:
-            save_intermediate(mec_sac, 'mec_sac-raw', intermediate_cfg, log)
+    mec_sac = load_mecsac(mec_sac_path, processes)
 
     with log_timing('plans_returns', 'load_dcadplanosac'):
         dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
