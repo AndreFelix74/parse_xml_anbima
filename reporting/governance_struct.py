@@ -67,23 +67,39 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
     Returns:
         None: The input DataFrame is modified in place.
     """
+    group_cols = ['codcart', 'dtposicao', 'cnpb']
     tree['KEY_ESTRUTURA_GERENCIAL'] = None
+    tree['ESTRUTURA_GERENCIAL_valor_calc'] = None
+    tree['ESTRUTURA_GERENCIAL_match'] = None
 
     for i in range(max_deep, -1, -1):
-        cnpj_col = 'cnpjfundo' if i == 0 else f'cnpjfundo_nivel_{i}'
+        suffix = '' if i == 0 else f'_nivel_{i}'
+        cnpj_col = f"cnpjfundo{suffix}"
+        vl_calc_col = f"valor_calc{suffix}"
+        rentab_col = f"rentab{suffix}"
 
         mask_key_missing = tree['KEY_ESTRUTURA_GERENCIAL'].isna()
         mask_in_estrutura = tree[cnpj_col].isin(key_vehicle_governance_struct)
         mask = mask_key_missing & mask_in_estrutura
 
-        tree.loc[mask, 'KEY_ESTRUTURA_GERENCIAL'] = tree.loc[mask, cnpj_col]
+        tree.loc[mask, 'ESTRUTURA_GERENCIAL_match'] = tree.loc[mask, cnpj_col]
 
-    fallback_mask = (
-        tree['KEY_ESTRUTURA_GERENCIAL'].isna() &
-        tree['cnpjfundo'].notna() &
-        (tree['cnpjfundo'] != '')
-    )
+        first_in_group = ~tree.duplicated(subset=group_cols + [cnpj_col])
+    
+        mask = (
+            tree['KEY_ESTRUTURA_GERENCIAL'].isna()
+            & tree[cnpj_col].isin(key_vehicle_governance_struct)
+            & first_in_group
+        )
+
+        tree.loc[mask, 'KEY_ESTRUTURA_GERENCIAL'] = tree[cnpj_col]
+        tree.loc[mask, 'ESTRUTURA_GERENCIAL_valor_calc'] = tree[vl_calc_col]
+        tree.loc[mask, 'ESTRUTURA_GERENCIAL_rentab_ponderada'] = tree[rentab_col]
+
+    fallback_mask = tree['ESTRUTURA_GERENCIAL_match'].isna()
     tree.loc[fallback_mask, 'KEY_ESTRUTURA_GERENCIAL'] = '#OUTROS'
+    tree.loc[fallback_mask, 'ESTRUTURA_GERENCIAL_valor_calc'] = tree['valor_calc_proporcional']
+    tree.loc[fallback_mask, 'ESTRUTURA_GERENCIAL_rentab_ponderada'] = tree['rentab_ponderada']
 
 
 def assign_governance_struct_keys(tree_horzt, governance_struct):
