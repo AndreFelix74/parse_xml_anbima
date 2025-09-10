@@ -608,7 +608,6 @@ def run_pipeline():
         mec_sac_path,
     ) = load_config()
 
-
     setup_folders([xlsx_destination_path])
 
     header_daily_values = dta.read('header_daily_values')
