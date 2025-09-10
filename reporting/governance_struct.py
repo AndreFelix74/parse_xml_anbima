@@ -98,7 +98,12 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
         tree.loc[mask, 'ESTRUTURA_GERENCIAL_rentab_ponderada'] = tree[rentab_col]
         tree.loc[mask, 'ESTRUTURA_GERENCIAL_ativo'] = tree[ativo_col]
 
-    fallback_mask = tree['ESTRUTURA_GERENCIAL_match'].isna()
+    fallback_mask = (
+        tree['ESTRUTURA_GERENCIAL_match'].isna() &
+        tree['cnpjfundo'].notna() &
+        (tree['cnpjfundo'] != '')
+    )
+
     tree.loc[fallback_mask, 'KEY_ESTRUTURA_GERENCIAL'] = '#OUTROS'
     tree.loc[fallback_mask, 'ESTRUTURA_GERENCIAL_valor_calc'] = tree['valor_calc_proporcional']
     tree.loc[fallback_mask, 'ESTRUTURA_GERENCIAL_rentab_ponderada'] = tree['rentab_ponderada']
