@@ -35,13 +35,15 @@ def fill_missing_governance_struct(tree_horzt, key_vehicle_governance_struct):
 
     codcart = tree_horzt['codcart'].isin(key_vehicle_governance_struct)
 
-    tree_horzt.loc[missing_struct & codcart, 'KEY_ESTRUTURA_GERENCIAL'] = \
-        tree_horzt.loc[missing_struct & codcart, 'codcart']
+    tree_horzt.loc[missing_struct & codcart, 'KEY_ESTRUTURA_GERENCIAL'] = tree_horzt['codcart']
+    tree_horzt.loc[missing_struct & codcart, 'ESTRUTURA_GERENCIAL_match'] = tree_horzt['codcart']
 
     tree_horzt.loc[missing_struct & ~codcart, 'KEY_ESTRUTURA_GERENCIAL'] = '#OUTROS'
-    tree_horzt.loc[missing_struct & ~codcart, 'ESTRUTURA_GERENCIAL_valor_calc'] = tree_horzt['valor_calc_proporcional']
-    tree_horzt.loc[missing_struct & ~codcart, 'ESTRUTURA_GERENCIAL_rentab_ponderada'] = tree_horzt['rentab_ponderada']
-    tree_horzt.loc[missing_struct & ~codcart, 'ESTRUTURA_GERENCIAL_ativo'] = tree_horzt['NEW_NOME_ATIVO_FINAL']
+    tree_horzt.loc[missing_struct & ~codcart, 'ESTRUTURA_GERENCIAL_match'] = '#OUTROS'
+
+    tree_horzt.loc[missing_struct, 'ESTRUTURA_GERENCIAL_valor_calc'] = tree_horzt['valor_calc_proporcional']
+    tree_horzt.loc[missing_struct, 'ESTRUTURA_GERENCIAL_rentab_ponderada'] = tree_horzt['rentab_ponderada']
+    tree_horzt.loc[missing_struct, 'ESTRUTURA_GERENCIAL_ativo'] = tree_horzt['NEW_NOME_ATIVO_FINAL']
 
 
 def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep):
@@ -102,9 +104,9 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
         tree.loc[mask, 'ESTRUTURA_GERENCIAL_ativo'] = tree[ativo_col]
 
     fallback_mask = (
-        tree['ESTRUTURA_GERENCIAL_match'].isna() &
-        tree['cnpjfundo'].notna() &
-        (tree['cnpjfundo'] != '')
+        tree['ESTRUTURA_GERENCIAL_match'].isna()
+        & tree['cnpjfundo'].notna()
+        & (tree['cnpjfundo'] != '')
     )
 
     tree.loc[fallback_mask, 'KEY_ESTRUTURA_GERENCIAL'] = '#OUTROS'
