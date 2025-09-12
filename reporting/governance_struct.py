@@ -29,21 +29,21 @@ def fill_missing_governance_struct(tree_horzt, key_vehicle_governance_struct):
         None: Modifies the DataFrame in place.
     """
     missing_struct = (
-        tree_horzt['ESTRUTURA_GERENCIAL_match'].isna() |
-        (tree_horzt['ESTRUTURA_GERENCIAL_match'] == '')
+        tree_horzt['contribution_match'].isna() |
+        (tree_horzt['contribution_match'] == '')
     )
 
     codcart = tree_horzt['codcart'].isin(key_vehicle_governance_struct)
 
     tree_horzt.loc[missing_struct & codcart, 'KEY_ESTRUTURA_GERENCIAL'] = tree_horzt['codcart']
-    tree_horzt.loc[missing_struct & codcart, 'ESTRUTURA_GERENCIAL_match'] = tree_horzt['codcart']
+    tree_horzt.loc[missing_struct & codcart, 'contribution_match'] = tree_horzt['codcart']
 
     tree_horzt.loc[missing_struct & ~codcart, 'KEY_ESTRUTURA_GERENCIAL'] = '#OUTROS'
-    tree_horzt.loc[missing_struct & ~codcart, 'ESTRUTURA_GERENCIAL_match'] = '#OUTROS'
+    tree_horzt.loc[missing_struct & ~codcart, 'contribution_match'] = '#OUTROS'
 
-    tree_horzt.loc[missing_struct, 'ESTRUTURA_GERENCIAL_valor_calc'] = tree_horzt['valor_calc_proporcional']
-    tree_horzt.loc[missing_struct, 'ESTRUTURA_GERENCIAL_rentab_ponderada'] = tree_horzt['rentab_ponderada']
-    tree_horzt.loc[missing_struct, 'ESTRUTURA_GERENCIAL_ativo'] = tree_horzt['NEW_NOME_ATIVO_FINAL']
+    tree_horzt.loc[missing_struct, 'contribution_valor_calc'] = tree_horzt['valor_calc_proporcional']
+    tree_horzt.loc[missing_struct, 'contribution_rentab_ponderada'] = tree_horzt['rentab_ponderada']
+    tree_horzt.loc[missing_struct, 'contribution_ativo'] = tree_horzt['NEW_NOME_ATIVO_FINAL']
 
 
 def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep):
@@ -74,8 +74,8 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
     """
     group_cols = ['codcart', 'dtposicao', 'cnpb']
     tree['KEY_ESTRUTURA_GERENCIAL'] = None
-    tree['ESTRUTURA_GERENCIAL_valor_calc'] = 0.0
-    tree['ESTRUTURA_GERENCIAL_match'] = None
+    tree['contribuition_valor_calc'] = 0.0
+    tree['contribution_match'] = None
 
     for i in range(max_deep, -1, -1):
         suffix = '' if i == 0 else f'_nivel_{i}'
@@ -88,7 +88,7 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
         mask_in_estrutura = tree[cnpj_col].isin(key_vehicle_governance_struct)
         mask = mask_key_missing & mask_in_estrutura
 
-        tree.loc[mask, 'ESTRUTURA_GERENCIAL_match'] = tree.loc[mask, cnpj_col]
+        tree.loc[mask, 'contribution_match'] = tree.loc[mask, cnpj_col]
 
         first_in_group = ~tree.duplicated(subset=group_cols + [cnpj_col])
     
@@ -99,20 +99,20 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
         )
 
         tree.loc[mask, 'KEY_ESTRUTURA_GERENCIAL'] = tree[cnpj_col]
-        tree.loc[mask, 'ESTRUTURA_GERENCIAL_valor_calc'] = tree[vl_calc_col]
-        tree.loc[mask, 'ESTRUTURA_GERENCIAL_rentab_ponderada'] = tree[rentab_col]
-        tree.loc[mask, 'ESTRUTURA_GERENCIAL_ativo'] = tree[ativo_col]
+        tree.loc[mask, 'contribution_valor_calc'] = tree[vl_calc_col]
+        tree.loc[mask, 'contribution_rentab_ponderada'] = tree[rentab_col]
+        tree.loc[mask, 'contribution_ativo'] = tree[ativo_col]
 
     fallback_mask = (
-        tree['ESTRUTURA_GERENCIAL_match'].isna()
+        tree['contribution_match'].isna()
         & tree['cnpjfundo'].notna()
         & (tree['cnpjfundo'] != '')
     )
 
     tree.loc[fallback_mask, 'KEY_ESTRUTURA_GERENCIAL'] = '#OUTROS'
-    tree.loc[fallback_mask, 'ESTRUTURA_GERENCIAL_valor_calc'] = tree['valor_calc_proporcional']
-    tree.loc[fallback_mask, 'ESTRUTURA_GERENCIAL_rentab_ponderada'] = tree['rentab_ponderada']
-    tree.loc[fallback_mask, 'ESTRUTURA_GERENCIAL_ativo'] = tree['NEW_NOME_ATIVO_FINAL']
+    tree.loc[fallback_mask, 'contribution_valor_calc'] = tree['valor_calc_proporcional']
+    tree.loc[fallback_mask, 'contribution_rentab_ponderada'] = tree['rentab_ponderada']
+    tree.loc[fallback_mask, 'contribution_ativo'] = tree['NEW_NOME_ATIVO_FINAL']
 
 
 def assign_governance_struct_keys(tree_horzt, governance_struct):
