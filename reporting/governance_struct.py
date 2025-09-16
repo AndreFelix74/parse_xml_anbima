@@ -94,19 +94,19 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
     tree['contribution_valor_calc'] = 0.0
     tree['contribution_match'] = None
 
-    for i in range(max_deep, -1, -1):
+    for i in range(0, max_deep + 1):
         suffix = '' if i == 0 else f'_nivel_{i}'
-        suffix_prev = '' if i - 1 <= 0 else f'_nivel_{i-1}'
 
         cnpj_col = f"cnpjfundo{suffix}"
         vl_calc_col = f"valor_calc{suffix}"
-        rentab_col = f"rentab{suffix_prev}"
+        rentab_col = f"rentab{suffix}"
         ativo_col = f"NEW_NOME_ATIVO{suffix}"
         tipo_col = f"NEW_TIPO{suffix}"
 
         mask_key_missing = tree['KEY_ESTRUTURA_GERENCIAL'].isna()
+        mask_not_marked  = tree['contribution_match'].isna()
         mask_in_estrutura = tree[cnpj_col].isin(key_vehicle_governance_struct)
-        mask = mask_key_missing & mask_in_estrutura
+        mask = mask_key_missing & mask_in_estrutura & mask_not_marked
 
         tree.loc[mask, 'contribution_match'] = tree[cnpj_col]
 
