@@ -661,13 +661,13 @@ def run_pipeline():
                                                 processes)
 
     tree_hrztl = tree_hrztl.merge(
-        adjust_rentab[['cnpb', 'dtposicao', 'ajuste_rentab_fator']],
+        adjust_rentab[['cnpb', 'dtposicao', 'contribution_ajuste_rentab_fator']],
         on=['cnpb', 'dtposicao'],
         how='left',
         )
-    tree_hrztl['rentab_ponderada_ajustada'] = (
-        tree_hrztl['rentab_ponderada']
-        * tree_hrztl['ajuste_rentab_fator']
+    tree_hrztl['contribution_rentab_ponderada_ajustada'] = (
+        tree_hrztl['contribution_rentab_ponderada']
+        * tree_hrztl['contribution_ajuste_rentab_fator']
         )
 
     tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
