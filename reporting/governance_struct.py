@@ -7,7 +7,7 @@ Created on Sat Jun  7 13:50:35 2025
 """
 
 
-def _fill_contribution_cols(tree, mask, vl_calc_col, rentab_col, ativo_col):
+def _fill_contribution_cols(tree, mask, vl_calc_col, rentab_col, ativo_col, tipo_col):
     """
     Assigns contribution-related values to rows in the tree DataFrame
     where the mask condition holds.
@@ -22,6 +22,7 @@ def _fill_contribution_cols(tree, mask, vl_calc_col, rentab_col, ativo_col):
         tree[rentab_col]
         * tree['contribution_composicao']
     )
+    tree.loc[mask, 'contribution_tipo'] = tree[tipo_col]
 
 
 def fill_missing_governance_struct(tree_horzt, key_vehicle_governance_struct):
@@ -59,7 +60,7 @@ def fill_missing_governance_struct(tree_horzt, key_vehicle_governance_struct):
     tree_horzt.loc[missing_struct & ~codcart, 'contribution_match'] = '#OUTROS'
 
     _fill_contribution_cols(tree_horzt, missing_struct, 'valor_calc_proporcional',
-                            'rentab_ponderada', 'NEW_NOME_ATIVO_FINAL')
+                            'rentab_ponderada', 'NEW_NOME_ATIVO_FINAL', 'NEW_TIPO_FINAL')
 
 
 def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep):
@@ -90,7 +91,7 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
     """
     group_cols = ['codcart', 'dtposicao', 'cnpb']
     tree['KEY_ESTRUTURA_GERENCIAL'] = None
-    tree['contribuition_valor_calc'] = 0.0
+    tree['contribution_valor_calc'] = 0.0
     tree['contribution_match'] = None
 
     for i in range(max_deep, -1, -1):
@@ -101,6 +102,7 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
         vl_calc_col = f"valor_calc{suffix}"
         rentab_col = f"rentab{suffix_prev}"
         ativo_col = f"NEW_NOME_ATIVO{suffix}"
+        tipo_col = f"NEW_TIPO{suffix}"
 
         mask_key_missing = tree['KEY_ESTRUTURA_GERENCIAL'].isna()
         mask_in_estrutura = tree[cnpj_col].isin(key_vehicle_governance_struct)
@@ -117,7 +119,7 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
         )
 
         tree.loc[mask, 'KEY_ESTRUTURA_GERENCIAL'] = tree[cnpj_col]
-        _fill_contribution_cols(tree, mask, vl_calc_col, rentab_col, ativo_col)
+        _fill_contribution_cols(tree, mask, vl_calc_col, rentab_col, ativo_col, tipo_col)
 
     fallback_mask = (
         tree['contribution_match'].isna()
@@ -128,7 +130,7 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
     tree.loc[fallback_mask, 'contribution_match'] = '#OUTROS'
     tree.loc[fallback_mask, 'KEY_ESTRUTURA_GERENCIAL'] = '#OUTROS'
     _fill_contribution_cols(tree, fallback_mask, 'valor_calc_proporcional',
-                            'rentab_ponderada', 'NEW_NOME_ATIVO_FINAL')
+                            'rentab_ponderada', 'NEW_NOME_ATIVO_FINAL', 'NEW_TIPO_FINAL')
 
 
 def assign_governance_struct_keys(tree_horzt, governance_struct):
