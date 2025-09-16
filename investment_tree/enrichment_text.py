@@ -78,18 +78,18 @@ def enrich_text(tree_horzt):
         None: Modifies the input DataFrame in place by adding derived textual
         columns (`*_FINAL`, `isin_FINAL`, `SEARCH`).
     """
-    max_deep = tree_horzt['nivel'].max()
+    max_depth = tree_horzt['nivel'].max()
 
     final_cols_base = [
         'NEW_TIPO', 'NEW_NOME_ATIVO', 'NEW_GESTOR_WORD_CLOUD',
         'fEMISSOR.NOME_EMISSOR', 'fNUMERACA.TIPO_ATIVO', 'fNUMERACA.DESCRICAO'
     ]
     for col_base in final_cols_base:
-        create_column_based_on_levels(tree_horzt, f"{col_base}_FINAL", col_base, max_deep)
+        create_column_based_on_levels(tree_horzt, f"{col_base}_FINAL", col_base, max_depth)
 
-    create_column_based_on_levels(tree_horzt, 'isin_FINAL', 'isin', max_deep)
+    create_column_based_on_levels(tree_horzt, 'isin_FINAL', 'isin', max_depth)
 
-    fill_level_columns_forward(tree_horzt, 'NEW_NOME_ATIVO', max_deep)
+    fill_level_columns_forward(tree_horzt, 'NEW_NOME_ATIVO', max_depth)
 
     tree_horzt['SEARCH'] = (
         tree_horzt['NEW_NOME_ATIVO_FINAL'].fillna('')
