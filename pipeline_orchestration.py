@@ -580,9 +580,9 @@ def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
             save_intermediate(tree_returns_by_plan, 'rentab-plano-tree', intermediate_cfg, log)
             save_intermediate(plan_returns_adjust , 'rentab-plano-ajuste', intermediate_cfg, log)
 
-    adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'ajuste_rentab',
-                                         'ajuste_rentab_fator']].copy()
-    adjust_rentab.rename(columns={'ajuste_rentab': 'rentab_ponderada'}, inplace=True)
+    adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'contribution_ajuste_rentab',
+                                         'contribution_ajuste_rentab_fator']].copy()
+    adjust_rentab.rename(columns={'contribution_ajuste_rentab': 'contribution_rentab_ponderada'}, inplace=True)
     adjust_rentab['nivel'] = 0
     cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
                    'NEW_NOME_ATIVO', 'SEARCH', 'NEW_TIPO_FINAL',
