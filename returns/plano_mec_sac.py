@@ -73,7 +73,7 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac):
 
     tree_returns_by_plan = (
         tree_hrztl
-        .groupby(['cnpb', 'dtposicao'], as_index=False)['rentab_ponderada']
+        .groupby(['cnpb', 'dtposicao'], as_index=False)['contribution_rentab_ponderada']
         .sum()
     )
 
@@ -84,14 +84,14 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac):
         how='left'
     )
 
-    plan_returns_adjust['ajuste_rentab'] = (
+    plan_returns_adjust['contribution_ajuste_rentab'] = (
         plan_returns_adjust['RENTAB_DIA_PONDERADA_MEC_SAC']
-        - plan_returns_adjust['rentab_ponderada']
+        - plan_returns_adjust['contribution_rentab_ponderada']
         )
 
-    plan_returns_adjust['ajuste_rentab_fator'] = (
+    plan_returns_adjust['contribution_ajuste_rentab_fator'] = (
         plan_returns_adjust['RENTAB_DIA_PONDERADA_MEC_SAC']
-        / plan_returns_adjust['rentab_ponderada']
+        / plan_returns_adjust['contribution_rentab_ponderada']
         )
 
     return [mec_sac_returns_by_plan, tree_returns_by_plan, plan_returns_adjust]
