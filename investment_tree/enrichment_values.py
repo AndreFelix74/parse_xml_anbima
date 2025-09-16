@@ -54,7 +54,7 @@ def compute_proportional_value(tree_horzt, max_depth):
         col_name = f"valor_calc{suffix}"
         tree_horzt.loc[mask_level, 'valor_calc_proporcional'] = (
             tree_horzt.loc[mask_level, col_name]
-            * tree_horzt.loc[mask_level, 'equity_stake']
+            * tree_horzt.loc[mask_level, 'equity_stake_leaf']
         )
 
 
@@ -113,7 +113,7 @@ def enrich_values(tree_horzt):
     """
     max_depth = tree_horzt['nivel'].max()
 
-    accumulate_columns_by_level(tree_horzt, 'equity_stake', 'equity_stake', max_depth)
+    accumulate_columns_by_level(tree_horzt, 'equity_stake_leaf', 'equity_stake', max_depth)
 
     compute_proportional_value(tree_horzt, max_depth)
 
