@@ -96,5 +96,5 @@ def enrich_text(tree_horzt):
         + ' ' + tree_horzt['NEW_GESTOR_WORD_CLOUD_FINAL'].fillna('')
         + ' ' + tree_horzt['fEMISSOR.NOME_EMISSOR_FINAL'].fillna('')
         + ' ' + tree_horzt['PARENT_FUNDO'].fillna('')
-        + ' ' + tree_horzt['isin'].fillna('')
+        + ' ' + tree_horzt['isin_FINAL'].fillna('')
     )
