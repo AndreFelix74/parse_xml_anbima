@@ -29,7 +29,7 @@ from returns import (
     compute_returns_from_puposicao,
     validate_unique_puposicao
     )
-from investment_tree import build_tree, enrich_tree
+from investment_tree import build_tree, enrich_text, enrich_values
 from reporting import assign_governance_struct_keys
 import util as utl
 import data_access as dta
@@ -109,7 +109,6 @@ def find_all_files(files_path, file_ext):
         for file in files
         if file.lower().endswith(file_ext.lower())
     }
-
 
 
 def find_all_mecsac_files(files_path):
@@ -518,8 +517,11 @@ def build_horizontal_tree(funds, portfolios, data_aux_path):
     with log_timing('tree', 'build_tree'):
         tree_horzt = build_tree(funds, portfolios)
 
-    with log_timing('tree', 'enrich_tree'):
-        enrich_tree(tree_horzt)
+    with log_timing('tree', 'enrich_values'):
+        enrich_values(tree_horzt)
+
+    with log_timing('tree', 'enrich_text'):
+        enrich_text(tree_horzt)
 
     with log_timing('tree', 'governance_struct'):
         governance_struct = aux_loader.load_governance_struct(data_aux_path)
