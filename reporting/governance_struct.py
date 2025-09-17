@@ -104,7 +104,7 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
         tipo_col = f"NEW_TIPO{suffix}"
 
         mask_key_missing = tree['KEY_ESTRUTURA_GERENCIAL'].isna()
-        mask_not_marked  = tree['contribution_match'].isna()
+        mask_not_marked = tree['contribution_match'].isna()
         mask_in_estrutura = tree[cnpj_col].isin(key_vehicle_governance_struct)
         mask = mask_key_missing & mask_in_estrutura & mask_not_marked
 
@@ -112,11 +112,7 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
 
         first_in_group = ~tree.duplicated(subset=group_cols + [cnpj_col])
 
-        mask = (
-            mask_key_missing
-            & mask_in_estrutura
-            & first_in_group
-        )
+        mask &= first_in_group
 
         tree.loc[mask, 'KEY_ESTRUTURA_GERENCIAL'] = tree[cnpj_col]
         _fill_contribution_cols(tree, mask, vl_calc_col, rentab_col, ativo_col, tipo_col)
