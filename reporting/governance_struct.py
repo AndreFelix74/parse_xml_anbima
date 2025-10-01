@@ -7,15 +7,33 @@ Created on Sat Jun  7 13:50:35 2025
 """
 
 
-def _fill_contribution_cols(tree, mask, vl_calc_col='valor_calc_proporcional',
-                            rentab_col='rentab_nominal',
-                            ativo_col='NEW_NOME_ATIVO_FINAL',
-                            tipo_col='NEW_TIPO_FINAL'):
+def _fill_contribution_cols(tree, mask, level):
     """
     Assigns contribution-related values to rows in the tree DataFrame
     where the mask condition holds.
     """
-    tree.loc[mask, 'contribution_valor_calc'] = tree[vl_calc_col]
+    suffix = ''
+    if level < 0:
+        suffix = '_FINAL'
+    elif level > 0:
+        suffix = f'_nivel_{level}'
+
+    suffix_vl_calc = '_proporcional' if level < 0 else suffix
+    suffix_rentab = '_nominal' if level < 0 else suffix
+
+    vl_calc_col = f"valor_calc{suffix_vl_calc}"
+    rentab_col = f"rentab{suffix_rentab}"
+    ativo_col = f"NEW_NOME_ATIVO{suffix}"
+    tipo_col = f"NEW_TIPO{suffix}"
+
+    equity_stake_cols = [f"equity_stake_nivel_{i}" for i in range(1, level)]
+    equity_stake_cols.append('equity_stake')
+    tree.loc[mask, 'contribution_equity_stake'] = tree[equity_stake_cols].fillna(1).prod(axis=1)
+
+    tree.loc[mask, 'contribution_valor_calc'] = (
+        tree[vl_calc_col]
+        * tree['contribution_equity_stake']
+        )
     tree.loc[mask, 'contribution_ativo'] = tree[ativo_col]
     tree.loc[mask, 'contribution_composicao'] = (
         tree['contribution_valor_calc']
@@ -63,7 +81,7 @@ def fill_missing_governance_struct(tree_horzt, key_vehicle_governance_struct):
     tree_horzt.loc[missing_struct & ~codcart, 'KEY_ESTRUTURA_GERENCIAL'] = '#OUTROS'
     tree_horzt.loc[missing_struct & ~codcart, 'contribution_match'] = '#OUTROS'
 
-    _fill_contribution_cols(tree_horzt, missing_struct)
+    _fill_contribution_cols(tree_horzt, missing_struct, -1)
 
 
 def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep):
@@ -94,31 +112,27 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
     """
     group_cols = ['codcart', 'dtposicao', 'cnpb']
     tree['KEY_ESTRUTURA_GERENCIAL'] = None
-    tree['contribution_valor_calc'] = 0.0
     tree['contribution_match'] = None
 
     for i in range(0, max_deep + 1):
         suffix = '' if i == 0 else f'_nivel_{i}'
 
-        cnpj_col = f"cnpjfundo{suffix}"
-        vl_calc_col = f"valor_calc{suffix}"
-        rentab_col = f"rentab{suffix}"
-        ativo_col = f"NEW_NOME_ATIVO{suffix}"
-        tipo_col = f"NEW_TIPO{suffix}"
+        cnpj_col = f"cnpj{suffix}"
+        cnpjfundo_col = f"cnpjfundo{suffix}"
 
         mask_key_missing = tree['KEY_ESTRUTURA_GERENCIAL'].isna()
         mask_not_marked = tree['contribution_match'].isna()
-        mask_in_estrutura = tree[cnpj_col].isin(key_vehicle_governance_struct)
-        mask = mask_key_missing & mask_in_estrutura & mask_not_marked
+        mask_in_estrutura = tree[cnpjfundo_col].isin(key_vehicle_governance_struct)
+        mask = mask_key_missing & mask_not_marked & mask_in_estrutura
 
-        tree.loc[mask, 'contribution_match'] = tree[cnpj_col]
+        tree.loc[mask, 'contribution_match'] = tree[cnpjfundo_col]
 
-        first_in_group = ~tree.duplicated(subset=group_cols + [cnpj_col])
+        first_in_group = ~tree.duplicated(subset=group_cols + [cnpjfundo_col, cnpj_col])
 
         mask &= first_in_group
 
-        tree.loc[mask, 'KEY_ESTRUTURA_GERENCIAL'] = tree[cnpj_col]
-        _fill_contribution_cols(tree, mask, vl_calc_col, rentab_col, ativo_col, tipo_col)
+        tree.loc[mask, 'KEY_ESTRUTURA_GERENCIAL'] = tree[cnpjfundo_col]
+        _fill_contribution_cols(tree, mask, i)
 
     fallback_mask = (
         tree['contribution_match'].isna()
@@ -128,7 +142,7 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
 
     tree.loc[fallback_mask, 'contribution_match'] = '#OUTROS'
     tree.loc[fallback_mask, 'KEY_ESTRUTURA_GERENCIAL'] = '#OUTROS'
-    _fill_contribution_cols(tree, fallback_mask)
+    _fill_contribution_cols(tree, fallback_mask, -1)
 
 
 def assign_governance_struct_keys(tree_horzt, governance_struct):
@@ -159,3 +173,4 @@ def assign_governance_struct_keys(tree_horzt, governance_struct):
     assign_estrutura_gerencial_key(tree_horzt, key_vehicle_governance_struct, max_deep)
 
     fill_missing_governance_struct(tree_horzt, key_vehicle_governance_struct)
+    tree_horzt['contribution_valor_calc'] = tree_horzt['contribution_valor_calc'].astype(float)
