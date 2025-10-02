@@ -6,6 +6,23 @@ Created on Sat Jun  7 13:50:35 2025
 @author: andrefelix
 """
 
+# NOTE FOR REFACTORING
+#
+# This module currently tries to handle column resolution and contribution
+# calculations in the same function. The result is branching logic with many
+# suffix rules and the ad-hoc use of `level = -1` as a fallback. That “-1”
+# convention is a workaround and should be treated as technical debt.
+#
+# A cleaner design would separate responsibilities:
+#   1. Mark each row with two columns:
+#        - key_estrutura_gerencial
+#        - key_estrutura_gerencal_nivel (the level where the match occurred)
+#   2. Move all contribution math to a flat function that assumes those
+#      columns already exist and does not need conditional suffix logic.
+#
+# This would remove branching from the calculation stage and make the code
+# consistent with the rest of the system’s vectorized, straight-through style.
+
 
 def _fill_contribution_cols(tree, mask, level):
     """
