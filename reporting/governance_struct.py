@@ -27,7 +27,9 @@ def _fill_contribution_cols(tree, mask, level):
     tipo_col = f"NEW_TIPO{suffix}"
 
     equity_stake_cols = [f"equity_stake_nivel_{i}" for i in range(1, level)]
-    equity_stake_cols.append('equity_stake')
+    if level > 0:
+        equity_stake_cols.append('equity_stake')
+
     tree.loc[mask, 'contribution_equity_stake'] = tree[equity_stake_cols].fillna(1).prod(axis=1)
 
     tree.loc[mask, 'contribution_valor_calc'] = (
