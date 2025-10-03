@@ -104,7 +104,7 @@ def build_tree_branchs(portfolios, funds):
 
     current['nivel'] += 1
     current['equity_stake'] *= current['equity_stake_portfolio']
-    current['valor_calc'] = current['valor_calc'] * current['equity_stake_portfolio']
+    current['valor_calc_propocional'] = current['valor_calc'] * current['equity_stake_portfolio']
 
     return [current[portfolios.columns]] + build_tree_branchs(current[portfolios.columns], funds)
 
@@ -133,7 +133,7 @@ def build_tree_leaves(tree_branchs, funds):
     )
 
     leaves['nivel'] = leaves['nivel'] + 1
-    leaves['valor_calc'] *= leaves['equity_stake_tree']
+    leaves['valor_calc_proporcional'] *= leaves['equity_stake_tree']
 
     return leaves[tree_branchs.columns]
 

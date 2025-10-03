@@ -29,7 +29,7 @@ from returns import (
     compute_returns_from_puposicao,
     validate_unique_puposicao
     )
-from investment_tree import build_tree, enrich_tree
+from investment_tree import build_tree, enrich_text, enrich_values
 from reporting import assign_governance_struct_keys
 import util as utl
 import data_access as dta
@@ -111,7 +111,6 @@ def find_all_files(files_path, file_ext):
     }
 
 
-
 def find_all_mecsac_files(files_path):
     """
     Recursively finds all files mec_sac, and returns metadata.
@@ -138,7 +137,7 @@ def find_all_mecsac_files(files_path):
     }
 
 
-def load_mecsac(intermediate_cfg, mec_source_path, processes):
+def load_mecsac(mec_source_path, processes):
     with log_timing('load', 'find_mecsac_files') as log:
         all_mecsac_files = find_all_mecsac_files(mec_source_path)
 
@@ -153,14 +152,6 @@ def load_mecsac(intermediate_cfg, mec_source_path, processes):
                                     all_mecsac_files))
 
     mec_sac = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
-
-    if intermediate_cfg['save']:
-        with log_timing('load', 'save_mec_raw_data') as log:
-            save_intermediate(mec_sac, 'mec_sac-raw', intermediate_cfg, log)
-
-    if intermediate_cfg['save']:
-        with log_timing('load', 'save_mec_parsed_data') as log:
-            save_intermediate(mec_sac, 'mec_sac-parsed', intermediate_cfg, log)
 
     return mec_sac
 
@@ -429,7 +420,7 @@ def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
             aux_data['dcadplano'],
             aux_data['assets'],
             aux_data['cad_fi_cvm'],
-            'cnpj'
+            'cnpjfundo'
         )
 
     with log_timing('enrich', 'enrich_and_classify') as log:
@@ -526,8 +517,11 @@ def build_horizontal_tree(funds, portfolios, data_aux_path):
     with log_timing('tree', 'build_tree'):
         tree_horzt = build_tree(funds, portfolios)
 
-    with log_timing('tree', 'enrich_tree'):
-        enrich_tree(tree_horzt)
+    with log_timing('tree', 'enrich_values'):
+        enrich_values(tree_horzt)
+
+    with log_timing('tree', 'enrich_text'):
+        enrich_text(tree_horzt)
 
     with log_timing('tree', 'governance_struct'):
         governance_struct = aux_loader.load_governance_struct(data_aux_path)
@@ -571,11 +565,7 @@ def load_config():
 
 def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
                                 mec_sac_path, processes):
-    mec_sac = load_mecsac(intermediate_cfg, mec_sac_path, processes)
-
-    if intermediate_cfg['save']:
-        with log_timing('load', 'save_mec_raw_data') as log:
-            save_intermediate(mec_sac, 'mec_sac-raw', intermediate_cfg, log)
+    mec_sac = load_mecsac(mec_sac_path, processes)
 
     with log_timing('plans_returns', 'load_dcadplanosac'):
         dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
@@ -590,13 +580,13 @@ def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
             save_intermediate(tree_returns_by_plan, 'rentab-plano-tree', intermediate_cfg, log)
             save_intermediate(plan_returns_adjust , 'rentab-plano-ajuste', intermediate_cfg, log)
 
-    adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'ajuste_rentab',
-                                         'ajuste_rentab_fator']].copy()
-    adjust_rentab.rename(columns={'ajuste_rentab': 'rentab_ponderada'}, inplace=True)
+    adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'contribution_ajuste_rentab',
+                                         'contribution_ajuste_rentab_fator']].copy()
+    adjust_rentab.rename(columns={'contribution_ajuste_rentab': 'contribution_rentab_ponderada'}, inplace=True)
     adjust_rentab['nivel'] = 0
     cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
                    'NEW_NOME_ATIVO', 'SEARCH', 'NEW_TIPO_FINAL',
-                   'NEW_NOME_ATIVO_FINAL', 'isin']
+                   'NEW_NOME_ATIVO_FINAL', 'isin', 'contribution_ativo']
     for col in cols_adjust:
         adjust_rentab[col] = '#AJUSTE'
 
@@ -619,7 +609,6 @@ def run_pipeline():
         intermediate_cfg,
         mec_sac_path,
     ) = load_config()
-
 
     setup_folders([xlsx_destination_path])
 
@@ -672,13 +661,13 @@ def run_pipeline():
                                                 processes)
 
     tree_hrztl = tree_hrztl.merge(
-        adjust_rentab[['cnpb', 'dtposicao', 'ajuste_rentab_fator']],
+        adjust_rentab[['cnpb', 'dtposicao', 'contribution_ajuste_rentab_fator']],
         on=['cnpb', 'dtposicao'],
         how='left',
         )
-    tree_hrztl['rentab_ponderada_ajustada'] = (
-        tree_hrztl['rentab_ponderada']
-        * tree_hrztl['ajuste_rentab_fator']
+    tree_hrztl['contribution_rentab_ponderada_ajustada'] = (
+        tree_hrztl['contribution_rentab_ponderada']
+        * tree_hrztl['contribution_ajuste_rentab_fator']
         )
 
     tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
