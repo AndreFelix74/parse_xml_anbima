@@ -124,5 +124,7 @@ def save_df(dtfrm, file_path, file_format):
         Path(full_path).write_bytes(raw.getvalue())
     elif file_format == 'xlsx':
         dtfrm.to_excel(full_path, index=False)
+    elif file_format == 'parquet':
+        dtfrm.to_parquet(full_path)
     else:
         raise ValueError(f"Unsupported file format: {file_format}")
