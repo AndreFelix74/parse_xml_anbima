@@ -420,7 +420,7 @@ def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
             aux_data['dcadplano'],
             aux_data['assets'],
             aux_data['cad_fi_cvm'],
-            'cnpj'
+            'cnpjfundo'
         )
 
     with log_timing('enrich', 'enrich_and_classify') as log:
