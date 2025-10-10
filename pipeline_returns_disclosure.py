@@ -174,7 +174,7 @@ def reconcile_returns(api_ctx, returns_mecsac):
         elif tipo == 'ANUAL':
             returns_mecsac_maestro = reconcile_annually_returns(result, api_data)
 
-        return returns_mecsac_maestro
+    return returns_mecsac_maestro
 
 
 def main():
