@@ -86,10 +86,7 @@ def compute_equity_stake(investor_holdings, invested):
 def compute(entity, invested, types_series, composition_group_keys):
     """
     Main function for processing fund and portfolio data:
-    - Reads configuration settings.
-    - Loads raw fund and portfolio data from Excel files.
     - Computes equity stake
-    - Saves processed data back to Excel files.
     """
     investor_holdings_cols = ['cnpjfundo', 'valor_calc', 'dtposicao']
 
@@ -97,6 +94,3 @@ def compute(entity, invested, types_series, composition_group_keys):
 
     equity_stake = compute_equity_stake(investor_holdings, invested)
     entity.loc[equity_stake.index, 'equity_stake'] = equity_stake['equity_stake']
-
-    composition = compute_composition(entity, composition_group_keys, types_series)
-    entity.loc[composition.index, 'composicao'] = composition['composicao']

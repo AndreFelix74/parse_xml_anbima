@@ -7,6 +7,7 @@ Created on Fri May 30 17:43:29 2025
 """
 
 
+import os
 import pandas as pd
 import data_access as dta
 
@@ -186,3 +187,241 @@ def load_dcad_crt_brad(data_aux_path):
     """
     dbaux_path = f"{data_aux_path}dbAux.xlsx"
     return pd.read_excel(dbaux_path, sheet_name='dCadCrtBRA', dtype=str)
+
+
+def load_range_eom(data_aux_path):
+    """
+    Loads the 'dDataMes' sheet from the dbAux Excel file.
+
+    Args:
+        data_aux_path (str): Path to the directory containing 'dbAux.xlsx'.
+
+    Returns:
+        pd.DataFrame: Loaded DataFrame from the 'dEstruturaGerencial' sheet.
+    """
+    dbaux_path = f"{data_aux_path}dbAux.xlsx"
+    return pd.read_excel(dbaux_path, sheet_name='dDataMes', dtype=str)
+
+
+def load_returns_by_puposicao(data_aux_path):
+    """
+    Loads the saved returns from 'isin_rentab.xlsx' if available, or returns
+    an empty template.
+
+    Args:
+        data_aux_path (str): Path to the directory containing 'isin_rentab.xlsx'.
+
+    Returns:
+        pd.DataFrame: DataFrame with columns ['isin', 'dtposicao',
+                                              'puposicao', 'rentab'].
+                      If the file does not exist, returns an empty DataFrame
+                      with the correct schema.
+    """
+    returns_path = f"{data_aux_path}isin_rentab.xlsx"
+
+    try:
+        returns_by_puposicao = pd.read_excel(returns_path, dtype=str)
+    except FileNotFoundError:
+        returns_by_puposicao = pd.DataFrame({
+            'isin': pd.Series(dtype='str'),
+            'dtposicao': pd.Series(dtype='datetime64[ns]'),
+            'puposicao': pd.Series(dtype='float'),
+            'rentab': pd.Series(dtype='float')
+            })
+
+    return returns_by_puposicao
+
+
+def load_mecsac_file(file_path):
+    """
+    Loads the row with the latest DT for one _mecSAC_*.xlsx file.
+
+    Args:
+        data_aux_path (str): Path to the directory containing the _mecSAC files.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the latest row per CODCLI from each file.
+    """
+    columns = ['CLCLI_CD', 'DT', 'VL_PATRLIQTOT1', 'CODCLI', 'NOME',
+               'compute_0015', 'compute_0016', 'compute_0017']
+    mec_sac = pd.read_excel(file_path)
+
+    if mec_sac.empty:
+        print(f"Empty mecSAC file: {file_path}")
+        return pd.DataFrame()
+    mec_sac['DT'] = pd.to_datetime(mec_sac['DT'], dayfirst=True)
+
+    result = mec_sac[columns].copy()
+
+    result['CLCLI_CD'] = result['CLCLI_CD'].astype(str).str.strip()
+    result['CODCLI'] = result['CODCLI'].astype(str).str.strip()
+    result.rename(columns={
+        'compute_0015': 'RENTAB_DIA',
+        'compute_0016': 'RENTAB_MES',
+        'compute_0017': 'RENTAB_ANO'
+    }, inplace=True)
+
+    return result
+
+
+def load_mec_sac_last_day_month(data_aux_path):
+    """
+    Loads the row with the latest DT for each CODCLI from each _mecSAC_*.xlsx file.
+
+    Args:
+        data_aux_path (str): Path to the directory containing the _mecSAC files.
+
+    Returns:
+        pd.DataFrame: DataFrame containing the latest row per CODCLI from each file.
+    """
+    dfs = []
+
+    for filename in os.listdir(data_aux_path):
+        if filename.startswith('_mecSAC_') and filename.endswith('.xlsx'):
+            file_path = os.path.join(data_aux_path, filename)
+            mec_sac = pd.read_excel(file_path)
+
+            if mec_sac.empty:
+                print(f"Empty mecSAC file: {filename}")
+                continue
+
+            mec_sac['DT'] = pd.to_datetime(mec_sac['DT'], dayfirst=True)
+
+            dfs.append(load_mecsac_file(file_path))
+
+    if dfs:
+        return pd.concat(dfs, ignore_index=True)
+
+    return pd.DataFrame()
+
+
+def load_cnpb_codcli_mapping(data_aux_path):
+    """
+    Loads the mapping between CNPB (portfolio code) and CODCLI_SAC (client code)
+    by joining dCadPlano and dCadPlanoSAC from dbAux.xlsx.
+
+    Parameters
+    ----------
+    data_aux_path : str
+        Path to the dbAux.xlsx file.
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns ['CNPB', 'CODCLI_SAC'].
+    """
+    dcadplano = pd.read_excel(f"{data_aux_path}dbAux.xlsx", sheet_name='dCadPlano')
+    dcadplanosac = pd.read_excel(f"{data_aux_path}dbAux.xlsx", sheet_name='dCadPlanoSAC')
+
+    dcadplano['COD_PLANO'] = dcadplano['COD_PLANO'].astype(str).str.strip()
+    dcadplanosac['COD_PLANO'] = dcadplanosac['COD_PLANO'].astype(str).str.strip()
+    dcadplanosac['CODCLI_SAC'] = dcadplanosac['CODCLI_SAC'].astype(str).str.strip()
+
+    # Convert CNPB columns to string before merging
+    dcadplano['CNPB'] = dcadplano['CNPB'].astype(str).str.strip()
+    dcadplanosac['CNPB'] = dcadplanosac['CNPB'].astype(str).str.strip()
+
+    mapping = dcadplano.merge(
+        dcadplanosac,
+        on='COD_PLANO',
+        how='inner'
+    )
+
+    diffs = mapping.loc[mapping['CNPB_x'] != mapping['CNPB_y'], ['COD_PLANO', 'CNPB_x', 'CNPB_y']]
+    if not diffs.empty:
+        raise ValueError(
+            f"Inconsistent CNPB values found after merging:\n{diffs.to_string(index=False)}"
+        )
+
+    return mapping.rename(columns={'CNPB_x': 'cnpb'})[['cnpb', 'CODCLI_SAC']]
+
+
+def load_dcadplanosac(data_aux_path):
+    """
+    Loads the dCadPlanoSAC sheet from dbAux.xlsx.
+
+    Args:
+        data_aux_path (str): Path to dbAux.xlsx.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing the dCadPlanoSAC sheet with
+        portfolio codes adjusted according to the selected portfolio_type.
+    """
+    dcadplanosac = pd.read_excel(f"{data_aux_path}dbAux.xlsx",
+                                 sheet_name='dCadPlanoSAC',
+                                 dtype=str)
+
+    # Substitui carteira com contencioso pela carteira sem contencioso (soh investimentos)
+    dcadplanosac['CODCLI_SAC'] = (
+        dcadplanosac['CODCLI_SAC_INVEST'].where(
+            dcadplanosac['CODCLI_SAC_INVEST'].notnull(),
+            dcadplanosac['CODCLI_SAC']
+        )
+    )
+
+    return dcadplanosac
+
+
+def load_performance_struct(data_aux_path):
+    """
+    Loads the 'dEstruturaDesempenho' sheet from the dbAux Excel file.
+
+    Args:
+        data_aux_path (str): Path to the directory containing 'dbAux.xlsx'.
+
+    Returns:
+        pd.DataFrame: Loaded DataFrame from the 'dEstruturaDesempenho' sheet.
+    """
+    dbaux_path = f"{data_aux_path}dbAux.xlsx"
+    return pd.read_excel(dbaux_path, sheet_name='dEstruturaDesempenho', dtype=str)
+
+
+def load_performance(performance_path):
+    raw_data = []
+
+    for filename in os.listdir(performance_path):
+        if filename.startswith('Desempenho'):
+            file_path = os.path.join(performance_path, filename)
+            try:
+                raw_sheet = pd.read_excel(file_path, sheet_name='Resumo', header=None)
+            except Exception as excp:
+                print('')
+                print(f"Erro ao abrir o arquivo {file_path}")
+                print(excp)
+                continue
+
+            if raw_sheet.empty:
+                print(f"Empty performance file: {filename}")
+                continue
+
+            raw_data.append(raw_sheet)
+
+    if not raw_data:
+        return pd.DataFrame()
+
+    performance = pd.concat(raw_data, ignore_index=True)
+
+    performance = performance[
+        (~performance[2].isin(['Patrimônio de Investimentos', 'Patrimônio Total'])) &
+        (performance[2].notnull()) &
+        (performance[3].notnull())
+    ][[2, 3, 4, 5, 6]].copy()
+
+    performance.columns = ['PERFIL_BASE', 'PL', 'RATIO', 'RETORNO_MES', 'RETORNO_YTD']
+
+    mask = performance['RETORNO_MES'] == 'Rentabilidade'
+    performance.loc[mask, 'PLANO'] = performance.loc[mask, 'PERFIL_BASE'].str.upper()
+    performance.loc[mask, 'DATA'] = performance.loc[mask, 'PL']
+    performance['PLANO'] = performance['PLANO'].ffill()
+    performance['DATA'] = performance['DATA'].ffill()
+
+    for col in ['PL', 'RATIO', 'RETORNO_MES', 'RETORNO_YTD']:
+        performance[col] = pd.to_numeric(performance[col], errors='coerce').fillna(0)
+
+    performance = performance[performance['PL'] != 0]
+    performance[['RETORNO_MES', 'RETORNO_YTD', 'PL']] = performance[['RETORNO_MES', 'RETORNO_YTD', 'PL']].fillna(0)
+
+    performance['PERFIL_BASE'] = performance['PERFIL_BASE'].astype(str).str.strip().str.upper()
+
+    return performance
+
