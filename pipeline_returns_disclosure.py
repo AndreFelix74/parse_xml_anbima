@@ -126,13 +126,13 @@ def compute_aggregate(data_aux_path, mec_sac_path):
     return compute_aggregate_returns(mec_sac, dcadplanosac)
 
 
-def reconcile_entities(api_ctx, rentab_mecsac):
+def reconcile_entities(api_ctx, returns_mecsac):
     """
     Reconcile entity IDs in local returns DataFrame with Maestro API entities.
 
     Args:
         api_ctx (dict): API context used to call Maestro endpoints.
-        rentab_mecsac (pd.DataFrame): Local returns DataFrame to update with 'api_id'.
+        returns_mecsac (pd.DataFrame): Local returns DataFrame to update with 'api_id'.
     """
     api_entities_map = {
         'GRUPO': '/investimentos/Grupos',
@@ -144,7 +144,7 @@ def reconcile_entities(api_ctx, rentab_mecsac):
     for tipo, endpoint in api_entities_map.items():
         api_resp = api.api_get(api_ctx, endpoint)
         api_data = pd.DataFrame(api_resp.json())
-        reconcile_entities_ids(rentab_mecsac, tipo, api_data)
+        reconcile_entities_ids(returns_mecsac, tipo, api_data)
 
 
 def reconcile_returns(api_ctx, returns_mecsac):
