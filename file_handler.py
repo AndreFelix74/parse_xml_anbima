@@ -65,6 +65,9 @@ def load_df(file_path, file_format, dtype=None):
     if file_format == 'xlsx':
         return pd.read_excel(full_path, dtype=dtype)
 
+    if file_format == 'parquet':
+        return pd.read_parquet(full_path, dtype_backend="numpy_nullable")  
+
     raise ValueError(f"Unsupported file format: {file_format}")
 
 
