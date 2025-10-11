@@ -172,7 +172,84 @@ def convert_parsed_to_dataframe(parsed_selic_content, parsed_cetip_content):
     return [custodia_selic, custodia_cetip]
 
 
-def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_cetip):
+def filter_positions(entity):
+    """
+    Filter a single positions DataFrame to keep only rows from the last
+    available day within each month (dtposicao='yyyymmdd'), keeping the
+    minimal reconciliation columns.
+
+    Steps:
+      1) Filter NEW_TIPO to the allowed set and select cols_recon.
+      2) Convert dtposicao to datetime and compute year-month buckets.
+      3) Keep only rows whose date equals the monthly maximum date.
+      4) Return dtposicao as 'yyyymmdd' string.
+
+    Returns:
+        pd.DataFrame: Subset with columns
+            ['cnpj','qtdisponivel','qtgarantia','isin','NEW_TIPO','dtposicao','valor_calc']
+        restricted to the last day per month present in this DataFrame.
+    """
+    cols_recon = ['cnpj', 'qtdisponivel', 'qtgarantia', 'isin',
+                  'NEW_TIPO', 'dtposicao', 'valor_calc']
+    type_recon = ['TPF', 'OVER', 'TERMORF']
+
+    entity = entity[entity['NEW_TIPO'].isin(type_recon)][cols_recon].copy()
+
+    entity['_dt'] = pd.to_datetime(entity['dtposicao'], format='%Y%m%d')
+    entity = entity.dropna(subset=['_dt'])
+    entity['_ym'] = entity['_dt'].dt.to_period('M')
+    last_dt = entity.groupby('_ym')['_dt'].transform('max')
+    entity = entity[entity['_dt'] == last_dt].drop(columns=['_dt', '_ym'])
+
+    entity['dtposicao'] = entity['dtposicao'].astype(str)
+
+    return entity
+
+
+def build_unified_position(portfolios, funds):
+    """
+    Concatenate filtered portfolio and fund positions, normalize identifiers
+    and numeric fields, compute qttotal, and aggregate.
+
+    Processing:
+      - Rename 'cnpjcpf' to 'cnpj' (no-op if already renamed).
+      - Concatenate portfolios and funds.
+      - Normalize CNPJ as zero-padded 14-char string.
+      - Cast qtdisponivel, qtgarantia, valor_calc to float.
+      - Compute qttotal = qtdisponivel + qtgarantia.
+      - Group by ['cnpj','isin','dtposicao'] summing ['qttotal','valor_calc'].
+
+    Returns:
+        pd.DataFrame: Aggregated positions with
+            ['cnpj','isin','dtposicao','qttotal','valor_calc'].
+    """
+    position = pd.concat([portfolios, funds], ignore_index=True)
+
+    position['cnpj'] = position['cnpj'].astype(str).str.zfill(14)
+
+    position['qtdisponivel'] = position['qtdisponivel'].astype(float)
+    position['qtgarantia'] = position['qtgarantia'].astype(float)
+    position['qttotal'] = position['qtdisponivel'] + position['qtgarantia']
+    position['valor_calc'] = position['valor_calc'].astype(float)
+
+    position = (position
+        .groupby(['cnpj', 'isin', 'dtposicao'], as_index=False)[['qttotal', 'valor_calc']]
+        .sum()
+    )
+
+    return position
+
+
+def normalize_dcad_crt_brad(dcad_crt_brad):
+    """
+    Normalize identifiers in dcad_crt_brad:
+      - CNPJ zero-padded to 14 digits
+      - SELIC zero-padded to 9 digits (or None if missing)
+      - CETIP zero-padded to 8 digits with final dash format
+
+    Returns:
+        None: Normalized inplace
+    """
     dcad_crt_brad['cnpj'] = dcad_crt_brad['CNPJ'].astype(str).str.zfill(14)
     dcad_crt_brad['SELIC'] = np.where(
         dcad_crt_brad['SELIC'].notnull(),
@@ -186,45 +263,25 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
         + dcad_crt_brad['CETIP'].str.slice(-1)
         )
 
-    cols_recon = ['cnpj', 'qtdisponivel', 'qtgarantia', 'isin', 'NEW_TIPO',
-                  'dtposicao', 'valor_calc']
-    type_recon = ['TPF', 'OVER', 'TERMORF']
 
-    portfolios.rename(columns={'cnpjcpf': 'cnpj'}, inplace=True)
-    portfolios = portfolios[portfolios['NEW_TIPO'].isin(type_recon)][cols_recon].copy()
-    portfolios['cnpj'] = portfolios['cnpj'].astype(str).str.zfill(14)
-    portfolios['qtdisponivel'] = portfolios['qtdisponivel'].astype(float)
-    portfolios['qtgarantia'] = portfolios['qtgarantia'].astype(float)
-    portfolios['qttotal'] = portfolios['qtdisponivel'] + portfolios['qtgarantia']
-
-    funds = funds[funds['NEW_TIPO'].isin(type_recon)][cols_recon].copy()
-    funds['cnpj'] = funds['cnpj'].astype(str).str.zfill(14)
-    funds['qtdisponivel'] = funds['qtdisponivel'].astype(float)
-    funds['qtgarantia'] = funds['qtgarantia'].astype(float)
-    funds['qttotal'] = funds['qtdisponivel'] + funds['qtgarantia']
-    funds['qttotal'] = funds['qttotal'].astype(float)
-
-    aux = pd.concat([portfolios, funds])
-    position = aux.groupby(['cnpj', 'isin', 'dtposicao'], as_index=False)[['qttotal', 'valor_calc']].sum()
-    position['cnpj'] = position['cnpj'].astype(str)
-
-    position = position.merge(
+def reconciliation(unified_position, dcad_crt_brad, custodia_selic, custodia_cetip):
+    unified_position = unified_position.merge(
         dcad_crt_brad[['cnpj', 'SELIC', 'CETIP']],
         left_on=['cnpj'],
         right_on=['cnpj'],
         how='inner'
         )
 
-    position['dtposicao'] = position['dtposicao'].astype(str)
+    unified_position['dtposicao'] = unified_position['dtposicao'].astype(str)
     custodia_selic['data ref'] = custodia_selic['data ref'].astype('datetime64[s]').dt.strftime('%Y%m%d')
     custodia_cetip['data'] = custodia_cetip['data'].astype('datetime64[s]').dt.strftime('%Y%m%d')
 
     cols_selic = ['conta', 'data ref', 'isin', 'Titulo Vencimento',
                   'Titulo Nome', 'Titulo Cod', 'arquivo']
-    selic = custodia_selic.groupby(cols_selic, as_index=False)['Fechamento'].sum()
-    selic.rename(columns={'data ref': 'dtposicao', 'conta': 'SELIC'}, inplace=True)
-    recon_selic = position.merge(
-        selic,
+    selic_pos = custodia_selic.groupby(cols_selic, as_index=False)['Fechamento'].sum()
+    selic_pos.rename(columns={'data ref': 'dtposicao', 'conta': 'SELIC'}, inplace=True)
+    recon_selic = unified_position.merge(
+        selic_pos,
         on=['SELIC', 'dtposicao', 'isin'],
         how='outer'
         )
@@ -233,12 +290,13 @@ def reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_ce
         (recon_selic['qttotal'].fillna(0) - recon_selic['Fechamento'].fillna(0)).abs()
     )
 
-    recon_cetip = position.merge(
+    recon_cetip = unified_position.merge(
         custodia_cetip,
         left_on=['CETIP', 'dtposicao', 'isin'],
         right_on=['codigo', 'data', 'Fundo (IF)'],
         how='left'
         )
+
     recon_cetip.drop(columns='SELIC', inplace=True)
 
     return [recon_selic, recon_cetip]
@@ -251,7 +309,13 @@ def run_pipeline():
     Loads configuration, sets up folders, parses files in parallel, 
     converts results into DataFrames, and saves final outputs.
     """
-    custodia_source_path, custodia_destin_path, intermediate_cfg, data_aux_path, xlsx_destination_path = load_config()
+    (
+     custodia_source_path,
+     custodia_destin_path,
+     intermediate_cfg,
+     data_aux_path,
+     xlsx_destination_path
+     ) = load_config()
 
     setup_folders([custodia_destin_path])
 
@@ -268,8 +332,16 @@ def run_pipeline():
         portfolios = load_df(f"{xlsx_destination_path}carteiras", file_frmt)
         funds = load_df(f"{xlsx_destination_path}fundos", file_frmt)
 
+    with log_timing('reconciliation', 'normalize_data'):
+        normalize_dcad_crt_brad(dcad_crt_brad)
+        portfolios.rename(columns={'cnpjcpf': 'cnpj'}, inplace=True)
+        portfolios = filter_positions(portfolios)
+        funds = filter_positions(funds)
+        unified_position = build_unified_position(portfolios, funds)
+
     with log_timing('reconciliation', 'merging'):
-        recon_selic, recon_cetip = reconciliation(portfolios, funds, dcad_crt_brad, custodia_selic, custodia_cetip)
+        recon_selic, recon_cetip = reconciliation(unified_position, dcad_crt_brad,
+                                                  custodia_selic, custodia_cetip)
 
     file_frmt = 'xlsx' #intermediate_cfg['file_format']
     with log_timing('finish_custodia', 'save_final_files'):
