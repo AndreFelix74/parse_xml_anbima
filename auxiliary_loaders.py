@@ -172,18 +172,15 @@ def load_governance_struct(data_aux_path):
     return pd.read_excel(dbaux_path, sheet_name='dEstruturaGerencial', dtype=str)
 
 
-def load_dcad_crt_brad(data_aux_path):
+def load_dcad_crt_brad(data_aux_path: str) -> pd.DataFrame:
     """
-    Loads all auxiliary datasets required for data enrichment and classification.
+    Load 'dCadCrtBRA' sheet from dbAux.xlsx as string-typed DataFrame.
 
     Args:
-        data_aux_path (str): Path to the directory containing auxiliary data files.
+        data_aux_path (str): Directory containing dbAux.xlsx.
 
     Returns:
-        dict: A dictionary with the following keys:
-            - 'dcadplano': DataFrame from the 'dCadPlano' sheet in dbAux.xlsx
-            - 'assets': Merged DataFrame from numeraca and emissor
-            - 'cad_fi_cvm': Cleaned and prefixed CVM fund registration DataFrame
+        pd.DataFrame: dcad_crt_brad sheet with raw identifiers as strings.
     """
     dbaux_path = f"{data_aux_path}dbAux.xlsx"
     return pd.read_excel(dbaux_path, sheet_name='dCadCrtBRA', dtype=str)
