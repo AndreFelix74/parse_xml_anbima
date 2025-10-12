@@ -11,7 +11,7 @@ import os
 import multiprocessing
 import numpy as np
 import pandas as pd
-from logger import log_timing
+from logger import log_timing, RUN_ID
 
 import auxiliary_loaders as aux_loader
 from parse_pdf_custodia import cetip, selic
@@ -64,6 +64,41 @@ def setup_folders(paths):
     for path in paths:
         if not os.path.exists(path):
             os.makedirs(path)
+
+def save_intermediate(dtfrm, filename, config, log):
+    """
+    Saves an intermediate DataFrame to a unique RUN_ID subfolder.
+
+    Parameters
+    ----------
+    dtfrm : pandas.DataFrame
+        DataFrame to be saved.
+    name : str
+        Base filename (without extension).
+    config : configparser.ConfigParser
+        Config object with [Debug] and [Paths] sections.
+    run_id : str
+        Unique identifier for this pipeline execution.
+
+    Returns
+    -------
+    str
+        Full path of saved file.
+
+    Raises
+    ------
+    KeyError
+        If required configuration keys or sections are missing.
+    ValueError
+        If file writing is disabled by configuration.
+    """
+    run_folder = os.path.join(config['output_path'], RUN_ID)
+    os.makedirs(run_folder, exist_ok=True)
+
+    full_path = os.path.join(run_folder, filename)
+    save_df(dtfrm, full_path, config['file_format'])
+
+    log.info('intermediate_files_saved', arquivo=f"{full_path}.{config['file_format']}")
 
 
 def find_all_files(files_path, file_ext):
@@ -138,7 +173,7 @@ def parse_files(custodia_source_path, processes):
     return [parsed_selic_content, parsed_cetip_content]
 
 
-def convert_parsed_to_dataframe(parsed_selic_content, parsed_cetip_content):
+def convert_parsed_to_dataframe(intermediate_cfg, parsed_selic_content, parsed_cetip_content):
     """
     Converts the parsed raw content from PDF files into structured DataFrames.
 
@@ -168,6 +203,11 @@ def convert_parsed_to_dataframe(parsed_selic_content, parsed_cetip_content):
     cols_float = ['Quantidade', 'PU', 'Financeiro']
     for col in cols_float:
         custodia_cetip[col] = custodia_cetip[col].astype(float)
+
+    if intermediate_cfg['save']:
+        with log_timing('parse', 'save_parsed_raw_data') as log:
+            save_intermediate(custodia_selic, 'custodia_selic-parsed', intermediate_cfg, log)
+            save_intermediate(custodia_cetip, 'custodia_cetip-parsed', intermediate_cfg, log)
 
     return [custodia_selic, custodia_cetip]
 
@@ -322,7 +362,8 @@ def run_pipeline():
     processes = min(8, multiprocessing.cpu_count())
 
     parsed_selic_content, parsed_cetip_content = parse_files(custodia_source_path, processes)
-    custodia_selic, custodia_cetip = convert_parsed_to_dataframe(parsed_selic_content,
+    custodia_selic, custodia_cetip = convert_parsed_to_dataframe(intermediate_cfg,
+                                                                 parsed_selic_content,
                                                                  parsed_cetip_content)
 
     file_frmt = intermediate_cfg['file_format']
