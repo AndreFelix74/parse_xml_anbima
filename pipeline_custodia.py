@@ -205,7 +205,7 @@ def convert_parsed_to_dataframe(intermediate_cfg, parsed_selic_content, parsed_c
         custodia_cetip[col] = custodia_cetip[col].astype(float)
 
     if intermediate_cfg['save']:
-        with log_timing('parse', 'save_parsed_raw_data') as log:
+        with log_timing('parse', 'save_parsed_data') as log:
             save_intermediate(custodia_selic, 'custodia_selic-parsed', intermediate_cfg, log)
             save_intermediate(custodia_cetip, 'custodia_cetip-parsed', intermediate_cfg, log)
 
