@@ -440,7 +440,8 @@ def main(script_start_ts, option):
             reconcile_returns_mecsac_maestro(out_file_frmt, xlsx_destination_path,
                                              data_aux_path, mec_sac_path, api_ctx)
             )
-        if (missing_returns is None and api_data is None and return_mecsac):
+
+        if (missing_returns is None and api_data is None and return_mecsac is None):
             return
 
         save_reconcile_returns_result(missing_returns, return_mecsac, api_data,
