@@ -20,6 +20,7 @@ Typical usage:
 """
 
 
+import json
 import requests
 
 
@@ -64,8 +65,18 @@ def _request(ctx, method, endpoint, **kwargs):
     headers.update(ctx["auth_header_provider"]())
 
     resp = ctx["_sess"].request(method, url, headers=headers, timeout=ctx["timeout"], **kwargs)
-    resp.raise_for_status()
-    return resp
+    try:
+        resp.raise_for_status()
+        return resp
+    except requests.HTTPError as e:
+        try:
+            error_detail = resp.json()
+        except ValueError:
+            error_detail = resp.text
+
+        raise RuntimeError(
+            f"API error {resp.status_code}: {error_detail},kwargs={json.dumps(kwargs)}"
+        ) from e
 
 
 def api_get(ctx, endpoint, **params):
