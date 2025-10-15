@@ -185,7 +185,7 @@ def save_entities(api_ctx, missing_maestro_entities_file, out_file_frmt):
         - Maps each entity type to its corresponding Maestro API endpoint.
         - For each entity, constructs the required payload:
             * For 'GRUPO' and 'INDEXADOR': only the entity name.
-            * For 'NOME_PLANO': includes group ID, name, CNPB code,
+            * For 'PLANO': includes group ID, name, CNPB code,
               SAC code, plan code, indexer ID, and plan type ID.
         - Sends POST requests to the Maestro API to create the entities.
     """
@@ -194,7 +194,7 @@ def save_entities(api_ctx, missing_maestro_entities_file, out_file_frmt):
     api_entities_map = {
         'GRUPO': '/investimentos/Grupos',
         'INDEXADOR': '/investimentos/Indexadores',
-        'NOME_PLANO': '/investimentos/Planos',
+        'PLANO': '/investimentos/Planos',
         'TIPO_PLANO': '/investimentos/TiposPlanos',
     }
 
@@ -205,7 +205,7 @@ def save_entities(api_ctx, missing_maestro_entities_file, out_file_frmt):
         endpoint = api_entities_map[label]
 
         payload = {'nome': nome}
-        if label == 'NOME_PLANO':
+        if label == 'PLANO':
             payload = {
                 'grupoId': int(row['id_GRUPO']),
                 'nome': nome,
@@ -215,7 +215,6 @@ def save_entities(api_ctx, missing_maestro_entities_file, out_file_frmt):
                 'indexadorId': int(row['id_INDEXADOR']) if pd.notna(row['id_INDEXADOR']) else '',
                 'tipoPlanoId': int(row['id_TIPO_PLANO']),
                 }
-
         api.api_post(api_ctx, endpoint, json=payload)
 
 
@@ -249,7 +248,11 @@ def save_returns(api_ctx, missing_maestro_returns_file, out_file_frmt):
 def reconcile_entities_ids_with_maestro(api_ctx, entities):
     """
     essa funcao estah ruim, faz uma alteracao inplace e retorna um objeto
-    foi criada para evitar repeticao de codigo na reconciliacao das rentabilidades
+    foi criada para evitar repeticao de codigo usado nas funcoes:
+      reconcile_entities_dcadplanosac_maestro(data_aux_path, api_ctx)
+      e
+      reconcile_returns_mecsac_maestro(out_file_frmt, xlsx_destination_path,
+                                       data_aux_path, mec_sac_path, api_ctx):
     """
     with log_timing('reconcile_entities', 'load_maestro'):
         api_data = load_entities_ids(api_ctx)
@@ -262,29 +265,30 @@ def reconcile_entities_ids_with_maestro(api_ctx, entities):
 
 
 def reconcile_entities_dcadplanosac_maestro(data_aux_path, api_ctx):
-    groups = ['TIPO_PLANO', 'GRUPO', 'INDEXADOR', 'NOME_PLANO']
+    groups = ['TIPO_PLANO', 'GRUPO', 'INDEXADOR', 'PLANO']
 
     with log_timing('reconcile_entities', 'load_dcadplanosac'):
         dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
+        dcadplanosac.rename(columns={'NOME_PLANO': 'PLANO'}, inplace=True)
         df_melt = dcadplanosac[groups].melt(var_name='TIPO', value_name='NOME')
         entities = df_melt.dropna().drop_duplicates().reset_index(drop=True)
 
     api_data = reconcile_entities_ids_with_maestro(api_ctx, entities)
 
     with log_timing('reconcile_entities', 'find_missing_entities'):
-        mask = entities['api_id'].isna() & (entities['TIPO'] == 'NOME_PLANO')
+        mask = entities['api_id'].isna() & (entities['TIPO'] == 'PLANO')
         missing_entities = entities[mask].copy()
-        #As duas linhas seguintes sao gambiarra para colocar sufixo nos merges nao sao usadas
+        #As duas linhas seguintes sao gambiarra para colocar sufixo nos merges. nao sao usadas
         missing_entities['id'] = None
         missing_entities['nome'] = None
         missing_entities = missing_entities.merge(
             dcadplanosac,
             left_on=['NOME'],
-            right_on=['NOME_PLANO'],
+            right_on=['PLANO'],
             how='left'
         )
         for group in groups:
-            if group == 'NOME_PLANO':
+            if group == 'PLANO':
                 continue
             entities_maestro = pd.DataFrame(api_data[group])
             entities_maestro['nome'] = entities_maestro['nome'].str.upper()
