@@ -212,7 +212,7 @@ def save_entities(api_ctx, missing_maestro_entities_file, out_file_frmt):
                 'codigoCNPB': str(row['CNPB']),
                 'codigoSAC': str(row['CODCLI_SAC']),
                 'codigoPlano': str(row['COD_PLANO']),
-                'indexadorId': int(row['id_INDEXADOR']),
+                'indexadorId': int(row['id_INDEXADOR']) if pd.notna(row['id_INDEXADOR']) else '',
                 'tipoPlanoId': int(row['id_TIPO_PLANO']),
                 }
 
