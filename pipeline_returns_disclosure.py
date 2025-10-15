@@ -345,7 +345,7 @@ def reconcile_returns_mecsac_maestro(out_file_frmt, xlsx_destination_path,
             f"Verifique o arquivo {file_name}.{out_file_frmt}\n"
             "Para corrigir, execute a etapa de sincronizar entidades com Maestro."
         )
-        return
+        return [None, None, None]
 
     api_data = load_returns_ids(api_ctx)
     returns_reconciled = reconcile_monthly_returns(returns_mecsac, pd.DataFrame(api_data['MENSAL']))
@@ -440,6 +440,9 @@ def main(script_start_ts, option):
             reconcile_returns_mecsac_maestro(out_file_frmt, xlsx_destination_path,
                                              data_aux_path, mec_sac_path, api_ctx)
             )
+        if (missing_returns is None and api_data is None and return_mecsac):
+            return
+
         save_reconcile_returns_result(missing_returns, return_mecsac, api_data,
                                       xlsx_destination_path, out_file_frmt,
                                       missing_maestro_returns_file)
