@@ -276,7 +276,7 @@ def reconcile_entities_dcadplanosac_maestro(data_aux_path, api_ctx):
     api_data = reconcile_entities_ids_with_maestro(api_ctx, entities)
 
     with log_timing('reconcile_entities', 'find_missing_entities'):
-        mask = entities['api_id'].isna() & (entities['TIPO'] == 'PLANO')
+        mask = entities['api_id'].isna()
         missing_entities = entities[mask].copy()
         #As duas linhas seguintes sao gambiarra para colocar sufixo nos merges. nao sao usadas
         missing_entities['id'] = None
