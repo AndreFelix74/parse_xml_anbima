@@ -1,0 +1,5 @@
+$env:TENANT_ID=""
+$env:CLIENT_ID=""
+$env:CLIENT_SECRET=""
+$env:SCOPE=""
+$env:API_BASE=""
