@@ -453,6 +453,33 @@ def compute_metrics(funds, portfolios, types_series):
     metrics.compute(portfolios, funds, types_series, group_keys_port)
 
 
+def extract_submassa(intermediate_cfg, data_aux_path, portfolios):
+    cad_submassa = aux_loader.load_submasssa(data_aux_path)
+
+    mask = portfolios['codcart'].isin(cad_submassa['CODCART'])
+
+    port_submassa = portfolios.loc[mask].merge(
+        cad_submassa,
+        left_on='codcart',
+        right_on='CODCART',
+        how='left',
+    )
+
+    port_submassa['total_submassa_isin_cnpb'] = (
+        port_submassa.groupby(['CNPB', 'isin'])['valor_calc'].transform('sum')
+    )
+
+    port_submassa['pct_submassa_isin_cnpb'] = (
+        port_submassa['valor_calc'] / port_submassa['total_submassa_isin_cnpb']
+    )
+
+    if intermediate_cfg['save']:
+        with log_timing('submassa', 'save_portfolio_submassa') as log:
+            debug_save(port_submassa, 'carterias-submassa', intermediate_cfg, log)
+
+    return [portfolios.loc[~mask].copy(), port_submassa]
+
+
 def validate_fund_graph_is_acyclic(funds):
     """
     Validates that the fund-to-fund relationships form a Directed Acyclic Graph (DAG).
@@ -646,6 +673,8 @@ def run_pipeline():
     compute_metrics(funds, portfolios, types_series)
 
     validate_fund_graph_is_acyclic(funds)
+
+    [portfolios, port_submassa] = extract_submassa(intermediate_cfg, data_aux_path, portfolios)
 
     isin_returns = compute_and_persist_isin_returns(intermediate_cfg, funds,
                                                     portfolios, data_aux_path)
