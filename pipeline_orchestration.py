@@ -49,7 +49,7 @@ def setup_folders(paths):
             os.makedirs(path)
 
 
-def save_intermediate(dtfrm, filename, config, log):
+def debug_save(dtfrm, filename, config, log):
     """
     Saves an intermediate DataFrame to a unique RUN_ID subfolder.
 
@@ -278,8 +278,8 @@ def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys):
 
     if intermediate_cfg['save']:
         with log_timing('parse', 'save_parsed_raw_data') as log:
-            save_intermediate(funds, 'fundos-raw', intermediate_cfg, log)
-            save_intermediate(portfolios, 'carteiras-raw', intermediate_cfg, log)
+            debug_save(funds, 'fundos-raw', intermediate_cfg, log)
+            debug_save(portfolios, 'carteiras-raw', intermediate_cfg, log)
 
     return [funds, portfolios]
 
@@ -298,8 +298,8 @@ def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
 
     if intermediate_cfg['save']:
         with log_timing('clean', 'save_cleaned_data') as log:
-            save_intermediate(funds, 'fundos-cleaned', intermediate_cfg, log)
-            save_intermediate(portfolios, 'carteiras-cleaned', intermediate_cfg, log)
+            debug_save(funds, 'fundos-cleaned', intermediate_cfg, log)
+            debug_save(portfolios, 'carteiras-cleaned', intermediate_cfg, log)
 
     return [funds, portfolios]
 
@@ -339,15 +339,15 @@ def compute_and_persist_isin_returns(intermediate_cfg, funds, portfolios, data_a
                 dados=duplicated_data.to_dict(orient='records')
             )
 
-            save_intermediate(duplicated_data,
-                              'puposicao_divergente_mesma_data',
-                              intermediate_cfg, log)
+            debug_save(duplicated_data,
+                       'puposicao_divergente_mesma_data',
+                       intermediate_cfg, log)
 
         persisted_returns = aux_loader.load_returns_by_puposicao(data_aux_path)
 
         if intermediate_cfg['save']:
             with log_timing('debug', 'save_isin_returns') as log:
-                save_intermediate(isin_data.loc[valid_idx], 'isin-return-xml',
+                debug_save(isin_data.loc[valid_idx], 'isin-return-xml',
                                   intermediate_cfg, log)
 
         updated_returns = compute_returns_from_puposicao(
@@ -372,7 +372,7 @@ def check_values_integrity(intermediate_cfg, entity, entity_name, invested, grou
 
         if not divergent_puposicao.empty:
             log.warn('check', dados=divergent_puposicao.to_dict(orient="records"))
-            save_intermediate(divergent_puposicao,
+            debug_save(divergent_puposicao,
                               f"{entity_name}_puposicao_divergente",
                               intermediate_cfg, log)
 
@@ -381,7 +381,7 @@ def check_values_integrity(intermediate_cfg, entity, entity_name, invested, grou
 
         if not divergent_pl.empty:
             log.warn('check', dados=divergent_pl.to_dict(orient="records"))
-            save_intermediate(divergent_pl, f"{entity_name}_pl_divergente",
+            debug_save(divergent_pl, f"{entity_name}_pl_divergente",
                               intermediate_cfg, log)
 
 
@@ -395,7 +395,7 @@ def explode_partplanprev(intermediate_cfg, portfolios):
 
     if intermediate_cfg['save']:
         with log_timing('enrich', 'save_exploded_partplanprev') as log:
-            save_intermediate(portfolios, 'carterias-exploded', intermediate_cfg, log)
+            debug_save(portfolios, 'carterias-exploded', intermediate_cfg, log)
 
     mask = portfolios['tipo'] == 'partplanprev'
     mask |= portfolios['flag_rateio'] == 1
@@ -440,8 +440,8 @@ def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
 
     if intermediate_cfg['save']:
         with log_timing('enrich', 'save_enriched_data') as log:
-            save_intermediate(funds, 'fundos-enriched', intermediate_cfg, log)
-            save_intermediate(portfolios, 'carteiras-enriched', intermediate_cfg, log)
+            debug_save(funds, 'fundos-enriched', intermediate_cfg, log)
+            debug_save(portfolios, 'carteiras-enriched', intermediate_cfg, log)
 
     return [funds, portfolios]
 
@@ -556,9 +556,9 @@ def load_config():
         raise KeyError('Missing [Paths] section in config.ini')
 
     intermediate_cfg = {
-        'save': config['Debug'].get('write_intermediate_files').lower() == 'yes',
-        'output_path': config['Debug'].get('intermediate_output_path'),
-        'file_format': config['Paths'].get('destination_file_extension')
+        'save': config['Debug'].get('debug').lower() == 'yes',
+        'output_path': config['Debug'].get('debug_path'),
+        'file_format': config['Debug'].get('debug_file_extension')
     }
 
     return [xml_source_path, xlsx_destination_path, data_aux_path,
@@ -578,9 +578,9 @@ def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
 
     if intermediate_cfg['save']:
         with log_timing('tree', 'compute_returns_adjust') as log:
-            save_intermediate(mec_sac_returns_by_plan, 'rentab-plano-mecsac', intermediate_cfg, log)
-            save_intermediate(tree_returns_by_plan, 'rentab-plano-tree', intermediate_cfg, log)
-            save_intermediate(plan_returns_adjust , 'rentab-plano-ajuste', intermediate_cfg, log)
+            debug_save(mec_sac_returns_by_plan, 'rentab-plano-mecsac', intermediate_cfg, log)
+            debug_save(tree_returns_by_plan, 'rentab-plano-tree', intermediate_cfg, log)
+            debug_save(plan_returns_adjust , 'rentab-plano-ajuste', intermediate_cfg, log)
 
     adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'contribution_ajuste_rentab',
                                          'contribution_ajuste_rentab_fator']].copy()

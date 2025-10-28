@@ -8,5 +8,6 @@ mec_sac_path = ./_data/mecSAC
 performance_path = 
 
 [Debug]
-write_intermediate_files = no
-intermediate_output_path = ./debug_output/
+debug = no
+debug_path = ./debug_output/
+debug_file_extension = csv
