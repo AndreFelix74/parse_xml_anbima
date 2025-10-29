@@ -254,7 +254,7 @@ def merge_aux_data(cleaned, dcadplano, aux_asset, cad_fi_cvm, col_join_cad_fi_cv
     )
 
 
-def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys):
+def parse_files(debug_cfg, xml_source_path, processes, daily_keys):
     with log_timing('parse', 'find_xml_files') as log:
         all_xml_files = find_all_files(xml_source_path, '.xml')
         xml_files_to_process, xml_discarted = select_latest_xml_by_cnpj_and_date(all_xml_files)
@@ -276,15 +276,15 @@ def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys):
         funds = convert_entity_to_dataframe(funds_list, 'fundos', daily_keys)
         portfolios = convert_entity_to_dataframe(portfolios_list, 'carteiras', daily_keys)
 
-    if intermediate_cfg['save']:
+    if debug_cfg['save']:
         with log_timing('parse', 'save_parsed_raw_data') as log:
-            debug_save(funds, 'fundos-raw', intermediate_cfg, log)
-            debug_save(portfolios, 'carteiras-raw', intermediate_cfg, log)
+            debug_save(funds, 'fundos-raw', debug_cfg, log)
+            debug_save(portfolios, 'carteiras-raw', debug_cfg, log)
 
     return [funds, portfolios]
 
 
-def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
+def clean_and_prepare_raw(debug_cfg, funds, portfolios, types_to_exclude,
                           types_series, harmonization_rules):
     with log_timing('clean', 'clean_and_prepare'):
         funds_dtypes = dta.read('fundos_metadata')
@@ -296,15 +296,15 @@ def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
         portfolios = cleaner.clean_data(portfolios, port_dtypes, types_to_exclude,
                                         types_series, harmonization_rules)
 
-    if intermediate_cfg['save']:
+    if debug_cfg['save']:
         with log_timing('clean', 'save_cleaned_data') as log:
-            debug_save(funds, 'fundos-cleaned', intermediate_cfg, log)
-            debug_save(portfolios, 'carteiras-cleaned', intermediate_cfg, log)
+            debug_save(funds, 'fundos-cleaned', debug_cfg, log)
+            debug_save(portfolios, 'carteiras-cleaned', debug_cfg, log)
 
     return [funds, portfolios]
 
 
-def compute_and_persist_isin_returns(intermediate_cfg, funds, portfolios, data_aux_path):
+def compute_and_persist_isin_returns(debug_cfg, funds, portfolios, data_aux_path):
     """
     Computes return series by ISIN and saves them to disk.
 
@@ -341,14 +341,13 @@ def compute_and_persist_isin_returns(intermediate_cfg, funds, portfolios, data_a
 
             debug_save(duplicated_data,
                        'puposicao_divergente_mesma_data',
-                       intermediate_cfg, log)
+                       debug_cfg, log)
 
         persisted_returns = aux_loader.load_returns_by_puposicao(data_aux_path)
 
-        if intermediate_cfg['save']:
+        if debug_cfg['save']:
             with log_timing('debug', 'save_isin_returns') as log:
-                debug_save(isin_data.loc[valid_idx], 'isin-return-xml',
-                                  intermediate_cfg, log)
+                debug_save(isin_data.loc[valid_idx], 'isin-return-xml', debug_cfg, log)
 
         updated_returns = compute_returns_from_puposicao(
             range_date=range_eom,
@@ -362,7 +361,7 @@ def compute_and_persist_isin_returns(intermediate_cfg, funds, portfolios, data_a
     return updated_returns
 
 
-def check_values_integrity(intermediate_cfg, entity, entity_name, invested, group_keys):
+def check_values_integrity(debug_cfg, entity, entity_name, invested, group_keys):
     investor_holdings_cols = ['cnpjfundo', 'qtdisponivel', 'dtposicao', 'isin',
                               'nome', 'puposicao']
 
@@ -372,20 +371,17 @@ def check_values_integrity(intermediate_cfg, entity, entity_name, invested, grou
 
         if not divergent_puposicao.empty:
             log.warn('check', dados=divergent_puposicao.to_dict(orient="records"))
-            debug_save(divergent_puposicao,
-                              f"{entity_name}_puposicao_divergente",
-                              intermediate_cfg, log)
+            debug_save(divergent_puposicao, f"{entity_name}_puposicao_divergente", debug_cfg, log)
 
     with log_timing('check', f"check_pl_consistency_{entity_name}") as log:
         divergent_pl = checker.check_composition_consistency(entity, group_keys, 0.01 / 100.0)
 
         if not divergent_pl.empty:
             log.warn('check', dados=divergent_pl.to_dict(orient="records"))
-            debug_save(divergent_pl, f"{entity_name}_pl_divergente",
-                              intermediate_cfg, log)
+            debug_save(divergent_pl, f"{entity_name}_pl_divergente", debug_cfg, log)
 
 
-def explode_partplanprev(intermediate_cfg, portfolios):
+def explode_partplanprev(debug_cfg, portfolios):
     with log_timing('enrich', 'explode_partplanprev') as log:
         allocated_partplanprev = crt.explode_partplanprev_and_allocate(portfolios)
         if allocated_partplanprev is None:
@@ -393,16 +389,17 @@ def explode_partplanprev(intermediate_cfg, portfolios):
 
     portfolios = crt.integrate_allocated_partplanprev(portfolios, allocated_partplanprev)
 
-    if intermediate_cfg['save']:
+    if debug_cfg['save']:
         with log_timing('enrich', 'save_exploded_partplanprev') as log:
-            debug_save(portfolios, 'carterias-exploded', intermediate_cfg, log)
+            debug_save(portfolios, 'carterias-exploded', debug_cfg, log)
 
     mask = portfolios['tipo'] == 'partplanprev'
     mask |= portfolios['flag_rateio'] == 1
+
     return portfolios[~mask]
 
 
-def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
+def enrich(debug_cfg, funds, portfolios, types_series, data_aux_path,
            new_tipo_rules, gestor_name_stopwords, name_standardization_rules):
 
     with log_timing('enrich', 'load_aux_data') as log:
@@ -438,10 +435,10 @@ def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
         if alerts:
             log.warning(f"Classification alerts for funds: {alerts}")
 
-    if intermediate_cfg['save']:
+    if debug_cfg['save']:
         with log_timing('enrich', 'save_enriched_data') as log:
-            debug_save(funds, 'fundos-enriched', intermediate_cfg, log)
-            debug_save(portfolios, 'carteiras-enriched', intermediate_cfg, log)
+            debug_save(funds, 'fundos-enriched', debug_cfg, log)
+            debug_save(portfolios, 'carteiras-enriched', debug_cfg, log)
 
     return [funds, portfolios]
 
@@ -564,11 +561,19 @@ def build_horizontal_tree(funds, portfolios, data_aux_path):
 def load_config():
     config = utl.load_config('config.ini')
 
+    if not config.has_section('Debug'):
+        raise KeyError('Missing [Debug] section in config.ini')
+
+    if not config.has_section('Paths'):
+        raise KeyError('Missing [Paths] section in config.ini')
+
     xml_source_path = config['Paths']['xml_source_path']
     xml_source_path = f"{os.path.dirname(utl.format_path(xml_source_path))}/"
 
-    xlsx_destination_path = config['Paths']['xlsx_destination_path']
-    xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
+    destination_path = config['Paths']['destination_path']
+    destination_path = f"{os.path.dirname(utl.format_path(destination_path))}/"
+
+    destination_file_format = config['Paths']['destination_file_format']
 
     data_aux_path = config['Paths']['data_aux_path']
     data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
@@ -576,23 +581,17 @@ def load_config():
     mec_sac_path = config['Paths']['mec_sac_path']
     mec_sac_path = f"{os.path.dirname(utl.format_path(mec_sac_path))}/"
 
-    if not config.has_section('Debug'):
-        raise KeyError('Missing [Debug] section in config.ini')
-
-    if not config.has_section('Paths'):
-        raise KeyError('Missing [Paths] section in config.ini')
-
-    intermediate_cfg = {
+    debug_cfg = {
         'save': config['Debug'].get('debug').lower() == 'yes',
         'output_path': config['Debug'].get('debug_path'),
-        'file_format': config['Debug'].get('debug_file_extension')
+        'file_format': config['Debug'].get('debug_file_format')
     }
 
-    return [xml_source_path, xlsx_destination_path, data_aux_path,
-            intermediate_cfg, mec_sac_path]
+    return [xml_source_path, destination_path, destination_file_format,
+            data_aux_path, debug_cfg, mec_sac_path]
 
 
-def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
+def compute_plan_returns_adjust(debug_cfg, tree_hrztl, data_aux_path,
                                 mec_sac_path, processes):
     mec_sac = load_mecsac(mec_sac_path, processes)
 
@@ -603,11 +602,11 @@ def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
         compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac)
         )
 
-    if intermediate_cfg['save']:
+    if debug_cfg['save']:
         with log_timing('tree', 'compute_returns_adjust') as log:
-            debug_save(mec_sac_returns_by_plan, 'rentab-plano-mecsac', intermediate_cfg, log)
-            debug_save(tree_returns_by_plan, 'rentab-plano-tree', intermediate_cfg, log)
-            debug_save(plan_returns_adjust , 'rentab-plano-ajuste', intermediate_cfg, log)
+            debug_save(mec_sac_returns_by_plan, 'rentab-plano-mecsac', debug_cfg, log)
+            debug_save(tree_returns_by_plan, 'rentab-plano-tree', debug_cfg, log)
+            debug_save(plan_returns_adjust , 'rentab-plano-ajuste', debug_cfg, log)
 
     adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'contribution_ajuste_rentab',
                                          'contribution_ajuste_rentab_fator']].copy()
@@ -633,13 +632,14 @@ def run_pipeline():
 
     (
         xml_source_path,
-        xlsx_destination_path,
+        destination_path,
+        destination_file_format,
         data_aux_path,
-        intermediate_cfg,
+        debug_cfg,
         mec_sac_path,
     ) = load_config()
 
-    setup_folders([xlsx_destination_path])
+    setup_folders([destination_path])
 
     header_daily_values = dta.read('header_daily_values')
     daily_keys = header_daily_values.keys()
@@ -647,36 +647,32 @@ def run_pipeline():
 
     processes = min(8, multiprocessing.cpu_count())
 
-    funds, portfolios = parse_files(intermediate_cfg, xml_source_path,
-                                    processes, daily_keys)
+    funds, portfolios = parse_files(debug_cfg, xml_source_path, processes, daily_keys)
 
     types_to_exclude = dta.read('types_to_exclude')
     harmonization_rules = dta.read('harmonization_values_rules')
 
-    funds, portfolios = clean_and_prepare_raw(intermediate_cfg, funds, portfolios,
+    funds, portfolios = clean_and_prepare_raw(debug_cfg, funds, portfolios,
                                               types_to_exclude, types_series,
                                               harmonization_rules)
 
-    check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
-    check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
+    check_values_integrity(debug_cfg, funds, 'fundos', funds, ['cnpj'])
+    check_values_integrity(debug_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
 
     name_standardization_rules = dta.read('name_standardization_rules')
     new_tipo_rules = dta.read('enrich_de_para_tipos')
     gestor_name_stopwords = dta.read('gestor_name_stopwords')
 
-    portfolios = explode_partplanprev(intermediate_cfg, portfolios)
+    portfolios = explode_partplanprev(debug_cfg, portfolios)
 
-    funds, portfolios = enrich(intermediate_cfg, funds, portfolios, types_series,
+    funds, portfolios = enrich(debug_cfg, funds, portfolios, types_series,
                                data_aux_path, new_tipo_rules, gestor_name_stopwords,
                                name_standardization_rules)
 
     compute_metrics(funds, portfolios, types_series)
 
     validate_fund_graph_is_acyclic(funds)
-
-    [portfolios, port_submassa] = extract_submassa(intermediate_cfg, data_aux_path, portfolios)
-
-    isin_returns = compute_and_persist_isin_returns(intermediate_cfg, funds,
+    isin_returns = compute_and_persist_isin_returns(debug_cfg, funds,
                                                     portfolios, data_aux_path)
 
     isin_returns['dtposicao'] = pd.to_datetime(isin_returns['dtposicao']).dt.strftime('%Y%m%d')
@@ -687,7 +683,7 @@ def run_pipeline():
     portfolios = assign_returns(portfolios, isin_returns)
 
     tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
-    adjust_rentab = compute_plan_returns_adjust(intermediate_cfg, tree_hrztl,
+    adjust_rentab = compute_plan_returns_adjust(debug_cfg, tree_hrztl,
                                                 data_aux_path, mec_sac_path,
                                                 processes)
 
@@ -704,10 +700,9 @@ def run_pipeline():
     tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
 
     with log_timing('finish', 'save_final_files'):
-        file_frmt = intermediate_cfg['file_format']
-        save_df(portfolios, f"{xlsx_destination_path}carteiras", file_frmt)
-        save_df(funds,      f"{xlsx_destination_path}fundos",    file_frmt)
-        save_df(tree_hrztl, f"{xlsx_destination_path}arvore_carteiras", file_frmt)
+        save_df(portfolios, f"{destination_path}carteiras", destination_file_format)
+        save_df(funds,      f"{destination_path}fundos",    destination_file_format)
+        save_df(tree_hrztl, f"{destination_path}arvore_carteiras", destination_file_format)
 
 
 if __name__ == "__main__":
