@@ -277,7 +277,7 @@ def parse_files(debug_cfg, xml_source_path, processes, daily_keys):
         portfolios = convert_entity_to_dataframe(portfolios_list, 'carteiras', daily_keys)
 
     if debug_cfg['save']:
-        with log_timing('parse', 'save_parsed_raw_data') as log:
+        with log_timing('parse', 'debug_save_parsed_raw_data') as log:
             debug_save(funds, 'fundos-raw', debug_cfg, log)
             debug_save(portfolios, 'carteiras-raw', debug_cfg, log)
 
@@ -297,7 +297,7 @@ def clean_and_prepare_raw(debug_cfg, funds, portfolios, types_to_exclude,
                                         types_series, harmonization_rules)
 
     if debug_cfg['save']:
-        with log_timing('clean', 'save_cleaned_data') as log:
+        with log_timing('clean', 'debug_save_cleaned_data') as log:
             debug_save(funds, 'fundos-cleaned', debug_cfg, log)
             debug_save(portfolios, 'carteiras-cleaned', debug_cfg, log)
 
@@ -346,7 +346,7 @@ def compute_and_persist_isin_returns(debug_cfg, funds, portfolios, data_aux_path
         persisted_returns = aux_loader.load_returns_by_puposicao(data_aux_path)
 
         if debug_cfg['save']:
-            with log_timing('debug', 'save_isin_returns') as log:
+            with log_timing('plan_returns', 'debug_save_isin_returns') as log:
                 debug_save(isin_data.loc[valid_idx], 'isin-return-xml', debug_cfg, log)
 
         updated_returns = compute_returns_from_puposicao(
@@ -390,7 +390,7 @@ def explode_partplanprev(debug_cfg, portfolios):
     portfolios = crt.integrate_allocated_partplanprev(portfolios, allocated_partplanprev)
 
     if debug_cfg['save']:
-        with log_timing('enrich', 'save_exploded_partplanprev') as log:
+        with log_timing('enrich', 'debug_save_exploded_partplanprev') as log:
             debug_save(portfolios, 'carterias-exploded', debug_cfg, log)
 
     mask = portfolios['tipo'] == 'partplanprev'
@@ -436,7 +436,7 @@ def enrich(debug_cfg, funds, portfolios, types_series, data_aux_path,
             log.warning(f"Classification alerts for funds: {alerts}")
 
     if debug_cfg['save']:
-        with log_timing('enrich', 'save_enriched_data') as log:
+        with log_timing('enrich', 'debug_save_enriched_data') as log:
             debug_save(funds, 'fundos-enriched', debug_cfg, log)
             debug_save(portfolios, 'carteiras-enriched', debug_cfg, log)
 
@@ -603,14 +603,16 @@ def compute_plan_returns_adjust(debug_cfg, tree_hrztl, data_aux_path,
         )
 
     if debug_cfg['save']:
-        with log_timing('tree', 'compute_returns_adjust') as log:
+        with log_timing('tree', 'debug_save_compute_returns_adjust') as log:
             debug_save(mec_sac_returns_by_plan, 'rentab-plano-mecsac', debug_cfg, log)
             debug_save(tree_returns_by_plan, 'rentab-plano-tree', debug_cfg, log)
             debug_save(plan_returns_adjust , 'rentab-plano-ajuste', debug_cfg, log)
 
     adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'contribution_ajuste_rentab',
                                          'contribution_ajuste_rentab_fator']].copy()
-    adjust_rentab.rename(columns={'contribution_ajuste_rentab': 'contribution_rentab_ponderada'}, inplace=True)
+    adjust_rentab.rename(columns=
+                         {'contribution_ajuste_rentab': 'contribution_rentab_ponderada'},
+                         inplace=True)
     adjust_rentab['nivel'] = 0
     cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
                    'NEW_NOME_ATIVO', 'SEARCH', 'NEW_TIPO_FINAL',
