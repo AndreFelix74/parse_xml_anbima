@@ -602,6 +602,8 @@ def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
         with log_timing('tree', 'debug_save_tree_submassa_pct_part') as log:
             debug_save(tree_horzt_sub, 'submassa-arvore-pct_part', debug_cfg, log)
 
+    return tree_horzt_sub
+
 
 def enrich_horizontal_tree(tree_horzt, data_aux_path):
     with log_timing('tree', 'enrich_values'):
@@ -747,9 +749,9 @@ def run_pipeline():
     funds = assign_returns(funds, isin_returns)
     portfolios = assign_returns(portfolios, isin_returns)
 
-    tree_hrztl, tree_horzt_submassa = build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa)
-    explode_horizontal_tree_submassa(debug_cfg, tree_horzt_submassa, port_submassa)
-    tree_hrztl = pd.concat([tree_hrztl, tree_horzt_submassa])
+    tree_hrztl, tree_hrztl_sub = build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa)
+    tree_hrztl_sub = explode_horizontal_tree_submassa(debug_cfg, tree_hrztl_sub, port_submassa)
+    tree_hrztl = pd.concat([tree_hrztl, tree_hrztl_sub])
     enrich_horizontal_tree(tree_hrztl, data_aux_path)
 
     adjust_rentab = compute_plan_returns_adjust(debug_cfg, tree_hrztl,
