@@ -565,6 +565,7 @@ def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
     with log_timing('tree', 'build_tree_submassa'):
         cols_port_submassa = ['dtposicao', 'CNPB', 'isin', 'CLCLI_CD',
                               'COD_SUBMASSA', 'SUBMASSA', 'pct_submassa_isin_cnpb']
+        mask_port = (~port_submassa['isin'].isna())
 
         tree_horzt_sub['COD_SUBMASSA'] = None
         tree_horzt_sub['SUBMASSA'] = None
@@ -577,11 +578,10 @@ def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
             suffix = '' if i == 0 else f'_nivel_{i}'
             isin_col = f"isin{suffix}"
 
-            mask = ~(tree_horzt_sub['_merge'] == 'both')
             tree_horzt_sub.drop(columns=['_merge'], inplace=True)
 
-            tree_horzt_sub = tree_horzt_sub.loc[mask].merge(
-                port_submassa[cols_port_submassa],
+            tree_horzt_sub = tree_horzt_sub.merge(
+                port_submassa[mask_port][cols_port_submassa],
                 left_on=['dtposicao', 'cnpb', isin_col],
                 right_on=['dtposicao', 'CNPB', 'isin'],
                 how='left',
