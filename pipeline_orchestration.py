@@ -677,7 +677,7 @@ def compute_plan_returns_adjust(debug_cfg, tree_hrztl, data_aux_path,
     adjust_rentab['nivel'] = 0
     cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
                    'NEW_NOME_ATIVO', 'SEARCH', 'NEW_TIPO_FINAL',
-                   'NEW_NOME_ATIVO_FINAL', 'isin', 'contribution_ativo']
+                   'NEW_NOME_ATIVO_FINAL', 'isin', 'contribution_ativo', 'contribution_match']
     for col in cols_adjust:
         adjust_rentab[col] = '#AJUSTE'
 
