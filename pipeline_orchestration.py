@@ -751,7 +751,7 @@ def run_pipeline():
 
     tree_hrztl, tree_hrztl_sub = build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa)
     tree_hrztl_sub = explode_horizontal_tree_submassa(debug_cfg, tree_hrztl_sub, port_submassa)
-    tree_hrztl = pd.concat([tree_hrztl, tree_hrztl_sub])
+    tree_hrztl = pd.concat([tree_hrztl, tree_hrztl_sub], ignore_index=True)
     enrich_horizontal_tree(tree_hrztl, data_aux_path)
 
     adjust_rentab = compute_plan_returns_adjust(debug_cfg, tree_hrztl,
@@ -768,7 +768,7 @@ def run_pipeline():
         * tree_hrztl['contribution_ajuste_rentab_fator']
         )
 
-    tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
+    tree_hrztl = pd.concat([tree_hrztl, adjust_rentab], ignore_index=True)
 
     with log_timing('finish', 'save_final_files'):
         save_df(portfolios, f"{destination_path}carteiras", destination_file_format)
