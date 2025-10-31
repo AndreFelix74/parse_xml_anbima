@@ -55,7 +55,7 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac):
     )
 
     mec_sac_dcadplanosac['TOTAL_PL_MEC_SAC'] = (
-        mec_sac_dcadplanosac.groupby(['CNPB', 'DT'])['VL_PATRLIQTOT1']
+        mec_sac_dcadplanosac.groupby(['CNPB', 'CODCLI_SAC', 'DT'])['VL_PATRLIQTOT1']
         .transform('sum')
     )
 
@@ -67,20 +67,20 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac):
 
     mec_sac_returns_by_plan = (
         mec_sac_dcadplanosac
-        .groupby(['CNPB', 'DT'], as_index=False)['RENTAB_DIA_PONDERADA_MEC_SAC']
+        .groupby(['CNPB', 'CODCLI_SAC', 'DT'], as_index=False)['RENTAB_DIA_PONDERADA_MEC_SAC']
         .sum()
     )
 
     tree_returns_by_plan = (
         tree_hrztl
-        .groupby(['cnpb', 'dtposicao'], as_index=False)['contribution_rentab_ponderada']
+        .groupby(['cnpb', 'CLCLI_CD', 'dtposicao'], as_index=False)['contribution_rentab_ponderada']
         .sum()
     )
 
     plan_returns_adjust = tree_returns_by_plan.merge(
         mec_sac_returns_by_plan,
-        left_on=['cnpb', 'dtposicao'],
-        right_on=['CNPB', 'DT'],
+        left_on=['cnpb', 'CLCLI_CD', 'dtposicao'],
+        right_on=['CNPB', 'CODCLI_SAC', 'DT'],
         how='left'
     )
 

@@ -16,7 +16,6 @@ from collections import defaultdict
 import networkx as nx
 import pandas as pd
 from logger import log_timing, RUN_ID
-import pandas as pd
 
 import auxiliary_loaders as aux_loader
 import parse_xml_anbima as parser
@@ -450,31 +449,39 @@ def compute_metrics(funds, portfolios, types_series):
     metrics.compute(portfolios, funds, types_series, group_keys_port)
 
 
-def extract_submassa(intermediate_cfg, data_aux_path, portfolios):
-    cad_submassa = aux_loader.load_submasssa(data_aux_path)
+def extract_portfolio_submassa(debug_cfg, data_aux_path, portfolios):
+    with log_timing('submassa', 'extract_portfolio_submassa'):
+        cad_submassa = aux_loader.load_submasssa(data_aux_path)
 
-    mask = portfolios['codcart'].isin(cad_submassa['CODCART'])
+        mask = portfolios['codcart'].isin(cad_submassa['CODCART'])
 
-    port_submassa = portfolios.loc[mask].merge(
-        cad_submassa,
-        left_on='codcart',
-        right_on='CODCART',
-        how='left',
-    )
+        port_submassa = portfolios.loc[mask].merge(
+            cad_submassa,
+            left_on='codcart',
+            right_on='CODCART',
+            how='left',
+        )
 
-    port_submassa['total_submassa_isin_cnpb'] = (
-        port_submassa.groupby(['CNPB', 'isin'])['valor_calc'].transform('sum')
-    )
+    if debug_cfg['save']:
+        with log_timing('submassa', 'debug_save_portfolio_submassa') as log:
+            debug_save(port_submassa, 'submassa-carterias', debug_cfg, log)
 
-    port_submassa['pct_submassa_isin_cnpb'] = (
-        port_submassa['valor_calc'] / port_submassa['total_submassa_isin_cnpb']
-    )
+    return [portfolios.loc[~mask], port_submassa]
 
-    if intermediate_cfg['save']:
-        with log_timing('submassa', 'save_portfolio_submassa') as log:
-            debug_save(port_submassa, 'carterias-submassa', intermediate_cfg, log)
 
-    return [portfolios.loc[~mask].copy(), port_submassa]
+def compute_composition_portfolio_submassa(debug_cfg, port_submassa):
+    with log_timing('submassa', 'compute_composition_portfolio_submassa'):
+        port_submassa['total_submassa_isin_cnpb'] = (
+            port_submassa.groupby(['dtposicao', 'CNPB', 'isin'])['valor_calc'].transform('sum')
+        )
+
+        port_submassa['pct_submassa_isin_cnpb'] = (
+            port_submassa['valor_calc'] / port_submassa['total_submassa_isin_cnpb']
+        )
+
+    if debug_cfg['save']:
+        with log_timing('submassa', 'debug_save_portfolio_submassa_composition') as log:
+            debug_save(port_submassa, 'submassa-carterias-composicao', debug_cfg, log)
 
 
 def validate_fund_graph_is_acyclic(funds):
@@ -539,10 +546,64 @@ def assign_returns(entity, isin_returns):
     return entity
 
 
-def build_horizontal_tree(funds, portfolios, data_aux_path):
+def build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa):
     with log_timing('tree', 'build_tree'):
         tree_horzt = build_tree(funds, portfolios)
 
+        mask = tree_horzt['cnpb'].isin(port_submassa['CNPB'].unique())
+
+        tree_horzt_submassa = tree_horzt[mask].copy()
+
+    if debug_cfg['save']:
+        with log_timing('tree', 'debug_save_tree_submassa') as log:
+            debug_save(tree_horzt_submassa, 'submassa-arvore', debug_cfg, log)
+
+    return tree_horzt.loc[~mask], tree_horzt_submassa
+
+
+def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
+    with log_timing('tree', 'build_tree_submassa'):
+        cols_port_submassa = ['dtposicao', 'CNPB', 'isin', 'CLCLI_CD',
+                              'COD_SUBMASSA', 'SUBMASSA', 'pct_submassa_isin_cnpb']
+
+        tree_horzt_sub['COD_SUBMASSA'] = None
+        tree_horzt_sub['SUBMASSA'] = None
+        tree_horzt_sub['pct_submassa_isin_cnpb'] = None
+        tree_horzt_sub['CLCLI_CD'] = None
+
+        tree_horzt_sub['_merge'] = ''
+        max_depth = tree_horzt_sub['nivel'].max()
+        for i in range(0, max_depth + 1):
+            suffix = '' if i == 0 else f'_nivel_{i}'
+            isin_col = f"isin{suffix}"
+
+            mask = ~(tree_horzt_sub['_merge'] == 'both')
+            tree_horzt_sub.drop(columns=['_merge'], inplace=True)
+
+            tree_horzt_sub = tree_horzt_sub.loc[mask].merge(
+                port_submassa[cols_port_submassa],
+                left_on=['dtposicao', 'cnpb', isin_col],
+                right_on=['dtposicao', 'CNPB', 'isin'],
+                how='left',
+                suffixes=('', f"_{suffix}"),
+                indicator=True,
+            )
+
+            mask_merge = (tree_horzt_sub['_merge'] == 'both')
+
+            tree_horzt_sub.loc[mask_merge, 'COD_SUBMASSA'] = tree_horzt_sub[f"COD_SUBMASSA_{suffix}"]
+            tree_horzt_sub.loc[mask_merge, 'SUBMASSA'] = tree_horzt_sub[f"SUBMASSA_{suffix}"]
+            tree_horzt_sub.loc[mask_merge, 'pct_submassa_isin_cnpb'] = tree_horzt_sub[f"pct_submassa_isin_cnpb_{suffix}"]
+            tree_horzt_sub.loc[mask_merge, 'CLCLI_CD'] = tree_horzt_sub[f"CLCLI_CD_{suffix}"]
+
+    tree_horzt_sub['pct_submassa_isin_cnpb'] = tree_horzt_sub['pct_submassa_isin_cnpb'].astype(float).fillna(1.0)
+
+    if debug_cfg['save']:
+        with log_timing('tree', 'debug_save_tree_submassa_pct_part') as log:
+            debug_save(tree_horzt_sub, 'submassa-arvore-pct_part', debug_cfg, log)
+
+
+def enrich_horizontal_tree(tree_horzt, data_aux_path):
     with log_timing('tree', 'enrich_values'):
         enrich_values(tree_horzt)
 
@@ -554,8 +615,6 @@ def build_horizontal_tree(funds, portfolios, data_aux_path):
         governance_struct = governance_struct[governance_struct['KEY_VEICULO'].notna()]
 
         assign_governance_struct_keys(tree_horzt, governance_struct)
-
-        return tree_horzt
 
 
 def load_config():
@@ -674,6 +733,10 @@ def run_pipeline():
     compute_metrics(funds, portfolios, types_series)
 
     validate_fund_graph_is_acyclic(funds)
+
+    [portfolios, port_submassa] = extract_portfolio_submassa(debug_cfg, data_aux_path, portfolios)
+    compute_composition_portfolio_submassa(debug_cfg, port_submassa)
+
     isin_returns = compute_and_persist_isin_returns(debug_cfg, funds,
                                                     portfolios, data_aux_path)
 
@@ -684,7 +747,11 @@ def run_pipeline():
     funds = assign_returns(funds, isin_returns)
     portfolios = assign_returns(portfolios, isin_returns)
 
-    tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
+    tree_hrztl, tree_horzt_submassa = build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa)
+    explode_horizontal_tree_submassa(debug_cfg, tree_horzt_submassa, port_submassa)
+    tree_hrztl = pd.concat([tree_hrztl, tree_horzt_submassa])
+    enrich_horizontal_tree(tree_hrztl, data_aux_path)
+
     adjust_rentab = compute_plan_returns_adjust(debug_cfg, tree_hrztl,
                                                 data_aux_path, mec_sac_path,
                                                 processes)
