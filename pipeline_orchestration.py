@@ -598,6 +598,9 @@ def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
             tree_horzt_sub.drop(columns=['_merge'], inplace=True)
 
     tree_horzt_sub['pct_submassa_isin_cnpb'] = tree_horzt_sub['pct_submassa_isin_cnpb'].astype(float).fillna(1.0)
+    mask_bsps = (tree_horzt_sub['SUBMASSA'].isna())
+    tree_horzt_sub.loc[mask_bsps, 'COD_SUBMASSA'] = 1
+    tree_horzt_sub.loc[mask_bsps, 'SUBMASSA'] = 'BSPS'
 
     if debug_cfg['save']:
         with log_timing('tree', 'debug_save_tree_submassa_pct_part') as log:
