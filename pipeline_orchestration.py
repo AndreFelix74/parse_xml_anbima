@@ -354,8 +354,9 @@ def compute_and_persist_isin_returns(debug_cfg, funds, portfolios, data_aux_path
             persisted_returns=persisted_returns
         )
 
-        returns_path = f"{data_aux_path}isin_rentab"
-        save_df(updated_returns, returns_path, 'xlsx')
+        if debug_cfg['save']:
+            returns_path = f"{data_aux_path}isin_rentab"
+            save_df(updated_returns, returns_path, 'xlsx')
 
     return updated_returns
 
