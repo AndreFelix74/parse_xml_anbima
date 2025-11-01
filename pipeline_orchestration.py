@@ -572,13 +572,11 @@ def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
         tree_horzt_sub['pct_submassa_isin_cnpb'] = None
         tree_horzt_sub['CLCLI_CD'] = None
 
-        tree_horzt_sub['_merge'] = ''
         max_depth = tree_horzt_sub['nivel'].max()
+
         for i in range(0, max_depth + 1):
             suffix = '' if i == 0 else f'_nivel_{i}'
             isin_col = f"isin{suffix}"
-
-            tree_horzt_sub.drop(columns=['_merge'], inplace=True)
 
             tree_horzt_sub = tree_horzt_sub.merge(
                 port_submassa[mask_port][cols_port_submassa],
@@ -595,6 +593,8 @@ def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
             tree_horzt_sub.loc[mask_merge, 'SUBMASSA'] = tree_horzt_sub[f"SUBMASSA_{suffix}"]
             tree_horzt_sub.loc[mask_merge, 'pct_submassa_isin_cnpb'] = tree_horzt_sub[f"pct_submassa_isin_cnpb_{suffix}"]
             tree_horzt_sub.loc[mask_merge, 'CLCLI_CD'] = tree_horzt_sub[f"CLCLI_CD_{suffix}"]
+
+            tree_horzt_sub.drop(columns=['_merge'], inplace=True)
 
     tree_horzt_sub['pct_submassa_isin_cnpb'] = tree_horzt_sub['pct_submassa_isin_cnpb'].astype(float).fillna(1.0)
 
@@ -670,7 +670,7 @@ def compute_plan_returns_adjust(debug_cfg, tree_hrztl, data_aux_path,
             debug_save(plan_returns_adjust , 'rentab-plano-ajuste', debug_cfg, log)
 
     adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'contribution_ajuste_rentab',
-                                         'contribution_ajuste_rentab_fator']].copy()
+                                         'contribution_ajuste_rentab_fator', 'CLCLI_CD']].copy()
     adjust_rentab.rename(columns=
                          {'contribution_ajuste_rentab': 'contribution_rentab_ponderada'},
                          inplace=True)
@@ -759,8 +759,8 @@ def run_pipeline():
                                                 processes)
 
     tree_hrztl = tree_hrztl.merge(
-        adjust_rentab[['cnpb', 'dtposicao', 'contribution_ajuste_rentab_fator']],
-        on=['cnpb', 'dtposicao'],
+        adjust_rentab[['cnpb', 'dtposicao', 'contribution_ajuste_rentab_fator', 'CLCLI_CD']],
+        on=['cnpb', 'dtposicao', 'CLCLI_CD'],
         how='left',
         )
     tree_hrztl['contribution_rentab_ponderada_ajustada'] = (
