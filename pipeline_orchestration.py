@@ -575,6 +575,9 @@ def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
 
         max_depth = tree_horzt_sub['nivel'].max()
 
+        if pd.isna(max_depth):
+            return tree_horzt_sub
+
         for i in range(0, max_depth + 1):
             suffix = '' if i == 0 else f'_nivel_{i}'
             isin_col = f"isin{suffix}"
@@ -601,8 +604,6 @@ def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
     mask_bsps = (tree_horzt_sub['SUBMASSA'].isna())
     tree_horzt_sub.loc[mask_bsps, 'COD_SUBMASSA'] = '1'
     tree_horzt_sub.loc[mask_bsps, 'SUBMASSA'] = 'BSPS'
-
-    tree_horzt_sub.drop(columns=['CNPB'], inplace=True)
 
     if debug_cfg['save']:
         with log_timing('tree', 'debug_save_tree_submassa_pct_part') as log:
