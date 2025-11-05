@@ -407,3 +407,11 @@ def load_performance(performance_path):
     performance['PERFIL_BASE'] = performance['PERFIL_BASE'].astype(str).str.strip().str.upper()
 
     return performance
+
+
+def load_submasssa(data_aux_path):
+    submassa = pd.read_excel(f"{data_aux_path}dbAux.xlsx",
+                                 sheet_name='dSubmassa',
+                                 dtype=str)
+
+    return submassa
