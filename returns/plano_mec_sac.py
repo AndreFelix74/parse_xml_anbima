@@ -10,7 +10,7 @@ Created on Thu Jul  3 18:17:22 2025
 import pandas as pd
 
 
-def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac):
+def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac, port_submassa):
     """
     Computes the difference between official monthly plan returns (from mec_sac)
     and the aggregated portfolio returns from the tree structure.
@@ -54,8 +54,15 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac):
         right_on='CODCLI_SAC'
     )
 
+    #isso eh uma gambiarra
+    #como a tabela dSubmassa soh tem os CNPBs com submassa, nao agrupar por CODCLI_SAC de mecSAC
+    #entao, deixamos essa informacao em branco para manter o comportamento anterior
+    #a implementacao de submassa
+    mask = ~(mec_sac_dcadplanosac['CODCLI_SAC'].isin(port_submassa['CLCLI_CD']))
+    mec_sac_dcadplanosac.loc[mask, 'CODCLI_SAC'] = ''
+
     mec_sac_dcadplanosac['TOTAL_PL_MEC_SAC'] = (
-        mec_sac_dcadplanosac.groupby(['CNPB', 'DT'])['VL_PATRLIQTOT1']
+        mec_sac_dcadplanosac.groupby(['CNPB', 'CODCLI_SAC', 'DT'])['VL_PATRLIQTOT1']
         .transform('sum')
     )
 
@@ -65,22 +72,24 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac):
         * mec_sac_dcadplanosac['RENTAB_DIA']
         )
 
+    mec_sac_dcadplanosac['CODCLI_SAC'] = mec_sac_dcadplanosac['CODCLI_SAC'].fillna('')
     mec_sac_returns_by_plan = (
         mec_sac_dcadplanosac
-        .groupby(['CNPB', 'DT'], as_index=False)['RENTAB_DIA_PONDERADA_MEC_SAC']
+        .groupby(['CNPB', 'CODCLI_SAC', 'DT'], as_index=False)['RENTAB_DIA_PONDERADA_MEC_SAC']
         .sum()
     )
 
+    tree_hrztl['CLCLI_CD'] = tree_hrztl['CLCLI_CD'].fillna('')
     tree_returns_by_plan = (
         tree_hrztl
-        .groupby(['cnpb', 'dtposicao'], as_index=False)['contribution_rentab_ponderada']
+        .groupby(['cnpb', 'CLCLI_CD', 'dtposicao'], as_index=False)['contribution_rentab_ponderada']
         .sum()
     )
 
     plan_returns_adjust = tree_returns_by_plan.merge(
         mec_sac_returns_by_plan,
-        left_on=['cnpb', 'dtposicao'],
-        right_on=['CNPB', 'DT'],
+        left_on=['cnpb', 'CLCLI_CD', 'dtposicao'],
+        right_on=['CNPB', 'CODCLI_SAC', 'DT'],
         how='left'
     )
 

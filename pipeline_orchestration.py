@@ -660,14 +660,14 @@ def load_config():
 
 
 def compute_plan_returns_adjust(debug_cfg, tree_hrztl, data_aux_path,
-                                mec_sac_path, processes):
+                                mec_sac_path, processes, port_submassa):
     mec_sac = load_mecsac(mec_sac_path, processes)
 
     with log_timing('plans_returns', 'load_dcadplanosac'):
         dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
 
     mec_sac_returns_by_plan, tree_returns_by_plan, plan_returns_adjust = (
-        compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac)
+        compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac, port_submassa)
         )
 
     if debug_cfg['save']:
@@ -741,9 +741,6 @@ def run_pipeline():
 
     validate_fund_graph_is_acyclic(funds)
 
-    [portfolios, port_submassa] = extract_portfolio_submassa(debug_cfg, data_aux_path, portfolios)
-    compute_composition_portfolio_submassa(debug_cfg, port_submassa)
-
     isin_returns = compute_and_persist_isin_returns(debug_cfg, funds,
                                                     portfolios, data_aux_path)
 
@@ -754,6 +751,9 @@ def run_pipeline():
     funds = assign_returns(funds, isin_returns)
     portfolios = assign_returns(portfolios, isin_returns)
 
+    [portfolios, port_submassa] = extract_portfolio_submassa(debug_cfg, data_aux_path, portfolios)
+    compute_composition_portfolio_submassa(debug_cfg, port_submassa)
+
     tree_hrztl, tree_hrztl_sub = build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa)
     tree_hrztl_sub = explode_horizontal_tree_submassa(debug_cfg, tree_hrztl_sub, port_submassa)
     tree_hrztl = pd.concat([tree_hrztl, tree_hrztl_sub], ignore_index=True)
@@ -761,7 +761,7 @@ def run_pipeline():
 
     adjust_rentab = compute_plan_returns_adjust(debug_cfg, tree_hrztl,
                                                 data_aux_path, mec_sac_path,
-                                                processes)
+                                                processes, port_submassa)
 
     tree_hrztl = tree_hrztl.merge(
         adjust_rentab[['cnpb', 'dtposicao', 'contribution_ajuste_rentab_fator']],
