@@ -395,6 +395,7 @@ def explode_partplanprev(debug_cfg, portfolios):
 
     mask = portfolios['tipo'] == 'partplanprev'
     mask |= portfolios['flag_rateio'] == 1
+
     return portfolios[~mask]
 
 
@@ -466,7 +467,7 @@ def extract_portfolio_submassa(debug_cfg, data_aux_path, portfolios):
         with log_timing('submassa', 'debug_save_portfolio_submassa') as log:
             debug_save(port_submassa, 'submassa-carterias', debug_cfg, log)
 
-    return [portfolios, port_submassa]
+    return [portfolios.loc[~mask], port_submassa]
 
 
 def compute_composition_portfolio_submassa(debug_cfg, port_submassa):
@@ -482,6 +483,7 @@ def compute_composition_portfolio_submassa(debug_cfg, port_submassa):
     if debug_cfg['save']:
         with log_timing('submassa', 'debug_save_portfolio_submassa_composition') as log:
             debug_save(port_submassa, 'submassa-carterias-composicao', debug_cfg, log)
+
 
 def validate_fund_graph_is_acyclic(funds):
     """
@@ -545,10 +547,72 @@ def assign_returns(entity, isin_returns):
     return entity
 
 
-def build_horizontal_tree(funds, portfolios, data_aux_path):
+def build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa):
     with log_timing('tree', 'build_tree'):
         tree_horzt = build_tree(funds, portfolios)
 
+        mask = tree_horzt['cnpb'].isin(port_submassa['CNPB'].unique())
+
+        tree_horzt_submassa = tree_horzt[mask].copy()
+
+    if debug_cfg['save']:
+        with log_timing('tree', 'debug_save_tree_submassa') as log:
+            debug_save(tree_horzt_submassa, 'submassa-arvore', debug_cfg, log)
+
+    return tree_horzt.loc[~mask], tree_horzt_submassa
+
+
+def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
+    with log_timing('tree', 'build_tree_submassa'):
+        cols_port_submassa = ['dtposicao', 'CNPB', 'isin', 'CLCLI_CD',
+                              'COD_SUBMASSA', 'SUBMASSA', 'pct_submassa_isin_cnpb']
+        mask_port = (~port_submassa['isin'].isna())
+
+        tree_horzt_sub['COD_SUBMASSA'] = None
+        tree_horzt_sub['SUBMASSA'] = None
+        tree_horzt_sub['pct_submassa_isin_cnpb'] = None
+        tree_horzt_sub['CLCLI_CD'] = None
+
+        max_depth = tree_horzt_sub['nivel'].max()
+
+        if pd.isna(max_depth):
+            return tree_horzt_sub
+
+        for i in range(0, max_depth + 1):
+            suffix = '' if i == 0 else f'_nivel_{i}'
+            isin_col = f"isin{suffix}"
+
+            tree_horzt_sub = tree_horzt_sub.merge(
+                port_submassa[mask_port][cols_port_submassa],
+                left_on=['dtposicao', 'cnpb', isin_col],
+                right_on=['dtposicao', 'CNPB', 'isin'],
+                how='left',
+                suffixes=('', f"_{suffix}"),
+                indicator=True,
+            )
+
+            mask_merge = (tree_horzt_sub['_merge'] == 'both')
+
+            tree_horzt_sub.loc[mask_merge, 'COD_SUBMASSA'] = tree_horzt_sub[f"COD_SUBMASSA_{suffix}"]
+            tree_horzt_sub.loc[mask_merge, 'SUBMASSA'] = tree_horzt_sub[f"SUBMASSA_{suffix}"]
+            tree_horzt_sub.loc[mask_merge, 'pct_submassa_isin_cnpb'] = tree_horzt_sub[f"pct_submassa_isin_cnpb_{suffix}"]
+            tree_horzt_sub.loc[mask_merge, 'CLCLI_CD'] = tree_horzt_sub[f"CLCLI_CD_{suffix}"]
+
+            tree_horzt_sub.drop(columns=['_merge'], inplace=True)
+
+    tree_horzt_sub['pct_submassa_isin_cnpb'] = tree_horzt_sub['pct_submassa_isin_cnpb'].astype(float).fillna(1.0)
+    mask_bsps = (tree_horzt_sub['SUBMASSA'].isna())
+    tree_horzt_sub.loc[mask_bsps, 'COD_SUBMASSA'] = '1'
+    tree_horzt_sub.loc[mask_bsps, 'SUBMASSA'] = 'BSPS'
+
+    if debug_cfg['save']:
+        with log_timing('tree', 'debug_save_tree_submassa_pct_part') as log:
+            debug_save(tree_horzt_sub, 'submassa-arvore-pct_part', debug_cfg, log)
+
+    return tree_horzt_sub
+
+
+def enrich_horizontal_tree(tree_horzt, data_aux_path):
     with log_timing('tree', 'enrich_values'):
         enrich_values(tree_horzt)
 
@@ -560,8 +624,6 @@ def build_horizontal_tree(funds, portfolios, data_aux_path):
         governance_struct = governance_struct[governance_struct['KEY_VEICULO'].notna()]
 
         assign_governance_struct_keys(tree_horzt, governance_struct)
-
-        return tree_horzt
 
 
 def load_config():
@@ -692,7 +754,11 @@ def run_pipeline():
     funds = assign_returns(funds, isin_returns)
     portfolios = assign_returns(portfolios, isin_returns)
 
-    tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
+    tree_hrztl, tree_hrztl_sub = build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa)
+    tree_hrztl_sub = explode_horizontal_tree_submassa(debug_cfg, tree_hrztl_sub, port_submassa)
+    tree_hrztl = pd.concat([tree_hrztl, tree_hrztl_sub], ignore_index=True)
+    enrich_horizontal_tree(tree_hrztl, data_aux_path)
+
     adjust_rentab = compute_plan_returns_adjust(debug_cfg, tree_hrztl,
                                                 data_aux_path, mec_sac_path,
                                                 processes)
