@@ -129,3 +129,4 @@ def enrich_values(tree_horzt):
     )
 
     compute_weighted_returns(tree_horzt, max_depth)
+foo
