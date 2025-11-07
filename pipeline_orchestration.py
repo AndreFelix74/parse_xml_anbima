@@ -757,6 +757,9 @@ def run_pipeline():
     tree_hrztl, tree_hrztl_sub = build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa)
     tree_hrztl_sub = explode_horizontal_tree_submassa(debug_cfg, tree_hrztl_sub, port_submassa)
     tree_hrztl = pd.concat([tree_hrztl, tree_hrztl_sub], ignore_index=True)
+    #Preenche CLCLI_CD com vazio para as demais partes do codigo que passam a usar essa coluna
+    #para agregacoes
+    tree_hrztl['CLCLI_CD'] = tree_hrztl['CLCLI_CD'].fillna('')
     enrich_horizontal_tree(tree_hrztl, data_aux_path)
 
     adjust_rentab = compute_plan_returns_adjust(debug_cfg, tree_hrztl,
@@ -764,8 +767,8 @@ def run_pipeline():
                                                 processes, port_submassa)
 
     tree_hrztl = tree_hrztl.merge(
-        adjust_rentab[['cnpb', 'dtposicao', 'contribution_ajuste_rentab_fator']],
-        on=['cnpb', 'dtposicao'],
+        adjust_rentab[['cnpb', 'CLCLI_CD', 'dtposicao', 'contribution_ajuste_rentab_fator']],
+        on=['cnpb', 'CLCLI_CD', 'dtposicao'],
         how='left',
         )
     tree_hrztl['contribution_rentab_ponderada_ajustada'] = (

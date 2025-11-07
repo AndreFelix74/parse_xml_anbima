@@ -79,7 +79,6 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac, port_subm
         .sum()
     )
 
-    tree_hrztl['CLCLI_CD'] = tree_hrztl['CLCLI_CD'].fillna('')
     tree_returns_by_plan = (
         tree_hrztl
         .groupby(['cnpb', 'CLCLI_CD', 'dtposicao'], as_index=False)['contribution_rentab_ponderada']
