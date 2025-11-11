@@ -44,25 +44,25 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac, port_subm
     """
     mec_sac['DT'] = pd.to_datetime(mec_sac['DT']).dt.strftime('%Y%m%d')
 
-    dcadplanosac['CODCLI_SAC'] = dcadplanosac['CODCLI_SAC'].astype(str).str.strip()
+    dcadplanosac['CODCART'] = dcadplanosac['CODCART'].astype(str).str.strip()
     mec_sac['CODCLI'] = mec_sac['CODCLI'].astype(str).str.strip()
 
     mec_sac_dcadplanosac = mec_sac.merge(
         dcadplanosac,
         how='left',
         left_on='CODCLI',
-        right_on='CODCLI_SAC'
+        right_on='CODCART'
     )
 
     #isso eh uma gambiarra
-    #como a tabela dSubmassa soh tem os CNPBs com submassa, nao agrupar por CODCLI_SAC de mecSAC
+    #como a tabela dSubmassa soh tem os CNPBs com submassa, nao agrupa por CODCART de mecSAC
     #entao, deixamos essa informacao em branco para manter o comportamento anterior
     #a implementacao de submassa
-    mask = ~(mec_sac_dcadplanosac['CODCLI_SAC'].isin(port_submassa['CLCLI_CD']))
-    mec_sac_dcadplanosac.loc[mask, 'CODCLI_SAC'] = ''
+    mask = ~(mec_sac_dcadplanosac['CODCART'].isin(port_submassa['CODCART']))
+    mec_sac_dcadplanosac.loc[mask, 'CODCART'] = ''
 
     mec_sac_dcadplanosac['TOTAL_PL_MEC_SAC'] = (
-        mec_sac_dcadplanosac.groupby(['CNPB', 'CODCLI_SAC', 'DT'])['VL_PATRLIQTOT1']
+        mec_sac_dcadplanosac.groupby(['CNPB', 'CODCART', 'DT'])['VL_PATRLIQTOT1']
         .transform('sum')
     )
 
@@ -72,23 +72,23 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac, port_subm
         * mec_sac_dcadplanosac['RENTAB_DIA']
         )
 
-    mec_sac_dcadplanosac['CODCLI_SAC'] = mec_sac_dcadplanosac['CODCLI_SAC'].fillna('')
+    mec_sac_dcadplanosac['CODCART'] = mec_sac_dcadplanosac['CODCART'].fillna('')
     mec_sac_returns_by_plan = (
         mec_sac_dcadplanosac
-        .groupby(['CNPB', 'CODCLI_SAC', 'DT'], as_index=False)['RENTAB_DIA_PONDERADA_MEC_SAC']
+        .groupby(['CNPB', 'CODCART', 'DT'], as_index=False)['RENTAB_DIA_PONDERADA_MEC_SAC']
         .sum()
     )
 
     tree_returns_by_plan = (
         tree_hrztl
-        .groupby(['cnpb', 'CLCLI_CD', 'dtposicao'], as_index=False)['contribution_rentab_ponderada']
+        .groupby(['cnpb', 'CODCART', 'dtposicao'], as_index=False)['contribution_rentab_ponderada']
         .sum()
     )
 
     plan_returns_adjust = tree_returns_by_plan.merge(
         mec_sac_returns_by_plan,
-        left_on=['cnpb', 'CLCLI_CD', 'dtposicao'],
-        right_on=['CNPB', 'CODCLI_SAC', 'DT'],
+        left_on=['cnpb', 'CODCART', 'dtposicao'],
+        right_on=['CNPB', 'CODCART', 'DT'],
         how='left'
     )
 

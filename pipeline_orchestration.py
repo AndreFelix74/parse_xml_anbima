@@ -303,7 +303,7 @@ def clean_and_prepare_raw(debug_cfg, funds, portfolios, types_to_exclude,
     return [funds, portfolios]
 
 
-def compute_and_persist_isin_returns(debug_cfg, funds, portfolios, data_aux_path):
+def compute_and_persist_isin_returns(debug_cfg, funds, portfolios, data_aux_path, range_eom):
     """
     Computes return series by ISIN and saves them to disk.
 
@@ -315,7 +315,6 @@ def compute_and_persist_isin_returns(debug_cfg, funds, portfolios, data_aux_path
         pd.DataFrame: Return series per ISIN and date.
     """
     with log_timing('plan_returns', 'update_returns_by_isin_dtposicao') as log:
-        range_eom = aux_loader.load_range_eom(data_aux_path)
         range_eom = pd.to_datetime(range_eom['DATA_POSICAO'].unique())
 
         group_cols = ['isin', 'dtposicao', 'puposicao']
@@ -399,7 +398,7 @@ def explode_partplanprev(debug_cfg, portfolios):
     return portfolios[~mask]
 
 
-def enrich(debug_cfg, funds, portfolios, types_series, data_aux_path,
+def enrich(debug_cfg, funds, portfolios, types_series, data_aux_path, dcadplano,
            new_tipo_rules, gestor_name_stopwords, name_standardization_rules):
 
     with log_timing('enrich', 'load_aux_data') as log:
@@ -408,7 +407,7 @@ def enrich(debug_cfg, funds, portfolios, types_series, data_aux_path,
     with log_timing('enrich', 'merge_aux_data') as log:
         portfolios = merge_aux_data(
             portfolios,
-            aux_data['dcadplano'],
+            dcadplano,
             aux_data['assets'],
             aux_data['cad_fi_cvm'],
             'fEMISSOR.CNPJ_EMISSOR'
@@ -416,7 +415,7 @@ def enrich(debug_cfg, funds, portfolios, types_series, data_aux_path,
 
         funds = merge_aux_data(
             funds,
-            aux_data['dcadplano'],
+            dcadplano,
             aux_data['assets'],
             aux_data['cad_fi_cvm'],
             'cnpjfundo'
@@ -450,10 +449,8 @@ def compute_metrics(funds, portfolios, types_series):
     metrics.compute(portfolios, funds, types_series, group_keys_port)
 
 
-def extract_portfolio_submassa(debug_cfg, data_aux_path, portfolios):
+def extract_portfolio_submassa(debug_cfg, cad_submassa, portfolios):
     with log_timing('submassa', 'extract_portfolio_submassa'):
-        cad_submassa = aux_loader.load_submasssa(data_aux_path)
-
         mask = portfolios['codcart'].isin(cad_submassa['CODCART'])
 
         port_submassa = portfolios.loc[mask].merge(
@@ -564,14 +561,14 @@ def build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa):
 
 def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
     with log_timing('tree', 'build_tree_submassa'):
-        cols_port_submassa = ['dtposicao', 'CNPB', 'isin', 'CLCLI_CD',
+        cols_port_submassa = ['dtposicao', 'CNPB', 'isin', 'CODCART',
                               'COD_SUBMASSA', 'SUBMASSA', 'pct_submassa_isin_cnpb']
         mask_port = (~port_submassa['isin'].isna())
 
         tree_horzt_sub['COD_SUBMASSA'] = None
         tree_horzt_sub['SUBMASSA'] = None
         tree_horzt_sub['pct_submassa_isin_cnpb'] = None
-        tree_horzt_sub['CLCLI_CD'] = None
+        tree_horzt_sub['CODCART'] = None
 
         max_depth = tree_horzt_sub['nivel'].max()
 
@@ -596,7 +593,7 @@ def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
             tree_horzt_sub.loc[mask_merge, 'COD_SUBMASSA'] = tree_horzt_sub[f"COD_SUBMASSA_{suffix}"]
             tree_horzt_sub.loc[mask_merge, 'SUBMASSA'] = tree_horzt_sub[f"SUBMASSA_{suffix}"]
             tree_horzt_sub.loc[mask_merge, 'pct_submassa_isin_cnpb'] = tree_horzt_sub[f"pct_submassa_isin_cnpb_{suffix}"]
-            tree_horzt_sub.loc[mask_merge, 'CLCLI_CD'] = tree_horzt_sub[f"CLCLI_CD_{suffix}"]
+            tree_horzt_sub.loc[mask_merge, 'CODCART'] = tree_horzt_sub[f"CODCART_{suffix}"]
 
             tree_horzt_sub.drop(columns=['_merge'], inplace=True)
 
@@ -612,7 +609,7 @@ def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
     return tree_horzt_sub
 
 
-def enrich_horizontal_tree(tree_horzt, data_aux_path):
+def enrich_horizontal_tree(tree_horzt, governance_struct):
     with log_timing('tree', 'enrich_values'):
         enrich_values(tree_horzt)
 
@@ -620,7 +617,6 @@ def enrich_horizontal_tree(tree_horzt, data_aux_path):
         enrich_text(tree_horzt)
 
     with log_timing('tree', 'governance_struct'):
-        governance_struct = aux_loader.load_governance_struct(data_aux_path)
         governance_struct = governance_struct[governance_struct['KEY_VEICULO'].notna()]
 
         assign_governance_struct_keys(tree_horzt, governance_struct)
@@ -659,12 +655,9 @@ def load_config():
             data_aux_path, debug_cfg, mec_sac_path]
 
 
-def compute_plan_returns_adjust(debug_cfg, tree_hrztl, data_aux_path,
+def compute_plan_returns_adjust(debug_cfg, tree_hrztl, dcadplanosac,
                                 mec_sac_path, processes, port_submassa):
     mec_sac = load_mecsac(mec_sac_path, processes)
-
-    with log_timing('plans_returns', 'load_dcadplanosac'):
-        dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
 
     mec_sac_returns_by_plan, tree_returns_by_plan, plan_returns_adjust = (
         compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac, port_submassa)
@@ -677,7 +670,7 @@ def compute_plan_returns_adjust(debug_cfg, tree_hrztl, data_aux_path,
             debug_save(plan_returns_adjust , 'rentab-plano-ajuste', debug_cfg, log)
 
     adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'contribution_ajuste_rentab',
-                                         'contribution_ajuste_rentab_fator', 'CLCLI_CD']].copy()
+                                         'contribution_ajuste_rentab_fator', 'CODCART']].copy()
     adjust_rentab.rename(columns={'contribution_ajuste_rentab': 'contribution_rentab_ponderada'}, inplace=True)
     adjust_rentab['nivel'] = 0
     cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
@@ -709,6 +702,9 @@ def run_pipeline():
 
     setup_folders([destination_path])
 
+    with log_timing('load', 'load_dbaux'):
+        db_aux = aux_loader.load_dbaux(data_aux_path)
+
     header_daily_values = dta.read('header_daily_values')
     daily_keys = header_daily_values.keys()
     types_series = [key for key, value in header_daily_values.items() if value.get('serie', False)]
@@ -733,16 +729,16 @@ def run_pipeline():
 
     portfolios = explode_partplanprev(debug_cfg, portfolios)
 
-    funds, portfolios = enrich(debug_cfg, funds, portfolios, types_series,
-                               data_aux_path, new_tipo_rules, gestor_name_stopwords,
+    funds, portfolios = enrich(debug_cfg, funds, portfolios, types_series, data_aux_path,
+                               db_aux['dcadplano'], new_tipo_rules, gestor_name_stopwords,
                                name_standardization_rules)
 
     compute_metrics(funds, portfolios, types_series)
 
     validate_fund_graph_is_acyclic(funds)
 
-    isin_returns = compute_and_persist_isin_returns(debug_cfg, funds,
-                                                    portfolios, data_aux_path)
+    isin_returns = compute_and_persist_isin_returns(debug_cfg, funds, portfolios,
+                                                    data_aux_path, db_aux['range_eom'])
 
     isin_returns['dtposicao'] = pd.to_datetime(isin_returns['dtposicao']).dt.strftime('%Y%m%d')
     isin_returns['isin'] = isin_returns['isin'].astype(str)
@@ -751,24 +747,24 @@ def run_pipeline():
     funds = assign_returns(funds, isin_returns)
     portfolios = assign_returns(portfolios, isin_returns)
 
-    [portfolios, port_submassa] = extract_portfolio_submassa(debug_cfg, data_aux_path, portfolios)
+    [portfolios, port_submassa] = extract_portfolio_submassa(debug_cfg, db_aux['dcadsubmassa'], portfolios)
     compute_composition_portfolio_submassa(debug_cfg, port_submassa)
 
     tree_hrztl, tree_hrztl_sub = build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa)
     tree_hrztl_sub = explode_horizontal_tree_submassa(debug_cfg, tree_hrztl_sub, port_submassa)
     tree_hrztl = pd.concat([tree_hrztl, tree_hrztl_sub], ignore_index=True)
-    #Preenche CLCLI_CD com vazio para as demais partes do codigo que passam a usar essa coluna
+    #Preenche CODCART com vazio para as demais partes do codigo que passam a usar essa coluna
     #para agregacoes
-    tree_hrztl['CLCLI_CD'] = tree_hrztl['CLCLI_CD'].fillna('')
-    enrich_horizontal_tree(tree_hrztl, data_aux_path)
+    tree_hrztl['CODCART'] = tree_hrztl['CODCART'].fillna('')
+    enrich_horizontal_tree(tree_hrztl, db_aux['governance_struct'])
 
     adjust_rentab = compute_plan_returns_adjust(debug_cfg, tree_hrztl,
-                                                data_aux_path, mec_sac_path,
+                                                db_aux['dcadplanosac'], mec_sac_path,
                                                 processes, port_submassa)
 
     tree_hrztl = tree_hrztl.merge(
-        adjust_rentab[['cnpb', 'CLCLI_CD', 'dtposicao', 'contribution_ajuste_rentab_fator']],
-        on=['cnpb', 'CLCLI_CD', 'dtposicao'],
+        adjust_rentab[['cnpb', 'CODCART', 'dtposicao', 'contribution_ajuste_rentab_fator']],
+        on=['cnpb', 'CODCART', 'dtposicao'],
         how='left',
         )
     tree_hrztl['contribution_rentab_ponderada_ajustada'] = (
