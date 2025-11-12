@@ -44,19 +44,35 @@ def validate_unique_puposicao(data):
 
 def generate_position_grid(base: pd.DataFrame, range_date) -> pd.DataFrame:
     """
-    Creates a complete time grid (isin x dtposicao) and merges with base data.
+    Generates a complete grid of (isin × dtposicao) by combining all unique isins
+    with the union of dates from the base DataFrame and the given range of dates.
+    Merges this grid with the original data, preserving any available values
+    from the base DataFrame.
 
-    Args:
-        base: DataFrame with at least 'isin', 'dtposicao', 'puposicao'
-        range_date: list or pd.Series of dates
+    Parameters
+    ----------
+    base : pd.DataFrame
+        DataFrame containing at least the columns ['isin', 'dtposicao', ...].
+        Represents the source data with observed values per asset and date.
+    range_date : list, pd.Series or pd.DatetimeIndex
+        A list of reference dates (e.g., end-of-month) to ensure inclusion for each isin.
 
-    Returns:
-        Merged DataFrame with all combinations of isin and dtposicao.
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame with all combinations of isin × dtposicao from the union of
+        base dates and the provided date range, merged with the original data.
+        Missing values are filled with NaN where no data is available.
     """
-    unique_cnpjs = base['isin'].unique()
-    grade = pd.DataFrame([(cnpj, date) for cnpj in unique_cnpjs for date in range_date],
-                         columns=['isin', 'dtposicao'])
-    merged = grade.merge(base, on=['isin', 'dtposicao'], how='left')
+    unique_dates_base = base['dtposicao'].drop_duplicates()
+    mandatory_dates = pd.Series(range_date)
+    all_dates = pd.concat([unique_dates_base, mandatory_dates]).drop_duplicates()
+
+    unique_isins = base['isin'].unique()
+    dt_isin = [(isin, date) for isin in unique_isins for date in all_dates]
+    grid = pd.DataFrame(dt_isin, columns=['isin', 'dtposicao'])
+
+    merged = grid.merge(base, on=['isin', 'dtposicao'], how='left')
     return merged
 
 
