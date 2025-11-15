@@ -44,6 +44,7 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac, port_subm
     """
     mec_sac['DT'] = pd.to_datetime(mec_sac['DT']).dt.strftime('%Y%m%d')
 
+    dcadplanosac['CODCLI_SAC'] = dcadplanosac['CODCLI_SAC'].astype(str).str.strip()
     dcadplanosac['CODCART'] = dcadplanosac['CODCART'].astype(str).str.strip()
     mec_sac['CODCLI'] = mec_sac['CODCLI'].astype(str).str.strip()
 
@@ -51,7 +52,7 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac, port_subm
         dcadplanosac,
         how='left',
         left_on='CODCLI',
-        right_on='CODCART'
+        right_on='CODCLI_SAC'
     )
 
     #isso eh uma gambiarra

@@ -669,8 +669,14 @@ def compute_plan_returns_adjust(debug_cfg, tree_hrztl, dcadplanosac,
             debug_save(tree_returns_by_plan, 'rentab-plano-tree', debug_cfg, log)
             debug_save(plan_returns_adjust , 'rentab-plano-ajuste', debug_cfg, log)
 
-    adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'contribution_ajuste_rentab',
-                                         'contribution_ajuste_rentab_fator', 'CODCART']].copy()
+    cols_adjust = ['cnpb', 'dtposicao', 'contribution_ajuste_rentab',
+                   'contribution_ajuste_rentab_fator', 'CODCART']
+
+    adjust_rentab = plan_returns_adjust[cols_adjust].merge(
+        dcadplanosac[['CODCART', 'COD_SUBMASSA', 'SUBMASSA']],
+        on=['CODCART'],
+        how='left',
+        )
     adjust_rentab.rename(columns={'contribution_ajuste_rentab': 'contribution_rentab_ponderada'}, inplace=True)
     adjust_rentab['nivel'] = 0
     cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
