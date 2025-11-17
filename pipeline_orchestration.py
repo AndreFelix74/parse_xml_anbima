@@ -691,6 +691,8 @@ def compute_plan_returns_adjust(debug_cfg, tree_hrztl, dcadplanosac,
     for col in cols_adjust:
         adjust_rentab[col] = 'VIVEST'
 
+    adjust_rentab['CODCART'] = tree_hrztl['CODCART'].fillna('')
+
     return adjust_rentab
 
 
