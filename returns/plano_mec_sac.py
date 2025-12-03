@@ -59,8 +59,9 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac, port_subm
     #como a tabela dSubmassa soh tem os CNPBs com submassa, nao agrupa por CODCART de mecSAC
     #entao, deixamos essa informacao em branco para manter o comportamento anterior
     #a implementacao de submassa
-    mask = ~(mec_sac_dcadplanosac['CODCART'].isin(port_submassa['CODCART']))
-    mec_sac_dcadplanosac.loc[mask, 'CODCART'] = ''
+    mask = mec_sac_dcadplanosac['CODCART'].isin(port_submassa['CODCART'])
+    mask &= mec_sac_dcadplanosac['DT'].isin(port_submassa['dtposicao'])
+    mec_sac_dcadplanosac.loc[~mask, 'CODCART'] = ''
 
     mec_sac_dcadplanosac['TOTAL_PL_MEC_SAC'] = (
         mec_sac_dcadplanosac.groupby(['CNPB', 'CODCART', 'DT'])['VL_PATRLIQTOT1']
