@@ -480,7 +480,7 @@ def validate_fund_graph_is_acyclic(funds):
         raise ValueError(f"Cycle detected in fund relationships: {cycle}") from excpt
 
 
-def assign_returns(entity, isin_returns):
+def assign_returns(entity, isin_returns, entity_key):
     """
     Assigns return values to a fund or portfolio DataFrame using ISIN and date of position.
     For assets of type 'OVER', the return is manually calculated using the ratio between 
@@ -495,6 +495,10 @@ def assign_returns(entity, isin_returns):
     Returns:
         pd.DataFrame: The updated entity DataFrame with the 'rentab' column assigned accordingly.
     """
+    entity.sort_values(by=entity_key + ['isin', 'dtposicao'], inplace=True)
+    pct = entity.groupby(entity_key + ['isin'])['puposicao'].pct_change(fill_method=None)
+    entity['rentab'] = pct.round(8)
+    return
     entity = entity.merge(
         isin_returns[['isin', 'dtposicao', 'rentab']],
         on=['isin', 'dtposicao'],
@@ -652,8 +656,8 @@ def run_pipeline():
     isin_returns['isin'] = isin_returns['isin'].astype(str)
     isin_returns['rentab'] = isin_returns['rentab'].astype(float)
 
-    funds = assign_returns(funds, isin_returns)
-    portfolios = assign_returns(portfolios, isin_returns)
+    assign_returns(funds, isin_returns, ['cnpj'])
+    assign_returns(portfolios, isin_returns, ['cnpjcpf', 'codcart', 'cnpb'])
 
     tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
     adjust_rentab = compute_plan_returns_adjust(intermediate_cfg, tree_hrztl,
