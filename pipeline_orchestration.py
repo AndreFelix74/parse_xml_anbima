@@ -253,7 +253,18 @@ def merge_aux_data(cleaned, dcadplano, aux_asset, cad_fi_cvm, col_join_cad_fi_cv
     )
 
 
-def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys):
+def create_numeric_fields_set(funds_dtypes, port_dtypes):
+    numeric_types = ['float64', 'int64', 'float', 'int']
+    return (
+        {field for field, dtype in funds_dtypes.items()
+        if dtype in numeric_types}
+        |
+        {field for field, dtype in port_dtypes.items()
+        if dtype in numeric_types}
+    )
+
+
+def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys, numeric_fields):
     with log_timing('parse', 'find_xml_files') as log:
         all_xml_files = find_all_files(xml_source_path, '.xml')
         xml_files_to_process, xml_discarted = select_latest_xml_by_cnpj_and_date(all_xml_files)
@@ -268,7 +279,10 @@ def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys):
 
     with log_timing('parse', 'paser_xml_content') as log:
         with multiprocessing.Pool(processes=processes) as pool:
-            parsed_content = pool.map(parser.parse_file, xml_files_to_process)
+            parsed_content = pool.starmap(parser.parse_file, [
+                (file, numeric_fields)
+                for file in xml_files_to_process
+            ])
 
     with log_timing('parse', 'convert_to_pandas') as log:
         funds_list, portfolios_list = parser.split_funds_and_portfolios(parsed_content)
@@ -284,11 +298,8 @@ def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys):
 
 
 def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
-                          types_series, harmonization_rules):
+                          types_series, harmonization_rules, funds_dtypes, port_dtypes):
     with log_timing('clean', 'clean_and_prepare'):
-        funds_dtypes = dta.read('fundos_metadata')
-        port_dtypes = dta.read('carteiras_metadata')
-
         funds = cleaner.clean_data(funds, funds_dtypes, types_to_exclude,
                                    types_series, harmonization_rules)
 
@@ -617,21 +628,24 @@ def run_pipeline():
 
     setup_folders([xlsx_destination_path])
 
+    funds_dtypes = dta.read('fundos_metadata')
+    port_dtypes = dta.read('carteiras_metadata')
+
     header_daily_values = dta.read('header_daily_values')
     daily_keys = header_daily_values.keys()
     types_series = [key for key, value in header_daily_values.items() if value.get('serie', False)]
 
     processes = min(8, multiprocessing.cpu_count())
-
+    numeric_fields = create_numeric_fields_set(funds_dtypes, port_dtypes)
     funds, portfolios = parse_files(intermediate_cfg, xml_source_path,
-                                    processes, daily_keys)
+                                    processes, daily_keys, numeric_fields)
 
     types_to_exclude = dta.read('types_to_exclude')
     harmonization_rules = dta.read('harmonization_values_rules')
 
     funds, portfolios = clean_and_prepare_raw(intermediate_cfg, funds, portfolios,
                                               types_to_exclude, types_series,
-                                              harmonization_rules)
+                                              harmonization_rules, funds_dtypes, port_dtypes)
 
     check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
     check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
