@@ -204,8 +204,9 @@ def convert_entity_to_dataframe(entity_data, entity_name, daily_keys):
         pd.DataFrame: DataFrame convertido.
     """
     non_propagated_header_keys = ['isin']
-    dataframe = parser.convert_to_dataframe(entity_data, daily_keys, non_propagated_header_keys)
+    entity_rows = parser.flatten_data(entity_data, daily_keys, non_propagated_header_keys)
 
+    dataframe = pd.DataFrame(entity_rows)
     dtypes_dict = dataframe.dtypes.apply(lambda x: x.name).to_dict()
     dta.create_if_not_exists(f"{entity_name}_metadata", dtypes_dict)
 

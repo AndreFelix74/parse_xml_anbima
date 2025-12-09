@@ -10,7 +10,6 @@ Created on Thu Dec 26 10:54:51 2024
 import xml.etree.ElementTree as ET
 import re
 from collections import defaultdict
-import pandas as pd
 
 
 def parse_decimal_value(value):
@@ -193,4 +192,4 @@ def convert_to_dataframe(data_list, daily_keys, non_propagated_header_keys):
                 row = {**header_fixed_info, **entry, 'tipo': tp_atv}
                 all_rows.append(row)
 
-    return pd.DataFrame(all_rows)
+    return all_rows
