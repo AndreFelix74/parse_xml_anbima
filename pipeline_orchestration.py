@@ -146,12 +146,12 @@ def load_mecsac(mec_source_path, processes):
             total=len(all_mecsac_files),
         )
 
-    with log_timing('load', 'load_mecsac_content') as log:
+    with log_timing('load', 'load_mecsac_content'):
         with ProcessPoolExecutor(max_workers=processes) as executor:
             dfs = list(executor.map(aux_loader.load_mecsac_file,
                                     all_mecsac_files))
 
-    mec_sac = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+        mec_sac = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
     return mec_sac
 
@@ -277,14 +277,14 @@ def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys, numeri
             dados=[{"nome_arquivo_descartado": nome} for nome in xml_discarted]
         )
 
-    with log_timing('parse', 'paser_xml_content') as log:
+    with log_timing('parse', 'paser_xml_content'):
         with multiprocessing.Pool(processes=processes) as pool:
             parsed_content = pool.starmap(parser.parse_file, [
                 (file, numeric_fields)
                 for file in xml_files_to_process
             ])
 
-    with log_timing('parse', 'convert_to_pandas') as log:
+    with log_timing('parse', 'convert_to_pandas'):
         funds_list, portfolios_list = parser.split_funds_and_portfolios(parsed_content)
         funds = convert_entity_to_dataframe(funds_list, 'fundos', daily_keys)
         portfolios = convert_entity_to_dataframe(portfolios_list, 'carteiras', daily_keys)
@@ -376,7 +376,7 @@ def check_values_integrity(intermediate_cfg, entity, entity_name, invested, grou
     investor_holdings_cols = ['cnpjfundo', 'qtdisponivel', 'dtposicao', 'isin',
                               'nome', 'puposicao']
 
-    with log_timing('check', f"check_puposicao_consistency_{entity_name}") as log:
+    with log_timing('check', f"puposicao_consistency_{entity_name}") as log:
         investor_holdings = entity[entity['cnpjfundo'].notnull()][investor_holdings_cols].copy()
         divergent_puposicao = checker.check_puposicao(investor_holdings, invested)
 
@@ -386,7 +386,7 @@ def check_values_integrity(intermediate_cfg, entity, entity_name, invested, grou
                               f"{entity_name}_puposicao_divergente",
                               intermediate_cfg, log)
 
-    with log_timing('check', f"check_pl_consistency_{entity_name}") as log:
+    with log_timing('check', f"pl_consistency_{entity_name}") as log:
         divergent_pl = checker.check_composition_consistency(entity, group_keys, 0.01 / 100.0)
 
         if not divergent_pl.empty:
@@ -396,29 +396,31 @@ def check_values_integrity(intermediate_cfg, entity, entity_name, invested, grou
 
 
 def explode_partplanprev(intermediate_cfg, portfolios):
-    with log_timing('enrich', 'explode_partplanprev') as log:
+    with log_timing('enrich', 'explode_partplanprev'):
         allocated_partplanprev = crt.explode_partplanprev_and_allocate(portfolios)
         if allocated_partplanprev is None:
             return portfolios
 
-    portfolios = crt.integrate_allocated_partplanprev(portfolios, allocated_partplanprev)
+        portfolios = crt.integrate_allocated_partplanprev(portfolios, allocated_partplanprev)
 
     if intermediate_cfg['save']:
         with log_timing('enrich', 'save_exploded_partplanprev') as log:
             save_intermediate(portfolios, 'carterias-exploded', intermediate_cfg, log)
 
-    mask = portfolios['tipo'] == 'partplanprev'
-    mask |= portfolios['flag_rateio'] == 1
+    with log_timing('enrich', 'remove_partplanprev'):
+        mask = portfolios['tipo'] == 'partplanprev'
+        mask |= portfolios['flag_rateio'] == 1
+
     return portfolios[~mask]
 
 
 def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
            new_tipo_rules, gestor_name_stopwords, name_standardization_rules):
 
-    with log_timing('enrich', 'load_aux_data') as log:
+    with log_timing('enrich', 'load_aux_data'):
         aux_data = aux_loader.load_enrich_auxiliary_data(data_aux_path)
 
-    with log_timing('enrich', 'merge_aux_data') as log:
+    with log_timing('enrich', 'merge_aux_data'):
         portfolios = merge_aux_data(
             portfolios,
             aux_data['dcadplano'],
@@ -457,10 +459,11 @@ def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
 
 
 def compute_metrics(funds, portfolios, types_series):
-    metrics.compute(funds, funds, types_series, ['cnpj'])
+    with log_timing('enrich', 'compute_metrics'):
+        metrics.compute(funds, funds, types_series, ['cnpj'])
 
-    group_keys_port = ['cnpjcpf', 'codcart', 'dtposicao', 'nome', 'cnpb']
-    metrics.compute(portfolios, funds, types_series, group_keys_port)
+        group_keys_port = ['cnpjcpf', 'codcart', 'dtposicao', 'nome', 'cnpb']
+        metrics.compute(portfolios, funds, types_series, group_keys_port)
 
 
 def validate_fund_graph_is_acyclic(funds):
@@ -475,21 +478,22 @@ def validate_fund_graph_is_acyclic(funds):
     Raises:
         ValueError: If a cycle is detected in the graph of fund relationships.
     """
-    edges = (
-        funds[['cnpjfundo', 'cnpj']]
-        .dropna()
-        .drop_duplicates()
-        .values
-        .tolist()
-    )
-    graph = nx.DiGraph()
-    graph.add_edges_from(edges)
+    with log_timing('check', 'acyclic_graph'):
+        edges = (
+            funds[['cnpjfundo', 'cnpj']]
+            .dropna()
+            .drop_duplicates()
+            .values
+            .tolist()
+        )
+        graph = nx.DiGraph()
+        graph.add_edges_from(edges)
 
-    try:
-        nx.algorithms.dag.topological_sort(graph)
-    except nx.NetworkXUnfeasible as excpt:
-        cycle = nx.find_cycle(graph, orientation='original')
-        raise ValueError(f"Cycle detected in fund relationships: {cycle}") from excpt
+        try:
+            nx.algorithms.dag.topological_sort(graph)
+        except nx.NetworkXUnfeasible as excpt:
+            cycle = nx.find_cycle(graph, orientation='original')
+            raise ValueError(f"Cycle detected in fund relationships: {cycle}") from excpt
 
 
 def assign_returns(entity, isin_returns, entity_key):
@@ -507,24 +511,19 @@ def assign_returns(entity, isin_returns, entity_key):
     Returns:
         pd.DataFrame: The updated entity DataFrame with the 'rentab' column assigned accordingly.
     """
-    entity.sort_values(by=entity_key + ['isin', 'dtposicao'], inplace=True)
-    pct = entity.groupby(entity_key + ['isin'])['puposicao'].pct_change(fill_method=None)
-    entity['rentab'] = pct.round(8)
-    return
-    entity = entity.merge(
-        isin_returns[['isin', 'dtposicao', 'rentab']],
-        on=['isin', 'dtposicao'],
-        how='left',
-        suffixes=['', '_rentab']
-    )
+    with log_timing('enrich', 'assing_returns'):
+        entity.sort_values(by=entity_key + ['isin', 'dtposicao'], inplace=True)
+        pct = entity.groupby(entity_key + ['isin'])['puposicao'].pct_change(fill_method=None)
+        entity['rentab'] = pct.round(8)
 
-    mask_over = entity['NEW_TIPO'] == 'OVER'
+    with log_timing('enrich', 'assing_returns_over'):
+        mask_over = entity['NEW_TIPO'] == 'OVER'
 
-    if mask_over.any():
-        entity.loc[mask_over, 'rentab'] = (
-            entity.loc[mask_over, 'compromisso_puretorno']
-            / entity.loc[mask_over, 'pucompra']
-        ) - 1
+        if mask_over.any():
+            entity.loc[mask_over, 'rentab'] = (
+                entity.loc[mask_over, 'compromisso_puretorno']
+                / entity.loc[mask_over, 'pucompra']
+            ) - 1
 
     return entity
 
@@ -586,9 +585,10 @@ def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
     with log_timing('plans_returns', 'load_dcadplanosac'):
         dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
 
-    mec_sac_returns_by_plan, tree_returns_by_plan, plan_returns_adjust = (
-        compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac)
-        )
+    with log_timing('plans_returns', 'compute_adjustment'):
+        mec_sac_returns_by_plan, tree_returns_by_plan, plan_returns_adjust = (
+            compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac)
+            )
 
     if intermediate_cfg['save']:
         with log_timing('tree', 'compute_returns_adjust') as log:
@@ -596,21 +596,22 @@ def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
             save_intermediate(tree_returns_by_plan, 'rentab-plano-tree', intermediate_cfg, log)
             save_intermediate(plan_returns_adjust , 'rentab-plano-ajuste', intermediate_cfg, log)
 
-    adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'contribution_ajuste_rentab',
-                                         'contribution_ajuste_rentab_fator']].copy()
-    adjust_rentab.rename(columns={'contribution_ajuste_rentab': 'contribution_rentab_ponderada'}, inplace=True)
-    adjust_rentab['nivel'] = 0
-    cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
-                   'NEW_NOME_ATIVO', 'SEARCH', 'NEW_TIPO_FINAL',
-                   'NEW_NOME_ATIVO_FINAL', 'isin', 'contribution_ativo', 'contribution_match']
-    for col in cols_adjust:
-        adjust_rentab[col] = '#AJUSTE'
+    with log_timing('plans_returns', 'enrich_adjustment'):
+        adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'contribution_ajuste_rentab',
+                                            'contribution_ajuste_rentab_fator']].copy()
+        adjust_rentab.rename(columns={'contribution_ajuste_rentab': 'contribution_rentab_ponderada'}, inplace=True)
+        adjust_rentab['nivel'] = 0
+        cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
+                    'NEW_NOME_ATIVO', 'SEARCH', 'NEW_TIPO_FINAL',
+                    'NEW_NOME_ATIVO_FINAL', 'isin', 'contribution_ativo', 'contribution_match']
+        for col in cols_adjust:
+            adjust_rentab[col] = '#AJUSTE'
 
-    cols_adjust = ['fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR', 'NEW_GESTOR_WORD_CLOUD',
-                   'NEW_NOME_ATIVO_FINAL', 'NEW_GESTOR_WORD_CLOUD_FINAL',
-                   'fEMISSOR.NOME_EMISSOR_FINAL']
-    for col in cols_adjust:
-        adjust_rentab[col] = 'VIVEST'
+        cols_adjust = ['fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR', 'NEW_GESTOR_WORD_CLOUD',
+                    'NEW_NOME_ATIVO_FINAL', 'NEW_GESTOR_WORD_CLOUD_FINAL',
+                    'fEMISSOR.NOME_EMISSOR_FINAL']
+        for col in cols_adjust:
+            adjust_rentab[col] = 'VIVEST'
 
     return adjust_rentab
 
@@ -650,6 +651,8 @@ def run_pipeline():
     check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
     check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
 
+    validate_fund_graph_is_acyclic(funds)
+    
     name_standardization_rules = dta.read('name_standardization_rules')
     new_tipo_rules = dta.read('enrich_de_para_tipos')
     gestor_name_stopwords = dta.read('gestor_name_stopwords')
@@ -661,8 +664,6 @@ def run_pipeline():
                                name_standardization_rules)
 
     compute_metrics(funds, portfolios, types_series)
-
-    validate_fund_graph_is_acyclic(funds)
 
     isin_returns = compute_and_persist_isin_returns(intermediate_cfg, funds,
                                                     portfolios, data_aux_path)
@@ -679,17 +680,18 @@ def run_pipeline():
                                                 data_aux_path, mec_sac_path,
                                                 processes)
 
-    tree_hrztl = tree_hrztl.merge(
-        adjust_rentab[['cnpb', 'dtposicao', 'contribution_ajuste_rentab_fator']],
-        on=['cnpb', 'dtposicao'],
-        how='left',
-        )
-    tree_hrztl['contribution_rentab_ponderada_ajustada'] = (
-        tree_hrztl['contribution_rentab_ponderada']
-        * tree_hrztl['contribution_ajuste_rentab_fator']
-        )
+    with log_timing('plans_returns', 'assing_adjustment'):
+        tree_hrztl = tree_hrztl.merge(
+            adjust_rentab[['cnpb', 'dtposicao', 'contribution_ajuste_rentab_fator']],
+            on=['cnpb', 'dtposicao'],
+            how='left',
+            )
+        tree_hrztl['contribution_rentab_ponderada_ajustada'] = (
+            tree_hrztl['contribution_rentab_ponderada']
+            * tree_hrztl['contribution_ajuste_rentab_fator']
+            )
 
-    tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
+        tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
 
     with log_timing('finish', 'save_final_files'):
         file_frmt = intermediate_cfg['file_format']
