@@ -496,27 +496,13 @@ def validate_fund_graph_is_acyclic(funds):
             raise ValueError(f"Cycle detected in fund relationships: {cycle}") from excpt
 
 
-def assign_returns(entity, isin_returns, entity_key):
-    """
-    Assigns return values to a fund or portfolio DataFrame using ISIN and date of position.
-    For assets of type 'OVER', the return is manually calculated using the ratio between 
-    'compromisso_puretorno' and 'pucompra', minus one.
-
-    Args:
-        entity (pd.DataFrame): DataFrame representing either funds or portfolios. Must contain:
-            'isin', 'dtposicao', 'NEW_TIPO', 'pucompra', and 'compromisso_puretorno'.
-        isin_returns (pd.DataFrame): DataFrame containing return data with columns:
-            'isin', 'dtposicao', and 'rentab'.
-
-    Returns:
-        pd.DataFrame: The updated entity DataFrame with the 'rentab' column assigned accordingly.
-    """
-    with log_timing('enrich', 'assing_returns'):
+def assign_returns(entity, entity_key, entity_name):
+    with log_timing('enrich', f"assing_returns_{entity_name}"):
         entity.sort_values(by=entity_key + ['isin', 'dtposicao'], inplace=True)
         pct = entity.groupby(entity_key + ['isin'])['puposicao'].pct_change(fill_method=None)
         entity['rentab'] = pct.round(8)
 
-    with log_timing('enrich', 'assing_returns_over'):
+    with log_timing('enrich', f"assing_returns_over_{entity_name}"):
         mask_over = entity['NEW_TIPO'] == 'OVER'
 
         if mask_over.any():
@@ -665,15 +651,8 @@ def run_pipeline():
 
     compute_metrics(funds, portfolios, types_series)
 
-    isin_returns = compute_and_persist_isin_returns(intermediate_cfg, funds,
-                                                    portfolios, data_aux_path)
-
-    isin_returns['dtposicao'] = pd.to_datetime(isin_returns['dtposicao']).dt.strftime('%Y%m%d')
-    isin_returns['isin'] = isin_returns['isin'].astype(str)
-    isin_returns['rentab'] = isin_returns['rentab'].astype(float)
-
-    assign_returns(funds, isin_returns, ['cnpj'])
-    assign_returns(portfolios, isin_returns, ['cnpjcpf', 'codcart', 'cnpb'])
+    assign_returns(funds, ['cnpj'], 'fundos')
+    assign_returns(portfolios, ['cnpjcpf', 'codcart', 'cnpb'], 'carteiras')
 
     tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
     adjust_rentab = compute_plan_returns_adjust(intermediate_cfg, tree_hrztl,
