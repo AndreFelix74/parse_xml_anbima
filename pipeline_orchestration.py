@@ -314,21 +314,16 @@ def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
     return [funds, portfolios]
 
 
-def compute_and_persist_isin_returns(intermediate_cfg, funds, portfolios, data_aux_path):
-    """
-    Computes return series by ISIN and saves them to disk.
+def check_puposicao_consistency_merge(inconsistenci_data, entity, cols_entity):
+    return inconsistenci_data.merge(
+        entity[cols_entity + ['isin', 'dtposicao']],
+        on=['isin', 'dtposicao'],
+        how='inner',
+    )
 
-    This function both returns the computed DataFrame and writes it to the expected location
-    to avoid unnecessary reloading. While this violates the single responsibility principle,
-    it is intentional for performance reasons.
 
-    Returns:
-        pd.DataFrame: Return series per ISIN and date.
-    """
-    with log_timing('plan_returns', 'update_returns_by_isin_dtposicao') as log:
-        range_eom = aux_loader.load_range_eom(data_aux_path)
-        range_eom = pd.to_datetime(range_eom['DATA_POSICAO'].unique())
-
+def check_puposicao_consistency(intermediate_cfg, funds, portfolios):
+    with log_timing('check', 'puposicao_consistency') as log:
         group_cols = ['isin', 'dtposicao', 'puposicao']
         funds_mask = funds['isin'].notnull() & (funds['NEW_TIPO'] != 'OVER')
         port_mask = portfolios['isin'].notnull() & (portfolios['NEW_TIPO'] != 'OVER')
@@ -338,38 +333,36 @@ def compute_and_persist_isin_returns(intermediate_cfg, funds, portfolios, data_a
             ],
             ignore_index=True).drop_duplicates()
 
-        valid_idx, dupl_idx = validate_unique_puposicao(isin_data)
-        if len(dupl_idx) > 0:
-            cols = ['isin', 'dtposicao', 'puposicao']
-            duplicated_data = isin_data.loc[dupl_idx, cols]
-
-            log.warn(
-                'enrich',
-                message='puposicao diferente para mesmo isin e dtposicao.',
-                dados=duplicated_data.to_dict(orient='records')
-            )
-
-            save_intermediate(duplicated_data,
-                              'puposicao_divergente_mesma_data',
-                              intermediate_cfg, log)
-
-        persisted_returns = aux_loader.load_returns_by_puposicao(data_aux_path)
-
-        if intermediate_cfg['save']:
-            with log_timing('debug', 'save_isin_returns') as log:
-                save_intermediate(isin_data.loc[valid_idx], 'isin-return-xml',
-                                  intermediate_cfg, log)
-
-        updated_returns = compute_returns_from_puposicao(
-            range_date=range_eom,
-            new_data=isin_data.loc[valid_idx],
-            persisted_returns=persisted_returns
+        inconsistent_groups = (
+            isin_data.groupby(['isin', 'dtposicao'])['puposicao']
+            .nunique()
+            .reset_index()
+            .rename(columns={'puposicao': 'count_diff_puposicao'})
         )
 
-        returns_path = f"{data_aux_path}isin_rentab"
-        save_df(updated_returns, returns_path, 'xlsx')
+        inconsistent_groups = inconsistent_groups[inconsistent_groups['count_diff_puposicao'] > 1]
 
-    return updated_returns
+        if not inconsistent_groups.empty:
+            base_cols = ['nome', 'puposicao', 'NEW_NOME_ATIVO', 'NEW_TIPO']
+            inconsistent_port = check_puposicao_consistency_merge(
+                inconsistent_groups, portfolios[port_mask], ['cnpjcpf', 'codcart', 'cnpb'] + base_cols 
+                )
+            inconsistent_funds = check_puposicao_consistency_merge(
+                inconsistent_groups, funds[funds_mask], ['cnpj'] + base_cols
+                )
+            all_inconsistencies = pd.concat([inconsistent_port, inconsistent_funds], ignore_index=True)
+
+            all_inconsistencies.sort_values(['isin', 'dtposicao', 'puposicao'], inplace=True)
+
+            log.warn(
+                'check',
+                message='puposicao diferente para mesmo isin e dtposicao.',
+                dados=all_inconsistencies.to_dict(orient='records')
+            )
+
+            save_intermediate(all_inconsistencies,
+                              'puposicao_divergente_mesma_data',
+                              intermediate_cfg, log)
 
 
 def check_values_integrity(intermediate_cfg, entity, entity_name, invested, group_keys):
@@ -634,11 +627,6 @@ def run_pipeline():
                                               types_to_exclude, types_series,
                                               harmonization_rules, funds_dtypes, port_dtypes)
 
-    check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
-    check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
-
-    validate_fund_graph_is_acyclic(funds)
-    
     name_standardization_rules = dta.read('name_standardization_rules')
     new_tipo_rules = dta.read('enrich_de_para_tipos')
     gestor_name_stopwords = dta.read('gestor_name_stopwords')
@@ -648,6 +636,13 @@ def run_pipeline():
     funds, portfolios = enrich(intermediate_cfg, funds, portfolios, types_series,
                                data_aux_path, new_tipo_rules, gestor_name_stopwords,
                                name_standardization_rules)
+
+    check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
+    check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
+
+    check_puposicao_consistency(intermediate_cfg, funds, portfolios)
+
+    validate_fund_graph_is_acyclic(funds)
 
     compute_metrics(funds, portfolios, types_series)
 
