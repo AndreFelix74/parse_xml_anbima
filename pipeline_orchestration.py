@@ -277,7 +277,7 @@ def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys, numeri
             dados=[{"nome_arquivo_descartado": nome} for nome in xml_discarted]
         )
 
-    with log_timing('parse', 'paser_xml_content'):
+    with log_timing('parse', 'parse_xml_content'):
         with multiprocessing.Pool(processes=processes) as pool:
             parsed_content = pool.starmap(parser.parse_file, [
                 (file, numeric_fields)
