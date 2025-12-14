@@ -376,14 +376,14 @@ def check_values_integrity(intermediate_cfg, entity, entity_name, invested, grou
     investor_holdings_cols = ['cnpjfundo', 'qtdisponivel', 'dtposicao', 'isin',
                               'nome', 'puposicao']
 
-    with log_timing('check', f"puposicao_consistency_{entity_name}") as log:
+    with log_timing('check', f"puposicao_vs_vlcota_{entity_name}") as log:
         investor_holdings = entity[entity['cnpjfundo'].notnull()][investor_holdings_cols].copy()
-        divergent_puposicao = checker.check_puposicao(investor_holdings, invested)
+        divergent_puposicao_vlcota = checker.check_puposicao_vs_valorcota(investor_holdings, invested)
 
-        if not divergent_puposicao.empty:
-            log.warn('check', dados=divergent_puposicao.to_dict(orient="records"))
-            save_intermediate(divergent_puposicao,
-                              f"{entity_name}_puposicao_divergente",
+        if not divergent_puposicao_vlcota.empty:
+            log.warn('check', dados=divergent_puposicao_vlcota.to_dict(orient="records"))
+            save_intermediate(divergent_puposicao_vlcota,
+                              f"{entity_name}_puposicao_divergente_vlcota",
                               intermediate_cfg, log)
 
     with log_timing('check', f"pl_consistency_{entity_name}") as log:
