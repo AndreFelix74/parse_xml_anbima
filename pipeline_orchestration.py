@@ -356,8 +356,8 @@ def check_puposicao_consistency(intermediate_cfg, funds, portfolios):
 
             log.warn(
                 'check',
-                message='puposicao diferente para mesmo isin e dtposicao.',
-                dados=all_inconsistencies.to_dict(orient='records')
+                message='puposicao diferente para mesmo isin e dtposicao primeiras 100 diferencas.',
+                dados=all_inconsistencies[0:100].to_dict(orient='records')
             )
 
             save_intermediate(all_inconsistencies,
