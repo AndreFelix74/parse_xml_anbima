@@ -7,6 +7,12 @@ Created on Fri Jun  6 18:18:07 2025
 """
 
 
+"""
+DEPRECATED: This module is no longer used.
+Returns are now calculated directly in the funds and portfolios position dataframes in the orchestrator.
+"""
+
+
 import pandas as pd
 
 
