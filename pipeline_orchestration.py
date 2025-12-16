@@ -692,6 +692,23 @@ def compute_plan_returns_adjust(debug_cfg, tree_hrztl, dcadplanosac,
         return adjust_rentab
 
 
+def assign_adjustments(tree_hrztl, adjust_rentab):
+    with log_timing('plans_returns', 'assign_adjustment'):
+        tree_hrztl = tree_hrztl.merge(
+            adjust_rentab[['cnpb', 'dtposicao', 'contribution_ajuste_rentab_fator']],
+            on=['cnpb', 'dtposicao'],
+            how='left',
+            )
+        tree_hrztl['contribution_rentab_ponderada_ajustada'] = (
+            tree_hrztl['contribution_rentab_ponderada']
+            * tree_hrztl['contribution_ajuste_rentab_fator']
+            )
+
+        tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
+
+    return tree_hrztl
+
+
 def run_pipeline():
     locale.setlocale(locale.LC_ALL, '')
 
@@ -765,18 +782,7 @@ def run_pipeline():
                                                 db_aux['dcadplanosac'], mec_sac_path,
                                                 processes, port_submassa)
 
-    with log_timing('plans_returns', 'assing_adjustment'):
-        tree_hrztl = tree_hrztl.merge(
-            adjust_rentab[['cnpb', 'dtposicao', 'contribution_ajuste_rentab_fator']],
-            on=['cnpb', 'dtposicao'],
-            how='left',
-            )
-        tree_hrztl['contribution_rentab_ponderada_ajustada'] = (
-            tree_hrztl['contribution_rentab_ponderada']
-            * tree_hrztl['contribution_ajuste_rentab_fator']
-            )
-
-        tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
+    tree_hrztl = assign_adjustments(tree_hrztl, adjust_rentab)
 
     with log_timing('finish', 'save_final_files'):
         save_df(portfolios, f"{destination_path}carteiras", destination_file_format)
