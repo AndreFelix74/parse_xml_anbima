@@ -573,7 +573,7 @@ def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
 
         tree_horzt_sub['COD_SUBMASSA'] = None
         tree_horzt_sub['SUBMASSA'] = None
-        tree_horzt_sub['pct_submassa_isin_cnpb'] = None
+        tree_horzt_sub['pct_submassa_isin_cnpb'] = 1.0
         tree_horzt_sub['CODCART'] = None
 
         max_depth = tree_horzt_sub['nivel'].max()
