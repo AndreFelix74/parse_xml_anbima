@@ -468,7 +468,7 @@ def enrich(debug_cfg, funds, portfolios, types_series, data_aux_path, dcadplano,
 
 
 def compute_metrics(funds, portfolios, types_series):
-    with log_timing('enrich', 'compute_metrics'):
+    with log_timing('compute', 'metrics'):
         metrics.compute(funds, funds, types_series, ['cnpj'])
 
         group_keys_port = ['cnpjcpf', 'codcart', 'dtposicao', 'nome', 'cnpb']
@@ -535,12 +535,12 @@ def validate_fund_graph_is_acyclic(funds):
 
 
 def assign_returns(entity, entity_key, entity_name):
-    with log_timing('enrich', f"assing_returns_{entity_name}"):
+    with log_timing('compute', f"returns_{entity_name}"):
         entity.sort_values(by=entity_key + ['isin', 'dtposicao'], inplace=True)
         pct = entity.groupby(entity_key + ['isin'])['puposicao'].pct_change(fill_method=None)
         entity['rentab'] = pct.round(8)
 
-    with log_timing('enrich', f"assing_returns_over_{entity_name}"):
+    with log_timing('compute', f"returns_{entity_name}_over"):
         mask_over = entity['NEW_TIPO'] == 'OVER'
 
         if mask_over.any():
