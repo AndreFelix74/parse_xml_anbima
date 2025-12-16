@@ -10,7 +10,6 @@ Created on Thu Dec 26 10:54:51 2024
 import xml.etree.ElementTree as ET
 import re
 from collections import defaultdict
-import pandas as pd
 
 
 def parse_decimal_value(value):
@@ -44,7 +43,7 @@ def parse_decimal_value(value):
     return value
 
 
-def parse_file(file_name):
+def parse_file(file_name, numeric_fileds):
     """
     Parse the contents of an XML file and extract its structured data.
 
@@ -62,10 +61,10 @@ def parse_file(file_name):
     if root.find('.//header') is None:
         raise ValueError('header not found')
 
-    return extract_node_data(root)
+    return extract_node_data(root, numeric_fileds)
 
 
-def extract_node_data(root):
+def extract_node_data(root, numeric_fileds):
     """
     Traverse the XML tree and extract structured data,
     including special handling for nested tags such as <compromisso> inside <titulopublico>.
@@ -76,29 +75,29 @@ def extract_node_data(root):
     Returns:
         defaultdict: Dictionary mapping each tag to a list of extracted records.
     """
-    inline_hildren = {
+    inline_children = {
         'titpublico': {'compromisso'},
     }
 
     data = defaultdict(list)
 
-    for parent in root.findall(".//*"):
+    for parent in root.findall("./*"):
         for child in parent:
-            if len(child) == 0:
-                continue
-
-            if child.tag in inline_hildren.get(parent.tag, set()):
-                continue
-
             node_data = {}
 
             for subchild in child:
-                if subchild.tag in inline_hildren.get(child.tag, set()):
+                if subchild.tag in inline_children.get(child.tag, set()):
                     for nested in subchild:
                         key = f"{subchild.tag}_{nested.tag}"
-                        node_data[key] = parse_decimal_value(nested.text)
+                        if key in numeric_fileds:
+                            node_data[key] = parse_decimal_value(nested.text)
+                        else:
+                            node_data[key] = nested.text.strip() if nested.text else None
                 else:
-                    node_data[subchild.tag] = parse_decimal_value(subchild.text)
+                    if child.tag in numeric_fileds:
+                        node_data[subchild.tag] = parse_decimal_value(subchild.text)
+                    else:
+                        node_data[subchild.tag] = subchild.text.strip() if subchild.text else None
 
             data[child.tag].append(node_data)
 
@@ -164,7 +163,7 @@ def split_header(header, daily_keys):
     return fund_info, daily_info
 
 
-def normalize_data(data_list, daily_keys, non_propagated_header_keys):
+def flatten_data(data_list, daily_keys, non_propagated_header_keys):
     """
     Normalize structured fund/portfolio data into a list of dictionaries.
 

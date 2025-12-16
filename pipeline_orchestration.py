@@ -146,12 +146,12 @@ def load_mecsac(mec_source_path, processes):
             total=len(all_mecsac_files),
         )
 
-    with log_timing('load', 'load_mecsac_content') as log:
+    with log_timing('load', 'load_mecsac_content'):
         with ProcessPoolExecutor(max_workers=processes) as executor:
             dfs = list(executor.map(aux_loader.load_mecsac_file,
                                     all_mecsac_files))
 
-    mec_sac = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+        mec_sac = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
     return mec_sac
 
@@ -204,9 +204,9 @@ def convert_entity_to_dataframe(entity_data, entity_name, daily_keys):
         pd.DataFrame: DataFrame convertido.
     """
     non_propagated_header_keys = ['isin']
-    normalized_data = parser.normalize_data(entity_data, daily_keys, non_propagated_header_keys)
-    dataframe = pd.DataFrame(normalized_data)
+    entity_rows = parser.flatten_data(entity_data, daily_keys, non_propagated_header_keys)
 
+    dataframe = pd.DataFrame(entity_rows)
     dtypes_dict = dataframe.dtypes.apply(lambda x: x.name).to_dict()
     dta.create_if_not_exists(f"{entity_name}_metadata", dtypes_dict)
 
@@ -253,7 +253,18 @@ def merge_aux_data(cleaned, dcadplano, aux_asset, cad_fi_cvm, col_join_cad_fi_cv
     )
 
 
-def parse_files(debug_cfg, xml_source_path, processes, daily_keys):
+def create_numeric_fields_set(funds_dtypes, port_dtypes):
+    numeric_types = ['float64', 'int64', 'float', 'int']
+    return (
+        {field for field, dtype in funds_dtypes.items()
+        if dtype in numeric_types}
+        |
+        {field for field, dtype in port_dtypes.items()
+        if dtype in numeric_types}
+    )
+
+
+def parse_files(debug_cfg, xml_source_path, processes, daily_keys, numeric_fields):
     with log_timing('parse', 'find_xml_files') as log:
         all_xml_files = find_all_files(xml_source_path, '.xml')
         xml_files_to_process, xml_discarted = select_latest_xml_by_cnpj_and_date(all_xml_files)
@@ -266,11 +277,14 @@ def parse_files(debug_cfg, xml_source_path, processes, daily_keys):
             dados=[{"nome_arquivo_descartado": nome} for nome in xml_discarted]
         )
 
-    with log_timing('parse', 'paser_xml_content') as log:
+    with log_timing('parse', 'parse_xml_content'):
         with multiprocessing.Pool(processes=processes) as pool:
-            parsed_content = pool.map(parser.parse_file, xml_files_to_process)
+            parsed_content = pool.starmap(parser.parse_file, [
+                (file, numeric_fields)
+                for file in xml_files_to_process
+            ])
 
-    with log_timing('parse', 'convert_to_pandas') as log:
+    with log_timing('parse', 'convert_to_pandas'):
         funds_list, portfolios_list = parser.split_funds_and_portfolios(parsed_content)
         funds = convert_entity_to_dataframe(funds_list, 'fundos', daily_keys)
         portfolios = convert_entity_to_dataframe(portfolios_list, 'carteiras', daily_keys)
@@ -284,11 +298,8 @@ def parse_files(debug_cfg, xml_source_path, processes, daily_keys):
 
 
 def clean_and_prepare_raw(debug_cfg, funds, portfolios, types_to_exclude,
-                          types_series, harmonization_rules):
+                          types_series, harmonization_rules, funds_dtypes, port_dtypes):
     with log_timing('clean', 'clean_and_prepare'):
-        funds_dtypes = dta.read('fundos_metadata')
-        port_dtypes = dta.read('carteiras_metadata')
-
         funds = cleaner.clean_data(funds, funds_dtypes, types_to_exclude,
                                    types_series, harmonization_rules)
 
@@ -303,20 +314,16 @@ def clean_and_prepare_raw(debug_cfg, funds, portfolios, types_to_exclude,
     return [funds, portfolios]
 
 
-def compute_and_persist_isin_returns(debug_cfg, funds, portfolios, data_aux_path, range_eom):
-    """
-    Computes return series by ISIN and saves them to disk.
+def check_puposicao_consistency_merge(inconsistenci_data, entity, cols_entity):
+    return inconsistenci_data.merge(
+        entity[cols_entity + ['isin', 'dtposicao']],
+        on=['isin', 'dtposicao'],
+        how='inner',
+    )
 
-    This function both returns the computed DataFrame and writes it to the expected location
-    to avoid unnecessary reloading. While this violates the single responsibility principle,
-    it is intentional for performance reasons.
 
-    Returns:
-        pd.DataFrame: Return series per ISIN and date.
-    """
-    with log_timing('plan_returns', 'update_returns_by_isin_dtposicao') as log:
-        range_eom = pd.to_datetime(range_eom['DATA_POSICAO'].unique())
-
+def check_puposicao_consistency(debug_cfg, funds, portfolios):
+    with log_timing('check', 'puposicao_consistency') as log:
         group_cols = ['isin', 'dtposicao', 'puposicao']
         funds_mask = funds['isin'].notnull() & (funds['NEW_TIPO'] != 'OVER')
         port_mask = portfolios['isin'].notnull() & (portfolios['NEW_TIPO'] != 'OVER')
@@ -326,53 +333,51 @@ def compute_and_persist_isin_returns(debug_cfg, funds, portfolios, data_aux_path
             ],
             ignore_index=True).drop_duplicates()
 
-        valid_idx, dupl_idx = validate_unique_puposicao(isin_data)
-        if len(dupl_idx) > 0:
-            cols = ['isin', 'dtposicao', 'puposicao']
-            duplicated_data = isin_data.loc[dupl_idx, cols]
-
-            log.warn(
-                'enrich',
-                message='puposicao diferente para mesmo isin e dtposicao.',
-                dados=duplicated_data.to_dict(orient='records')
-            )
-
-            debug_save(duplicated_data,
-                       'puposicao_divergente_mesma_data',
-                       debug_cfg, log)
-
-        persisted_returns = aux_loader.load_returns_by_puposicao(data_aux_path)
-
-        if debug_cfg['save']:
-            with log_timing('plan_returns', 'debug_save_isin_returns') as log:
-                debug_save(isin_data.loc[valid_idx], 'isin-return-xml', debug_cfg, log)
-
-        updated_returns = compute_returns_from_puposicao(
-            range_date=range_eom,
-            new_data=isin_data.loc[valid_idx],
-            persisted_returns=persisted_returns
+        inconsistent_groups = (
+            isin_data.groupby(['isin', 'dtposicao'])['puposicao']
+            .nunique()
+            .reset_index()
+            .rename(columns={'puposicao': 'count_diff_puposicao'})
         )
 
-        if debug_cfg['save']:
-            returns_path = f"{data_aux_path}isin_rentab"
-            save_df(updated_returns, returns_path, 'xlsx')
+        inconsistent_groups = inconsistent_groups[inconsistent_groups['count_diff_puposicao'] > 1]
 
-    return updated_returns
+        if not inconsistent_groups.empty:
+            base_cols = ['nome', 'puposicao', 'NEW_NOME_ATIVO', 'NEW_TIPO']
+            inconsistent_port = check_puposicao_consistency_merge(
+                inconsistent_groups, portfolios[port_mask], ['cnpjcpf', 'codcart', 'cnpb'] + base_cols 
+                )
+            inconsistent_funds = check_puposicao_consistency_merge(
+                inconsistent_groups, funds[funds_mask], ['cnpj'] + base_cols
+                )
+            all_inconsistencies = pd.concat([inconsistent_port, inconsistent_funds], ignore_index=True)
+
+            all_inconsistencies.sort_values(['isin', 'dtposicao', 'puposicao'], inplace=True)
+
+            log.warn(
+                'check',
+                message='puposicao diferente para mesmo isin e dtposicao primeiras 100 diferencas.',
+                dados=all_inconsistencies[0:100].to_dict(orient='records')
+            )
+
+            debug_save(all_inconsistencies, 'puposicao_divergente_mesma_data', debug_cfg, log)
 
 
 def check_values_integrity(debug_cfg, entity, entity_name, invested, group_keys):
     investor_holdings_cols = ['cnpjfundo', 'qtdisponivel', 'dtposicao', 'isin',
                               'nome', 'puposicao']
 
-    with log_timing('check', f"check_puposicao_consistency_{entity_name}") as log:
+    with log_timing('check', f"puposicao_vs_vlcota_{entity_name}") as log:
         investor_holdings = entity[entity['cnpjfundo'].notnull()][investor_holdings_cols].copy()
-        divergent_puposicao = checker.check_puposicao(investor_holdings, invested)
+        divergent_puposicao_vlcota = checker.check_puposicao_vs_valorcota(investor_holdings, invested)
 
-        if not divergent_puposicao.empty:
-            log.warn('check', dados=divergent_puposicao.to_dict(orient="records"))
-            debug_save(divergent_puposicao, f"{entity_name}_puposicao_divergente", debug_cfg, log)
+        if not divergent_puposicao_vlcota.empty:
+            log.warn('check', dados=divergent_puposicao_vlcota.to_dict(orient="records"))
+            debug_save(divergent_puposicao_vlcota,
+                       f"{entity_name}_puposicao_divergente_vlcota",
+                       debug_cfg, log)
 
-    with log_timing('check', f"check_pl_consistency_{entity_name}") as log:
+    with log_timing('check', f"pl_consistency_{entity_name}") as log:
         divergent_pl = checker.check_composition_consistency(entity, group_keys, 0.01 / 100.0)
 
         if not divergent_pl.empty:
@@ -381,19 +386,20 @@ def check_values_integrity(debug_cfg, entity, entity_name, invested, group_keys)
 
 
 def explode_partplanprev(debug_cfg, portfolios):
-    with log_timing('enrich', 'explode_partplanprev') as log:
+    with log_timing('enrich', 'explode_partplanprev'):
         allocated_partplanprev = crt.explode_partplanprev_and_allocate(portfolios)
         if allocated_partplanprev is None:
             return portfolios
 
-    portfolios = crt.integrate_allocated_partplanprev(portfolios, allocated_partplanprev)
+        portfolios = crt.integrate_allocated_partplanprev(portfolios, allocated_partplanprev)
 
     if debug_cfg['save']:
         with log_timing('enrich', 'debug_save_exploded_partplanprev') as log:
             debug_save(portfolios, 'carterias-exploded', debug_cfg, log)
 
-    mask = portfolios['tipo'] == 'partplanprev'
-    mask |= portfolios['flag_rateio'] == 1
+    with log_timing('enrich', 'remove_partplanprev'):
+        mask = portfolios['tipo'] == 'partplanprev'
+        mask |= portfolios['flag_rateio'] == 1
 
     return portfolios[~mask]
 
@@ -401,10 +407,10 @@ def explode_partplanprev(debug_cfg, portfolios):
 def enrich(debug_cfg, funds, portfolios, types_series, data_aux_path, dcadplano,
            new_tipo_rules, gestor_name_stopwords, name_standardization_rules):
 
-    with log_timing('enrich', 'load_aux_data') as log:
+    with log_timing('enrich', 'load_aux_data'):
         aux_data = aux_loader.load_enrich_auxiliary_data(data_aux_path)
 
-    with log_timing('enrich', 'merge_aux_data') as log:
+    with log_timing('enrich', 'merge_aux_data'):
         portfolios = merge_aux_data(
             portfolios,
             dcadplano,
@@ -443,10 +449,11 @@ def enrich(debug_cfg, funds, portfolios, types_series, data_aux_path, dcadplano,
 
 
 def compute_metrics(funds, portfolios, types_series):
-    metrics.compute(funds, funds, types_series, ['cnpj'])
+    with log_timing('enrich', 'compute_metrics'):
+        metrics.compute(funds, funds, types_series, ['cnpj'])
 
-    group_keys_port = ['cnpjcpf', 'codcart', 'dtposicao', 'nome', 'cnpb']
-    metrics.compute(portfolios, funds, types_series, group_keys_port)
+        group_keys_port = ['cnpjcpf', 'codcart', 'dtposicao', 'nome', 'cnpb']
+        metrics.compute(portfolios, funds, types_series, group_keys_port)
 
 
 def extract_portfolio_submassa(debug_cfg, cad_submassa, portfolios):
@@ -494,52 +501,38 @@ def validate_fund_graph_is_acyclic(funds):
     Raises:
         ValueError: If a cycle is detected in the graph of fund relationships.
     """
-    edges = (
-        funds[['cnpjfundo', 'cnpj']]
-        .dropna()
-        .drop_duplicates()
-        .values
-        .tolist()
-    )
-    graph = nx.DiGraph()
-    graph.add_edges_from(edges)
+    with log_timing('check', 'acyclic_graph'):
+        edges = (
+            funds[['cnpjfundo', 'cnpj']]
+            .dropna()
+            .drop_duplicates()
+            .values
+            .tolist()
+        )
+        graph = nx.DiGraph()
+        graph.add_edges_from(edges)
 
-    try:
-        nx.algorithms.dag.topological_sort(graph)
-    except nx.NetworkXUnfeasible as excpt:
-        cycle = nx.find_cycle(graph, orientation='original')
-        raise ValueError(f"Cycle detected in fund relationships: {cycle}") from excpt
+        try:
+            nx.algorithms.dag.topological_sort(graph)
+        except nx.NetworkXUnfeasible as excpt:
+            cycle = nx.find_cycle(graph, orientation='original')
+            raise ValueError(f"Cycle detected in fund relationships: {cycle}") from excpt
 
 
-def assign_returns(entity, isin_returns):
-    """
-    Assigns return values to a fund or portfolio DataFrame using ISIN and date of position.
-    For assets of type 'OVER', the return is manually calculated using the ratio between 
-    'compromisso_puretorno' and 'pucompra', minus one.
+def assign_returns(entity, entity_key, entity_name):
+    with log_timing('enrich', f"assing_returns_{entity_name}"):
+        entity.sort_values(by=entity_key + ['isin', 'dtposicao'], inplace=True)
+        pct = entity.groupby(entity_key + ['isin'])['puposicao'].pct_change(fill_method=None)
+        entity['rentab'] = pct.round(8)
 
-    Args:
-        entity (pd.DataFrame): DataFrame representing either funds or portfolios. Must contain:
-            'isin', 'dtposicao', 'NEW_TIPO', 'pucompra', and 'compromisso_puretorno'.
-        isin_returns (pd.DataFrame): DataFrame containing return data with columns:
-            'isin', 'dtposicao', and 'rentab'.
+    with log_timing('enrich', f"assing_returns_over_{entity_name}"):
+        mask_over = entity['NEW_TIPO'] == 'OVER'
 
-    Returns:
-        pd.DataFrame: The updated entity DataFrame with the 'rentab' column assigned accordingly.
-    """
-    entity = entity.merge(
-        isin_returns[['isin', 'dtposicao', 'rentab']],
-        on=['isin', 'dtposicao'],
-        how='left',
-        suffixes=['', '_rentab']
-    )
-
-    mask_over = entity['NEW_TIPO'] == 'OVER'
-
-    if mask_over.any():
-        entity.loc[mask_over, 'rentab'] = (
-            entity.loc[mask_over, 'compromisso_puretorno']
-            / entity.loc[mask_over, 'pucompra']
-        ) - 1
+        if mask_over.any():
+            entity.loc[mask_over, 'rentab'] = (
+                entity.loc[mask_over, 'compromisso_puretorno']
+                / entity.loc[mask_over, 'pucompra']
+            ) - 1
 
     return entity
 
@@ -659,9 +652,10 @@ def compute_plan_returns_adjust(debug_cfg, tree_hrztl, dcadplanosac,
                                 mec_sac_path, processes, port_submassa):
     mec_sac = load_mecsac(mec_sac_path, processes)
 
-    mec_sac_returns_by_plan, tree_returns_by_plan, plan_returns_adjust = (
-        compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac, port_submassa)
-        )
+    with log_timing('plans_returns', 'compute_adjustment'):
+        mec_sac_returns_by_plan, tree_returns_by_plan, plan_returns_adjust = (
+            compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac, port_submassa)
+            )
 
     if debug_cfg['save']:
         with log_timing('tree', 'debug_save_compute_returns_adjust') as log:
@@ -669,31 +663,33 @@ def compute_plan_returns_adjust(debug_cfg, tree_hrztl, dcadplanosac,
             debug_save(tree_returns_by_plan, 'rentab-plano-tree', debug_cfg, log)
             debug_save(plan_returns_adjust , 'rentab-plano-ajuste', debug_cfg, log)
 
-    cols_adjust = ['cnpb', 'dtposicao', 'contribution_ajuste_rentab',
+    with log_timing('plans_returns', 'enrich_adjustment'):
+
+        cols_adjust = ['cnpb', 'dtposicao', 'contribution_ajuste_rentab',
                    'contribution_ajuste_rentab_fator', 'CODCART']
 
-    adjust_rentab = plan_returns_adjust[cols_adjust].merge(
-        dcadplanosac[['CODCART', 'COD_SUBMASSA', 'SUBMASSA']],
-        on=['CODCART'],
-        how='left',
-        )
-    adjust_rentab.rename(columns={'contribution_ajuste_rentab': 'contribution_rentab_ponderada'}, inplace=True)
-    adjust_rentab['nivel'] = 0
-    cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
-                   'NEW_NOME_ATIVO', 'SEARCH', 'NEW_TIPO_FINAL',
-                   'NEW_NOME_ATIVO_FINAL', 'isin', 'contribution_ativo', 'contribution_match']
-    for col in cols_adjust:
-        adjust_rentab[col] = '#AJUSTE'
+        adjust_rentab = plan_returns_adjust[cols_adjust].merge(
+            dcadplanosac[['CODCART', 'COD_SUBMASSA', 'SUBMASSA']],
+            on=['CODCART'],
+            how='left',
+            )
+        adjust_rentab.rename(columns={'contribution_ajuste_rentab': 'contribution_rentab_ponderada'}, inplace=True)
+        adjust_rentab['nivel'] = 0
+        cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
+                    'NEW_NOME_ATIVO', 'SEARCH', 'NEW_TIPO_FINAL',
+                    'NEW_NOME_ATIVO_FINAL', 'isin', 'contribution_ativo', 'contribution_match']
+        for col in cols_adjust:
+            adjust_rentab[col] = '#AJUSTE'
 
-    cols_adjust = ['fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR', 'NEW_GESTOR_WORD_CLOUD',
-                   'NEW_NOME_ATIVO_FINAL', 'NEW_GESTOR_WORD_CLOUD_FINAL',
-                   'fEMISSOR.NOME_EMISSOR_FINAL']
-    for col in cols_adjust:
-        adjust_rentab[col] = 'VIVEST'
+        cols_adjust = ['fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR', 'NEW_GESTOR_WORD_CLOUD',
+                    'NEW_NOME_ATIVO_FINAL', 'NEW_GESTOR_WORD_CLOUD_FINAL',
+                    'fEMISSOR.NOME_EMISSOR_FINAL']
+        for col in cols_adjust:
+            adjust_rentab[col] = 'VIVEST'
 
-    adjust_rentab['CODCART'] = tree_hrztl['CODCART'].fillna('')
+        adjust_rentab['CODCART'] = tree_hrztl['CODCART'].fillna('')
 
-    return adjust_rentab
+        return adjust_rentab
 
 
 def run_pipeline():
@@ -713,23 +709,24 @@ def run_pipeline():
     with log_timing('load', 'load_dbaux'):
         db_aux = aux_loader.load_dbaux(data_aux_path)
 
+    funds_dtypes = dta.read('fundos_metadata')
+    port_dtypes = dta.read('carteiras_metadata')
+
     header_daily_values = dta.read('header_daily_values')
     daily_keys = header_daily_values.keys()
     types_series = [key for key, value in header_daily_values.items() if value.get('serie', False)]
 
     processes = min(8, multiprocessing.cpu_count())
-
-    funds, portfolios = parse_files(debug_cfg, xml_source_path, processes, daily_keys)
+    numeric_fields = create_numeric_fields_set(funds_dtypes, port_dtypes)
+    funds, portfolios = parse_files(debug_cfg, xml_source_path,
+                                    processes, daily_keys, numeric_fields)
 
     types_to_exclude = dta.read('types_to_exclude')
     harmonization_rules = dta.read('harmonization_values_rules')
 
     funds, portfolios = clean_and_prepare_raw(debug_cfg, funds, portfolios,
                                               types_to_exclude, types_series,
-                                              harmonization_rules)
-
-    check_values_integrity(debug_cfg, funds, 'fundos', funds, ['cnpj'])
-    check_values_integrity(debug_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
+                                              harmonization_rules, funds_dtypes, port_dtypes)
 
     name_standardization_rules = dta.read('name_standardization_rules')
     new_tipo_rules = dta.read('enrich_de_para_tipos')
@@ -741,19 +738,17 @@ def run_pipeline():
                                db_aux['dcadplano'], new_tipo_rules, gestor_name_stopwords,
                                name_standardization_rules)
 
-    compute_metrics(funds, portfolios, types_series)
+    check_values_integrity(debug_cfg, funds, 'fundos', funds, ['cnpj'])
+    check_values_integrity(debug_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
+
+    check_puposicao_consistency(debug_cfg, funds, portfolios)
 
     validate_fund_graph_is_acyclic(funds)
 
-    isin_returns = compute_and_persist_isin_returns(debug_cfg, funds, portfolios,
-                                                    data_aux_path, db_aux['range_eom'])
+    compute_metrics(funds, portfolios, types_series)
 
-    isin_returns['dtposicao'] = pd.to_datetime(isin_returns['dtposicao']).dt.strftime('%Y%m%d')
-    isin_returns['isin'] = isin_returns['isin'].astype(str)
-    isin_returns['rentab'] = isin_returns['rentab'].astype(float)
-
-    funds = assign_returns(funds, isin_returns)
-    portfolios = assign_returns(portfolios, isin_returns)
+    assign_returns(funds, ['cnpj'], 'fundos')
+    assign_returns(portfolios, ['cnpjcpf', 'codcart', 'cnpb'], 'carteiras')
 
     [portfolios, port_submassa] = extract_portfolio_submassa(debug_cfg, db_aux['dcadsubmassa'], portfolios)
     compute_composition_portfolio_submassa(debug_cfg, port_submassa)
@@ -770,17 +765,18 @@ def run_pipeline():
                                                 db_aux['dcadplanosac'], mec_sac_path,
                                                 processes, port_submassa)
 
-    tree_hrztl = tree_hrztl.merge(
-        adjust_rentab[['cnpb', 'CODCART', 'dtposicao', 'contribution_ajuste_rentab_fator']],
-        on=['cnpb', 'CODCART', 'dtposicao'],
-        how='left',
-        )
-    tree_hrztl['contribution_rentab_ponderada_ajustada'] = (
-        tree_hrztl['contribution_rentab_ponderada']
-        * tree_hrztl['contribution_ajuste_rentab_fator']
-        )
+    with log_timing('plans_returns', 'assing_adjustment'):
+        tree_hrztl = tree_hrztl.merge(
+            adjust_rentab[['cnpb', 'dtposicao', 'contribution_ajuste_rentab_fator']],
+            on=['cnpb', 'dtposicao'],
+            how='left',
+            )
+        tree_hrztl['contribution_rentab_ponderada_ajustada'] = (
+            tree_hrztl['contribution_rentab_ponderada']
+            * tree_hrztl['contribution_ajuste_rentab_fator']
+            )
 
-    tree_hrztl = pd.concat([tree_hrztl, adjust_rentab], ignore_index=True)
+        tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
 
     with log_timing('finish', 'save_final_files'):
         save_df(portfolios, f"{destination_path}carteiras", destination_file_format)
