@@ -48,7 +48,20 @@ def setup_folders(paths):
             os.makedirs(path)
 
 
-def debug_save(dtfrm, filename, config, log):
+def _save_file_with_run_id(dtfrm, filename, root_path, file_fmt, log, log_msg_key):
+    """
+    Helper function to save a DataFrame to a RUN_ID subfolder.
+    """
+    run_folder = os.path.join(root_path, RUN_ID)
+    os.makedirs(run_folder, exist_ok=True)
+
+    full_path = os.path.join(run_folder, filename)
+    save_df(dtfrm, full_path, file_fmt)
+
+    log.info(log_msg_key, arquivo=f"{full_path}.{file_fmt}")
+
+
+def debug_save(dtfrm, filename, config, timing_msg, timing_detail_msg):
     """
     Saves an intermediate DataFrame to a unique RUN_ID subfolder.
 
@@ -63,11 +76,6 @@ def debug_save(dtfrm, filename, config, log):
     run_id : str
         Unique identifier for this pipeline execution.
 
-    Returns
-    -------
-    str
-        Full path of saved file.
-
     Raises
     ------
     KeyError
@@ -75,13 +83,33 @@ def debug_save(dtfrm, filename, config, log):
     ValueError
         If file writing is disabled by configuration.
     """
-    run_folder = os.path.join(config['output_path'], RUN_ID)
-    os.makedirs(run_folder, exist_ok=True)
+    if not config['save']:
+        return
 
-    full_path = os.path.join(run_folder, filename)
-    save_df(dtfrm, full_path, config['file_format'])
+    with log_timing(timing_msg, timing_detail_msg) as log:
+        _save_file_with_run_id(
+            dtfrm,
+            filename,
+            config['output_path'],
+            config['file_format'],
+            log, 
+            'intermediate_files_saved'
+        )
 
-    log.info('intermediate_files_saved', arquivo=f"{full_path}.{config['file_format']}")
+
+def save_log_evidence(dtfrm, filename, config, log):
+    """
+    Saves a DataFrame as evidence of a validation error/warning.
+    Uses RUN_ID to create a subfolder within the evidence path.
+    """
+    _save_file_with_run_id(
+        dtfrm,
+        filename,
+        config['log_evidence_root'],
+        config['log_evidence_file_format'],
+        log,
+        'evidence_saved'
+    )
 
 
 def find_all_files(files_path, file_ext):
@@ -289,10 +317,8 @@ def parse_files(debug_cfg, xml_source_path, processes, daily_keys, numeric_field
         funds = convert_entity_to_dataframe(funds_list, 'fundos', daily_keys)
         portfolios = convert_entity_to_dataframe(portfolios_list, 'carteiras', daily_keys)
 
-    if debug_cfg['save']:
-        with log_timing('parse', 'debug_save_parsed_raw_data') as log:
-            debug_save(funds, 'fundos-raw', debug_cfg, log)
-            debug_save(portfolios, 'carteiras-raw', debug_cfg, log)
+    debug_save(funds, 'fundos-raw', debug_cfg, 'parse', 'debug_save_parsed_raw_data')
+    debug_save(portfolios, 'carteiras-raw', debug_cfg, 'parse', 'debug_save_parsed_raw_data')
 
     return [funds, portfolios]
 
@@ -306,10 +332,8 @@ def clean_and_prepare_raw(debug_cfg, funds, portfolios, types_to_exclude,
         portfolios = cleaner.clean_data(portfolios, port_dtypes, types_to_exclude,
                                         types_series, harmonization_rules)
 
-    if debug_cfg['save']:
-        with log_timing('clean', 'debug_save_cleaned_data') as log:
-            debug_save(funds, 'fundos-cleaned', debug_cfg, log)
-            debug_save(portfolios, 'carteiras-cleaned', debug_cfg, log)
+    debug_save(funds, 'fundos-cleaned', debug_cfg, 'clean', 'debug_save_cleaned_data')
+    debug_save(portfolios, 'carteiras-cleaned', debug_cfg, 'clean', 'debug_save_cleaned_data')
 
     return [funds, portfolios]
 
@@ -360,7 +384,7 @@ def check_puposicao_consistency(debug_cfg, funds, portfolios):
                 dados=all_inconsistencies[0:100].to_dict(orient='records')
             )
 
-            debug_save(all_inconsistencies, 'puposicao_divergente_mesma_data', debug_cfg, log)
+            save_log_evidence(all_inconsistencies, 'puposicao_divergente_mesma_data', debug_cfg, log)
 
 
 def check_values_integrity(debug_cfg, entity, entity_name, invested, group_keys):
@@ -373,16 +397,15 @@ def check_values_integrity(debug_cfg, entity, entity_name, invested, group_keys)
 
         if not divergent_puposicao_vlcota.empty:
             log.warn('check', dados=divergent_puposicao_vlcota.to_dict(orient="records"))
-            debug_save(divergent_puposicao_vlcota,
-                       f"{entity_name}_puposicao_divergente_vlcota",
-                       debug_cfg, log)
+            save_log_evidence(divergent_puposicao_vlcota,
+                              f"{entity_name}_puposicao_divergente_vlcota", debug_cfg, log)
 
     with log_timing('check', f"pl_consistency_{entity_name}") as log:
         divergent_pl = checker.check_composition_consistency(entity, group_keys, 0.01 / 100.0)
 
         if not divergent_pl.empty:
             log.warn('check', dados=divergent_pl.to_dict(orient="records"))
-            debug_save(divergent_pl, f"{entity_name}_pl_divergente", debug_cfg, log)
+            save_log_evidence(divergent_pl, f"{entity_name}_pl_divergente", debug_cfg, log)
 
 
 def explode_partplanprev(debug_cfg, portfolios):
@@ -393,9 +416,7 @@ def explode_partplanprev(debug_cfg, portfolios):
 
         portfolios = crt.integrate_allocated_partplanprev(portfolios, allocated_partplanprev)
 
-    if debug_cfg['save']:
-        with log_timing('enrich', 'debug_save_exploded_partplanprev') as log:
-            debug_save(portfolios, 'carterias-exploded', debug_cfg, log)
+    debug_save(portfolios, 'carterias-exploded', debug_cfg, 'enrich', 'debug_save_exploded_partplanprev')
 
     with log_timing('enrich', 'remove_partplanprev'):
         mask = portfolios['tipo'] == 'partplanprev'
@@ -440,10 +461,8 @@ def enrich(debug_cfg, funds, portfolios, types_series, data_aux_path, dcadplano,
         if alerts:
             log.warning(f"Classification alerts for funds: {alerts}")
 
-    if debug_cfg['save']:
-        with log_timing('enrich', 'debug_save_enriched_data') as log:
-            debug_save(funds, 'fundos-enriched', debug_cfg, log)
-            debug_save(portfolios, 'carteiras-enriched', debug_cfg, log)
+    debug_save(funds, 'fundos-enriched', debug_cfg, 'enrich', 'debug_save_enriched_data')
+    debug_save(portfolios, 'carteiras-enriched', debug_cfg, 'enrich', 'debug_save_enriched_data')
 
     return [funds, portfolios]
 
@@ -467,9 +486,7 @@ def extract_portfolio_submassa(debug_cfg, cad_submassa, portfolios):
             how='left',
         )
 
-    if debug_cfg['save']:
-        with log_timing('submassa', 'debug_save_portfolio_submassa') as log:
-            debug_save(port_submassa, 'submassa-carterias', debug_cfg, log)
+    debug_save(port_submassa, 'submassa-carterias', debug_cfg, 'submassa', 'debug_save_portfolio_submassa')
 
     return [portfolios.loc[~mask], port_submassa]
 
@@ -484,9 +501,7 @@ def compute_composition_portfolio_submassa(debug_cfg, port_submassa):
             port_submassa['valor_calc'] / port_submassa['total_submassa_isin_cnpb']
         )
 
-    if debug_cfg['save']:
-        with log_timing('submassa', 'debug_save_portfolio_submassa_composition') as log:
-            debug_save(port_submassa, 'submassa-carterias-composicao', debug_cfg, log)
+    debug_save(port_submassa, 'submassa-carterias-composicao', debug_cfg, 'submassa', 'debug_save_portfolio_submassa_composition')
 
 
 def validate_fund_graph_is_acyclic(funds):
@@ -545,9 +560,7 @@ def build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa):
 
         tree_horzt_submassa = tree_horzt[mask].copy()
 
-    if debug_cfg['save']:
-        with log_timing('tree', 'debug_save_tree_submassa') as log:
-            debug_save(tree_horzt_submassa, 'submassa-arvore', debug_cfg, log)
+    debug_save(tree_horzt_submassa, 'submassa-arvore', debug_cfg, 'tree', 'debug_save_tree_submassa')
 
     return tree_horzt.loc[~mask], tree_horzt_submassa
 
@@ -595,9 +608,7 @@ def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
     tree_horzt_sub.loc[mask_bsps, 'COD_SUBMASSA'] = '1'
     tree_horzt_sub.loc[mask_bsps, 'SUBMASSA'] = 'BSPS'
 
-    if debug_cfg['save']:
-        with log_timing('tree', 'debug_save_tree_submassa_pct_part') as log:
-            debug_save(tree_horzt_sub, 'submassa-arvore-pct_part', debug_cfg, log)
+    debug_save(tree_horzt_sub, 'submassa-arvore-pct_part', debug_cfg, 'tree', 'debug_save_tree_submassa_pct_part')
 
     return tree_horzt_sub
 
@@ -644,8 +655,15 @@ def load_config():
         'file_format': config['Debug'].get('debug_file_format')
     }
 
+    evidence_root = config['Paths']['log_evidence_root']
+    evidence_root = f"{os.path.dirname(utl.format_path(evidence_root))}/"
+    log_cfg = {
+        'log_evidence_root': evidence_root,
+        'log_evidence_file_format': config['Paths']['log_evidence_file_format'],
+    }
+
     return [xml_source_path, destination_path, destination_file_format,
-            data_aux_path, debug_cfg, mec_sac_path]
+            data_aux_path, debug_cfg, log_cfg, mec_sac_path]
 
 
 def compute_plan_returns_adjust(debug_cfg, tree_hrztl, dcadplanosac,
@@ -657,11 +675,9 @@ def compute_plan_returns_adjust(debug_cfg, tree_hrztl, dcadplanosac,
             compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac, port_submassa)
             )
 
-    if debug_cfg['save']:
-        with log_timing('tree', 'debug_save_compute_returns_adjust') as log:
-            debug_save(mec_sac_returns_by_plan, 'rentab-plano-mecsac', debug_cfg, log)
-            debug_save(tree_returns_by_plan, 'rentab-plano-tree', debug_cfg, log)
-            debug_save(plan_returns_adjust , 'rentab-plano-ajuste', debug_cfg, log)
+    debug_save(mec_sac_returns_by_plan, 'rentab-plano-mecsac', debug_cfg, 'tree', 'debug_save_compute_returns_adjust')
+    debug_save(tree_returns_by_plan, 'rentab-plano-tree', debug_cfg, 'tree', 'debug_save_compute_returns_adjust')
+    debug_save(plan_returns_adjust , 'rentab-plano-ajuste', debug_cfg, 'tree', 'debug_save_compute_returns_adjust')
 
     with log_timing('plans_returns', 'enrich_adjustment'):
 
@@ -718,6 +734,7 @@ def run_pipeline():
         destination_file_format,
         data_aux_path,
         debug_cfg,
+        log_cfg,
         mec_sac_path,
     ) = load_config()
 
@@ -755,10 +772,10 @@ def run_pipeline():
                                db_aux['dcadplano'], new_tipo_rules, gestor_name_stopwords,
                                name_standardization_rules)
 
-    check_values_integrity(debug_cfg, funds, 'fundos', funds, ['cnpj'])
-    check_values_integrity(debug_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
+    check_values_integrity(log_cfg, funds, 'fundos', funds, ['cnpj'])
+    check_values_integrity(log_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
 
-    check_puposicao_consistency(debug_cfg, funds, portfolios)
+    check_puposicao_consistency(log_cfg, funds, portfolios)
 
     validate_fund_graph_is_acyclic(funds)
 
@@ -767,7 +784,7 @@ def run_pipeline():
     assign_returns(funds, ['cnpj'], 'fundos')
     assign_returns(portfolios, ['cnpjcpf', 'codcart', 'cnpb'], 'carteiras')
 
-    [portfolios, port_submassa] = extract_portfolio_submassa(debug_cfg, db_aux['dcadsubmassa'], portfolios)
+    portfolios, port_submassa = extract_portfolio_submassa(debug_cfg, db_aux['dcadsubmassa'], portfolios)
     compute_composition_portfolio_submassa(debug_cfg, port_submassa)
 
     tree_hrztl, tree_hrztl_sub = build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa)
