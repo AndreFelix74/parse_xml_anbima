@@ -7,6 +7,7 @@ Created on Fri May 30 11:33:22 2025
 """
 
 
+from datetime import datetime
 import os
 import re
 import locale
@@ -564,7 +565,7 @@ def build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa):
 
     return tree_horzt.loc[~mask], tree_horzt_submassa
 
-
+#PASSAR EXPLODE SUBMASSA para tree/tree_operations como eh com carteira_operations
 def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
     with log_timing('tree', 'build_tree_submassa'):
         cols_port_submassa = ['dtposicao', 'CNPB', 'isin', 'CODCART',
@@ -808,5 +809,7 @@ def run_pipeline():
 
 
 if __name__ == "__main__":
+    start_time = datetime.now()
     with log_timing('full', 'all_process'):
         run_pipeline()
+    print(f"Execucao: {start_time} -> {datetime.now()}")
