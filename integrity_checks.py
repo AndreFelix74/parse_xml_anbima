@@ -7,7 +7,7 @@ Created on Sat May 31 10:37:20 2025
 """
 
 
-def check_puposicao(investor_holdings, invested):
+def check_puposicao_vs_valorcota(investor_holdings, invested):
     """
     Compares the 'puposicao' field in investor holdings with the 'valor' field 
     from invested data where 'tipo' is 'valorcota', for matching fund CNPJs and dates.
