@@ -79,7 +79,7 @@ def calculate_t12m_returns(mec_sac):
     The result aligns to the original row index.
 
     Args:
-        mec_sac (pd.DataFrame): Must include ['CODCLI', 'DT', 'RENTAB_MES'].
+        mec_sac (pd.DataFrame): Must include ['CLCLI_CD', 'DT', 'RENTAB_MES'].
 
     Returns:
         pd.Series: T12M returns aligned to the original DataFrame index.
@@ -87,12 +87,12 @@ def calculate_t12m_returns(mec_sac):
     mec_sac_sorted = mec_sac.copy()
     mec_sac_sorted['original_index'] = mec_sac_sorted.index
 
-    mec_sac_sorted.sort_values(['CODCLI', 'DT'], inplace=True)
+    mec_sac_sorted.sort_values(['CLCLI_CD', 'DT'], inplace=True)
 
     mec_sac_sorted['1_plus_r'] = 1 + mec_sac_sorted['RENTAB_MES']
 
     rolling_prod = (
-        mec_sac_sorted.groupby('CODCLI')['1_plus_r']
+        mec_sac_sorted.groupby('CLCLI_CD')['1_plus_r']
         .rolling(window=12, min_periods=12)
         .agg('prod')
         .reset_index(level=0, drop=True)
@@ -191,7 +191,7 @@ def compute_aggregate_returns(mec_sac, dcadplanosac):
       4) Concatenate all parts and add year/month helper columns.
 
     Args:
-        mec_sac (pd.DataFrame): Per-plan daily returns and PL, includes ['CODCLI', 'DT', ...].
+        mec_sac (pd.DataFrame): Per-plan daily returns and PL, includes ['CLCLI_CD', 'DT', ...].
         dcadplanosac (pd.DataFrame): Plan attributes, includes ['CODCLI_SAC', ...].
 
     Returns:
@@ -199,12 +199,12 @@ def compute_aggregate_returns(mec_sac, dcadplanosac):
         with helper columns ['ANO', 'MES'].
     """
     dcadplanosac['CODCLI_SAC'] = dcadplanosac['CODCLI_SAC'].astype(str).str.strip()
-    mec_sac['CODCLI'] = mec_sac['CODCLI'].astype(str).str.strip()
+    mec_sac['CLCLI_CD'] = mec_sac['CLCLI_CD'].astype(str).str.strip()
 
     mec_sac_dcadplanosac = mec_sac.merge(
         dcadplanosac,
         how='left',
-        left_on='CODCLI',
+        left_on='CLCLI_CD',
         right_on='CODCLI_SAC'
     )
 
@@ -225,10 +225,10 @@ def compute_aggregate_returns(mec_sac, dcadplanosac):
 
         all_dfs.append(df_aux)
 
-    idx_last_day = mec_sac_dcadplanosac.groupby('CODCLI')['DT'].idxmax()
+    idx_last_day = mec_sac_dcadplanosac.groupby('CLCLI_CD')['DT'].idxmax()
     last_day_per_codcli = mec_sac_dcadplanosac.loc[idx_last_day].copy()
 
-    last_day_per_codcli.drop(columns=['VL_PATRLIQTOT1', 'CLCLI_CD', 'CODCLI',
+    last_day_per_codcli.drop(columns=['VL_PATRLIQTOT1', 'CLCLI_CD', 'CLCLI_CD',
                                       'RENTAB_DIA'], inplace=True)
     last_day_per_codcli['TIPO'] = 'PLANO'
     #renomei coluna NOME para usar o mesmo codigo do lado de fora
