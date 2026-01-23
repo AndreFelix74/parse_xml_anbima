@@ -279,14 +279,35 @@ def save_entities(api_ctx, missing_entities_maestro):
         endpoint = cfg['endpoint']
         resolved_fk_ids = {}
 
-        for fk_spec in cfg.get('foreign_keys', []):
-            fk_entity, fk_id_col, fk_alt_key_col = fk_spec
+        for fk_entity, fk_id_col, fk_alt_key_col in cfg.get('foreign_keys', []):
+            fk_id_val = row.get(fk_id_col)
 
-            if pd.notna(row.get(fk_id_col)):
-                resolved_fk_ids[fk_entity] = int(row[fk_id_col])
-            else:
-                fk_alt_key = row.get(fk_alt_key_col)
-                resolved_fk_ids[fk_entity] = entity_spec[fk_entity]['identity_map'][fk_alt_key]
+            if pd.notna(fk_id_val):
+                resolved_fk_ids[fk_entity] = int(fk_id_val)
+                continue
+
+            fk_alt_key = row.get(fk_alt_key_col)
+
+            if pd.isna(fk_alt_key) or str(fk_alt_key).strip() == "":
+                raise ValueError(
+                    f"FK não resolvida para {row['TIPO']}='{row.get('NOME')}'. "
+                    f"Campos vazios: {fk_id_col}=NaN e {fk_alt_key_col}=NaN/'' "
+                    f"(fk_entity={fk_entity})."
+                )
+
+            fk_alt_key = str(fk_alt_key).strip()
+
+            fk_map = entity_spec[fk_entity]['identity_map'] or {}
+            fk_id = fk_map.get(fk_alt_key)
+
+            if fk_id is None:
+                raise KeyError(
+                    f"FK não encontrada no identity_map: fk_entity={fk_entity}, chave='{fk_alt_key}'. "
+                    f"Item atual: {row['TIPO']}='{row.get('NOME')}'. "
+                    f"Chaves disponíveis (amostra): {list(fk_map.keys())[:10]}"
+                )
+
+            resolved_fk_ids[fk_entity] = int(fk_id)
 
         payload = cfg['payload'](row, resolved_fk_ids)
         resp = api.api_post(api_ctx, endpoint, json=payload)
@@ -351,6 +372,7 @@ def reconcile_entities_dcadplanosac_maestro(data_aux_path, api_ctx):
     groups = ['TIPO_PLANO', 'GRUPO', 'INDEXADOR', 'PLANO']
 
     dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
+    #renomeia a coluna para compatibilizar com os quatro grupos
     dcadplanosac.rename(columns={'NOME_PLANO': 'PLANO'}, inplace=True)
     df_melt = dcadplanosac[groups].melt(var_name='TIPO', value_name='NOME')
     entities = df_melt.dropna().drop_duplicates().reset_index(drop=True)
@@ -545,5 +567,5 @@ def main():
             print('Opção inválida. Escolha uma das opções do menu.')
 
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
