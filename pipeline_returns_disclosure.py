@@ -256,7 +256,7 @@ def save_entities(api_ctx, missing_entities_maestro):
               SAC code, plan code, indexer ID, and plan type ID.
         - Sends POST requests to the Maestro API to create the entities.
     """
-    if not missing_entities_maestro:
+    if missing_entities_maestro is None:
         print('\nEntidades não reconciliadas com Maestro.')
         print('Execute a etapa 1 antes de sincronizar as entidades com Maestro.\n')
         return False
