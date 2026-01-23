@@ -274,8 +274,6 @@ def save_entities(api_ctx, missing_entities_maestro):
     missing_entities_maestro = missing_entities_maestro.sort_values(['_ord', 'NOME'])
 
     for _, row in missing_entities_maestro.iterrows():
-        nome = row['NOME']
-
         cfg = entity_spec[row['TIPO']]
 
         endpoint = cfg['endpoint']
