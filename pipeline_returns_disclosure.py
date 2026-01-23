@@ -459,12 +459,14 @@ def reconcile_returns_mecsac_maestro(out_file_frmt, run_folder,
     returns_mecsac = returns_mecsac[returns_mecsac['TIPO'] == 'PLANO']
     mask = returns_mecsac['api_id'].isna()
     if mask.any():
-        missing_count = returns_mecsac[mask]['NOME'].drop_duplicates().count()
         file_name = run_folder / "divulga_rentab_rentab_ERROR_missing_ids"
         save_df(returns_mecsac[mask], file_name, out_file_frmt)
+        missing_rows = int(mask.sum())
+        missing_entities = returns_mecsac.loc[mask, "NOME"].nunique(dropna=True)
         print(
             "Não é possível reconciliar as rentabilidades.\n"
-            f"Existem {missing_count} entidades em dCadPlanoSAC sem cadastro no Maestro.\n"
+            f"Existem {missing_rows} registros com api_id ausente em dCadPlanoSAC.\n"
+            f"({missing_entities} entidades distintas por NOME; NOME está vazio nesses casos.)\n"
             f"Verifique o arquivo {file_name}.{out_file_frmt}\n"
             "Para corrigir, execute a etapa de sincronizar entidades com Maestro."
         )
@@ -567,5 +569,5 @@ def main():
             print('Opção inválida. Escolha uma das opções do menu.')
 
 
-# if __name__ == "__main__":
-#     main()
+if __name__ == "__main__":
+    main()
