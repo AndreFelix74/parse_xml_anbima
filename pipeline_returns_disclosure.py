@@ -511,6 +511,8 @@ def reconcile_returns(out_file_frmt, run_folder, data_aux_path,
         print(f"Valide o arquivo {missing_maestro_returns_file}.{out_file_frmt}")
         print('Se estiver correto, execute o passo 4 para envio das rentabilidades para o Maestro')
 
+    return missing_returns
+
 
 def main():
     """
