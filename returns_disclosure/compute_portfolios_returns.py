@@ -225,7 +225,9 @@ def compute_aggregate_returns(mec_sac, dcadplanosac):
 
         all_dfs.append(df_aux)
 
-    idx_last_day = mec_sac_dcadplanosac.groupby('CLCLI_CD')['DT'].idxmax()
+
+    mec_sac_dcadplanosac['ANO_MES'] = mec_sac_dcadplanosac['DT'].dt.to_period('M')
+    idx_last_day = mec_sac_dcadplanosac.groupby(['CLCLI_CD', 'ANO_MES'])['DT'].idxmax()
     last_day_per_codcli = mec_sac_dcadplanosac.loc[idx_last_day].copy()
 
     last_day_per_codcli.drop(columns=['VL_PATRLIQTOT1', 'CLCLI_CD', 'CLCLI_CD',
