@@ -222,9 +222,10 @@ def get_maestro_entity_spec():
             'endpoint': '/investimentos/Planos',
             'identity_map': None,
             'foreign_keys': [
-                ('GRUPO',      'id_GRUPO',      'nome_GRUPO'),
-                ('INDEXADOR',  'id_INDEXADOR',  'nome_INDEXADOR'),
-                ('TIPO_PLANO', 'id_TIPO_PLANO', 'nome_TIPO_PLANO'),
+                #(tabela, id_api, nome_coluna) o ultimo eh para qd nao existir na api
+                ('GRUPO',      'id_GRUPO',      'GRUPO'),
+                ('INDEXADOR',  'id_INDEXADOR',  'INDEXADOR'),
+                ('TIPO_PLANO', 'id_TIPO_PLANO', 'TIPO_PLANO'),
             ],
             'payload': lambda row, resolved_fk_ids: {
                 'grupoId': resolved_fk_ids['GRUPO'],
@@ -265,8 +266,8 @@ def save_entities(api_ctx, missing_entities_maestro):
         return True
 
     def extract_id(resp: dict) -> int:
-        if isinstance(resp, dict) and 'id' in resp:
-            return int(resp['id'])
+        data = resp.json()
+        return data.get('id')
 
     entity_spec = get_maestro_entity_spec()
 
@@ -276,7 +277,6 @@ def save_entities(api_ctx, missing_entities_maestro):
     for _, row in missing_entities_maestro.iterrows():
         cfg = entity_spec[row['TIPO']]
 
-        endpoint = cfg['endpoint']
         resolved_fk_ids = {}
 
         for fk_entity, fk_id_col, fk_alt_key_col in cfg.get('foreign_keys', []):
@@ -288,7 +288,7 @@ def save_entities(api_ctx, missing_entities_maestro):
 
             fk_alt_key = row.get(fk_alt_key_col)
 
-            if pd.isna(fk_alt_key) or str(fk_alt_key).strip() == "":
+            if pd.isna(fk_alt_key) or str(fk_alt_key).strip() == '':
                 raise ValueError(
                     f"FK não resolvida para {row['TIPO']}='{row.get('NOME')}'. "
                     f"Campos vazios: {fk_id_col}=NaN e {fk_alt_key_col}=NaN/'' "
@@ -310,7 +310,8 @@ def save_entities(api_ctx, missing_entities_maestro):
             resolved_fk_ids[fk_entity] = int(fk_id)
 
         payload = cfg['payload'](row, resolved_fk_ids)
-        resp = api.api_post(api_ctx, endpoint, json=payload)
+        resp = api.api_post(api_ctx, cfg['endpoint'], json=payload)
+        resp.raise_for_status()
 
         if cfg['identity_map'] is not None:
             cfg['identity_map'][row['NOME']] = extract_id(resp)
@@ -345,27 +346,12 @@ def save_returns(api_ctx, missing_returns_maestro):
             'valor': float(row['RENTAB_ANO']) * 100.0
             }
 
-        api.api_post(api_ctx, api_returns_map['MENSAL'], json=payload_mes)
-        api.api_post(api_ctx, api_returns_map['ANUAL'], json=payload_ano)
+        if pd.isna(row.get('id_mensal')):
+            api.api_post(api_ctx, api_returns_map['MENSAL'], json=payload_mes)
+        if pd.isna(row.get('id_anual')):
+            api.api_post(api_ctx, api_returns_map['ANUAL'], json=payload_ano)
 
     print('\nRentabilidades sincronizadas com Maestro com sucesso.\n')
-
-
-def reconcile_entities_ids_with_maestro(api_ctx, entities):
-    """
-    essa funcao estah ruim, faz uma alteracao inplace e retorna um objeto
-    foi criada para evitar repeticao de codigo usado nas funcoes:
-      reconcile_entities_dcadplanosac_maestro(data_aux_path, api_ctx)
-      e
-      reconcile_returns_mecsac_maestro(out_file_frmt, run_folder,
-                                       data_aux_path, mec_sac_path, api_ctx):
-    """
-    api_data = load_entities_ids(api_ctx)
-
-    for label, json_content in api_data.items():
-        reconcile_entities_ids(entities, label, json_content)
-
-    return api_data
 
 
 def reconcile_entities_dcadplanosac_maestro(data_aux_path, api_ctx):
@@ -377,7 +363,9 @@ def reconcile_entities_dcadplanosac_maestro(data_aux_path, api_ctx):
     df_melt = dcadplanosac[groups].melt(var_name='TIPO', value_name='NOME')
     entities = df_melt.dropna().drop_duplicates().reset_index(drop=True)
 
-    api_data = reconcile_entities_ids_with_maestro(api_ctx, entities)
+    api_data = load_entities_ids(api_ctx)
+    for label, json_content in api_data.items():
+        reconcile_entities_ids(entities, label, json_content)
 
     mask = entities['api_id'].isna()
     missing_entities = entities[mask].copy()
@@ -433,8 +421,7 @@ def reconcile_entities(data_aux_path, api_ctx, run_folder, out_file_frmt):
     return missing_entities
 
 
-def reconcile_returns_mecsac_maestro(out_file_frmt, run_folder,
-                                     data_aux_path, mec_sac_path, api_ctx):
+def load_mec_sac(mec_sac_path):
     processes = min(8, multiprocessing.cpu_count())
 
     all_mecsac_files = find_all_mecsac_files(mec_sac_path)
@@ -443,20 +430,14 @@ def reconcile_returns_mecsac_maestro(out_file_frmt, run_folder,
         dfs = list(executor.map(aux_loader.load_mecsac_file,
                                 all_mecsac_files))
 
-    mec_sac = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-    dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
 
-    returns_mecsac = compute_aggregate_returns(mec_sac, dcadplanosac)
+def reconcile_returns_mecsac_maestro(returns_mecsac, out_file_frmt, run_folder, api_ctx):
+    api_data = load_entities_ids(api_ctx)
 
-    save_df(returns_mecsac, run_folder / "divulga_rentab_agregados",
-            out_file_frmt)
-
-    #Esse trecho estah pessimo. Confunde quem estah lendo.
-    # - Faz alteracao inplace
-    # - Retorna uma variavel nao usada.
-    #O que importa aqui eh a alteracao inplace de returns_mecsac
-    api_data = reconcile_entities_ids_with_maestro(api_ctx, returns_mecsac)
+    for label, json_content in api_data.items():
+        reconcile_entities_ids(returns_mecsac, label, json_content)
 
     #na nova versao do site soh ha divulgacao por plano, nao tem agregados
     #remover essa linha caso haja divulgacao de rentabilidades por agregados
@@ -474,32 +455,42 @@ def reconcile_returns_mecsac_maestro(out_file_frmt, run_folder,
             f"Verifique o arquivo {file_name}.{out_file_frmt}\n"
             "Para corrigir, execute a etapa de sincronizar entidades com Maestro."
         )
-        return [None, None, None]
+        return [None, None]
 
     api_data = load_returns_ids(api_ctx)
     returns_reconciled = reconcile_monthly_returns(returns_mecsac, pd.DataFrame(api_data['MENSAL']))
     returns_reconciled = reconcile_annually_returns(returns_reconciled, pd.DataFrame(api_data['ANUAL']))
 
-    mask = returns_reconciled['id_mensal'].isna()
-
-    return [returns_reconciled[mask], api_data, returns_reconciled]
+    return [returns_reconciled, api_data]
 
 
 def reconcile_returns(out_file_frmt, run_folder, data_aux_path,
                       mec_sac_path, api_ctx):
     print('Reconciliando rentabilidades com Maestro...')
-    missing_returns, api_data, return_mecsac = (
-        reconcile_returns_mecsac_maestro(out_file_frmt, run_folder,
-                                        data_aux_path, mec_sac_path, api_ctx)
+
+    mec_sac = load_mec_sac(mec_sac_path)
+
+    dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
+
+    returns_mecsac = compute_aggregate_returns(mec_sac, dcadplanosac)
+
+    save_df(returns_mecsac, run_folder / "divulga_rentab_agregados", out_file_frmt)
+
+    returns_reconciled, api_data = (
+        reconcile_returns_mecsac_maestro(returns_mecsac, out_file_frmt, run_folder, api_ctx)
         )
 
-    if (missing_returns is None and api_data is None and return_mecsac is None):
-        return
+    save_df(returns_reconciled, run_folder / "divulga_rentab_rentab_comparadas", out_file_frmt)
+
+    mask = (
+        returns_reconciled['id_mensal'].isna() |
+        returns_reconciled['id_anual'].isna()
+    )
+    missing_returns = returns_reconciled[mask].copy()
 
     missing_maestro_returns_file = run_folder / "divulga_rentab_rentab_a_sincronizar"
-
     save_df(missing_returns, missing_maestro_returns_file, out_file_frmt)
-    save_df(return_mecsac, run_folder / "divulga_rentab_rentab_comparadas", out_file_frmt)
+
     with open(run_folder / "divulga_rentab_rentab_maestro.json", 'w', encoding='utf-8') as file:
         json.dump(api_data, file, ensure_ascii=False, indent=2)
 
@@ -558,7 +549,10 @@ def main():
         elif usr_option == '2':
             entities_sent_maestro = save_entities(api_ctx, missing_entities_maestro)
         elif usr_option == '3':
-            if missing_entities_maestro is not None and not entities_sent_maestro:
+            if missing_entities_maestro is None:
+                print('\nExecute a etapa 1 antes de reconciliar as rentabilidades.\n')
+                continue
+            if len(missing_entities_maestro) > 0 and not entities_sent_maestro:
                 print('\nEntidades não enviadas para Maestro.')
                 print('Execute as etapas 1 e 2 antes de reconciliar as rentabilidades.\n')
                 continue

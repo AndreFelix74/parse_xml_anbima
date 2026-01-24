@@ -158,25 +158,6 @@ def calculate_weighted_returns_by_group(mec_sac_dcadplanosac, group_column=None)
     return group_returns[group_column + ['DT', 'RENTAB_MES_PONDERADA_MEC_SAC']]
 
 
-def build_returns_df(all_dfs):
-    """
-    Concatenate, sort, and return the final returns DataFrame.
-
-    Expects each input DataFrame to already contain harmonized columns such as
-    ['TIPO', 'NOME', 'DT', ...].
-
-    Args:
-        all_dfs (list[pd.DataFrame]): List of precomputed return DataFrames.
-
-    Returns:
-        pd.DataFrame: Concatenated and sorted DataFrame.
-    """
-    rentab = pd.concat(all_dfs, ignore_index=True)
-    rentab.sort_values(['TIPO', 'NOME', 'DT'], inplace=True)
-
-    return rentab
-
-
 def compute_aggregate_returns(mec_sac, dcadplanosac):
     """
     Build the aggregated returns table across multiple grouping levels.
@@ -233,12 +214,13 @@ def compute_aggregate_returns(mec_sac, dcadplanosac):
     last_day_per_codcli.drop(columns=['VL_PATRLIQTOT1', 'CLCLI_CD', 'CLCLI_CD',
                                       'RENTAB_DIA'], inplace=True)
     last_day_per_codcli['TIPO'] = 'PLANO'
-    #renomei coluna NOME para usar o mesmo codigo do lado de fora
+    #renomeia coluna NOME_PLANO para padronizar como NOME conforme as outras entidades:
+    # TIPO_PLANO, GRUPO e IDEXADOR
     last_day_per_codcli.rename(columns={'NOME': 'nome_MEC', 'NOME_PLANO': 'NOME'},
                                inplace=True)
 
-
-    rentab = build_returns_df(all_dfs + [last_day_per_codcli])
+    rentab = pd.concat(all_dfs + [last_day_per_codcli], ignore_index=True)
+    rentab.sort_values(['TIPO', 'NOME', 'DT'], inplace=True)
 
     rentab['ANO'] = rentab['DT'].dt.year
     rentab['MES'] = rentab['DT'].dt.month
