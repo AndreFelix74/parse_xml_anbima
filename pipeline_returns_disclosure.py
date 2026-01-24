@@ -371,7 +371,7 @@ def reconcile_entities_ids_with_maestro(api_ctx, entities):
 def reconcile_entities_dcadplanosac_maestro(data_aux_path, api_ctx):
     groups = ['TIPO_PLANO', 'GRUPO', 'INDEXADOR', 'PLANO']
 
-    dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
+    dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path, False)
     #renomeia a coluna para compatibilizar com os quatro grupos
     dcadplanosac.rename(columns={'NOME_PLANO': 'PLANO'}, inplace=True)
     df_melt = dcadplanosac[groups].melt(var_name='TIPO', value_name='NOME')
