@@ -234,7 +234,7 @@ def compute_aggregate_returns(mec_sac, dcadplanosac):
                                       'RENTAB_DIA'], inplace=True)
     last_day_per_codcli['TIPO'] = 'PLANO'
     #renomei coluna NOME para usar o mesmo codigo do lado de fora
-    last_day_per_codcli.rename(columns={'NOME': 'nome_old', 'NOME_PLANO': 'NOME'},
+    last_day_per_codcli.rename(columns={'NOME': 'nome_MEC', 'NOME_PLANO': 'NOME'},
                                inplace=True)
 
 
