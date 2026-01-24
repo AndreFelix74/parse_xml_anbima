@@ -371,7 +371,7 @@ def reconcile_entities_ids_with_maestro(api_ctx, entities):
 def reconcile_entities_dcadplanosac_maestro(data_aux_path, api_ctx):
     groups = ['TIPO_PLANO', 'GRUPO', 'INDEXADOR', 'PLANO']
 
-    dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path, False)
+    dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
     #renomeia a coluna para compatibilizar com os quatro grupos
     dcadplanosac.rename(columns={'NOME_PLANO': 'PLANO'}, inplace=True)
     df_melt = dcadplanosac[groups].melt(var_name='TIPO', value_name='NOME')
@@ -445,13 +445,17 @@ def reconcile_returns_mecsac_maestro(out_file_frmt, run_folder,
 
     mec_sac = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-    dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path, False)
+    dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
 
     returns_mecsac = compute_aggregate_returns(mec_sac, dcadplanosac)
 
     save_df(returns_mecsac, run_folder / "divulga_rentab_agregados",
             out_file_frmt)
 
+    #Esse trecho estah pessimo. Confunde quem estah lendo.
+    # - Faz alteracao inplace
+    # - Retorna uma variavel nao usada.
+    #O que importa aqui eh a alteracao inplace de returns_mecsac
     api_data = reconcile_entities_ids_with_maestro(api_ctx, returns_mecsac)
 
     #na nova versao do site soh ha divulgacao por plano, nao tem agregados

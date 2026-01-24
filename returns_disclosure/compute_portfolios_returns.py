@@ -203,7 +203,7 @@ def compute_aggregate_returns(mec_sac, dcadplanosac):
 
     mec_sac_dcadplanosac = mec_sac.merge(
         dcadplanosac,
-        how='left',
+        how='inner',
         left_on='CLCLI_CD',
         right_on='CODCLI_SAC'
     )
