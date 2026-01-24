@@ -320,7 +320,7 @@ def save_entities(api_ctx, missing_entities_maestro):
 
 
 def save_returns(api_ctx, missing_returns_maestro):
-    if not missing_returns_maestro:
+    if missing_returns_maestro is None:
         print('\nRentabilidades não reconciliadas com Maestro.')
         print('Execute a etapa 3 antes de sincronizar as rentabilidades com Maestro.\n')
         return
