@@ -445,7 +445,7 @@ def reconcile_returns_mecsac_maestro(out_file_frmt, run_folder,
 
     mec_sac = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-    dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
+    dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path, False)
 
     returns_mecsac = compute_aggregate_returns(mec_sac, dcadplanosac)
 

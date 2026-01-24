@@ -321,28 +321,31 @@ def load_cnpb_codcli_mapping(data_aux_path):
     return mapping.rename(columns={'CNPB_x': 'cnpb'})[['cnpb', 'CODCLI_SAC']]
 
 
-def load_dcadplanosac(data_aux_path):
+def load_dcadplanosac(data_aux_path, replace_contencioso=True):
     """
     Loads the dCadPlanoSAC sheet from dbAux.xlsx.
 
     Args:
         data_aux_path (str): Path to dbAux.xlsx.
+        replace_contencioso (bool): If True, replaces contencioso portfolio
+            code by investment-only portfolio code (CODCLI_SAC_INVEST).
 
     Returns:
-        pd.DataFrame: A DataFrame containing the dCadPlanoSAC sheet with
-        portfolio codes adjusted according to the selected portfolio_type.
+        pd.DataFrame: dCadPlanoSAC DataFrame.
     """
-    dcadplanosac = pd.read_excel(f"{data_aux_path}dbAux.xlsx",
-                                 sheet_name='dCadPlanoSAC',
-                                 dtype=str)
-
-    # Substitui carteira com contencioso pela carteira sem contencioso (soh investimentos)
-    dcadplanosac['CODCLI_SAC'] = (
-        dcadplanosac['CODCLI_SAC_INVEST'].where(
-            dcadplanosac['CODCLI_SAC_INVEST'].notnull(),
-            dcadplanosac['CODCLI_SAC']
-        )
+    dcadplanosac = pd.read_excel(
+        f"{data_aux_path}dbAux.xlsx",
+        sheet_name='dCadPlanoSAC',
+        dtype=str
     )
+
+    if replace_contencioso:
+        dcadplanosac['CODCLI_SAC'] = (
+            dcadplanosac['CODCLI_SAC_INVEST'].where(
+                dcadplanosac['CODCLI_SAC_INVEST'].notnull(),
+                dcadplanosac['CODCLI_SAC']
+            )
+        )
 
     return dcadplanosac
 
