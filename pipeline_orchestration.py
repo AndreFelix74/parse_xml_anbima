@@ -557,7 +557,10 @@ def build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa):
     with log_timing('tree', 'build_tree'):
         tree_horzt = build_tree(funds, portfolios)
 
-        mask = tree_horzt['cnpb'].isin(port_submassa['CNPB'].unique())
+        mask = (
+            tree_horzt['cnpb'].isin(port_submassa['CNPB'].unique()) &
+            tree_horzt['dtposicao'].isin(port_submassa['dtposicao'].unique())
+        )
 
         tree_horzt_submassa = tree_horzt[mask].copy()
 
