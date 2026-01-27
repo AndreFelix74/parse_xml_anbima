@@ -801,7 +801,7 @@ def run_pipeline():
     enrich_horizontal_tree(tree_hrztl, db_aux['governance_struct'])
 
     mask_debug = (tree_hrztl['is_submassa'] == 'Y')
-    save_df(tree_hrztl[mask_debug], f"{destination_path}arvore_carteiras", destination_file_format)
+    save_df(tree_hrztl[mask_debug], f"{destination_path}arvore_submassa", destination_file_format)
     adjust_rentab = compute_plan_returns_adjust(debug_cfg, tree_hrztl,
                                                 db_aux['dcadplanosac'], mec_sac_path,
                                                 processes, port_submassa)
