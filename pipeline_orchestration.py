@@ -575,6 +575,7 @@ def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
                               'COD_SUBMASSA', 'SUBMASSA', 'pct_submassa_isin_cnpb']
         mask_port = (~port_submassa['isin'].isna())
 
+        tree_horzt_sub['is_submassa'] = 'Y'
         tree_horzt_sub['COD_SUBMASSA'] = None
         tree_horzt_sub['SUBMASSA'] = None
         tree_horzt_sub['pct_submassa_isin_cnpb'] = 1.0
@@ -799,6 +800,8 @@ def run_pipeline():
     tree_hrztl['CODCART'] = tree_hrztl['CODCART'].fillna('')
     enrich_horizontal_tree(tree_hrztl, db_aux['governance_struct'])
 
+    mask_debug = (tree_hrztl['is_submassa'] == 'Y')
+    save_df(tree_hrztl[mask_debug], f"{destination_path}arvore_carteiras", destination_file_format)
     adjust_rentab = compute_plan_returns_adjust(debug_cfg, tree_hrztl,
                                                 db_aux['dcadplanosac'], mec_sac_path,
                                                 processes, port_submassa)
