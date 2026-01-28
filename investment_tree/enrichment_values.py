@@ -120,7 +120,7 @@ def enrich_values(tree_horzt):
     compute_proportional_value(tree_horzt, max_depth)
 
     tree_horzt['total_invest'] = (
-        tree_horzt.groupby(['cnpb', 'CODCART', 'dtposicao'])['valor_calc_proporcional'].transform('sum')
+        tree_horzt.groupby(['cnpb', 'CODCART', 'SUBMASSA', 'dtposicao'])['valor_calc_proporcional'].transform('sum')
     )
 
     tree_horzt['composicao'] = (

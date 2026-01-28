@@ -797,6 +797,7 @@ def run_pipeline():
     #Preenche CODCART com vazio para as demais partes do codigo que passam a usar essa coluna
     #para agregacoes
     tree_hrztl['CODCART'] = tree_hrztl['CODCART'].fillna('')
+    tree_hrztl['SUBMASSA'] = tree_hrztl['SUBMASSA'].fillna('')
     enrich_horizontal_tree(tree_hrztl, db_aux['governance_struct'])
 
     adjust_rentab = compute_plan_returns_adjust(debug_cfg, tree_hrztl,
