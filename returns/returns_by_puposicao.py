@@ -55,21 +55,20 @@ def generate_position_grid(base: pd.DataFrame, range_date) -> pd.DataFrame:
     Merges this grid with the original data, preserving any available values
     from the base DataFrame.
 
-    Args:
+    Parameters
     ----------
-        base : pd.DataFrame
-            DataFrame containing at least the columns ['isin', 'dtposicao', ...].
-            Represents the source data with observed values per asset and date.
-        range_date : list, pd.Series or pd.DatetimeIndex
-            A list of reference dates (e.g., end-of-month) to ensure inclusion for each isin.
+    base : pd.DataFrame
+        DataFrame containing at least the columns ['isin', 'dtposicao', ...].
+        Represents the source data with observed values per asset and date.
+    range_date : list, pd.Series or pd.DatetimeIndex
+        A list of reference dates (e.g., end-of-month) to ensure inclusion for each isin.
 
-
-    Returns:
+    Returns
     -------
-        pd.DataFrame
-            A DataFrame with all combinations of isin × dtposicao from the union of
-            base dates and the provided date range, merged with the original data.
-            Missing values are filled with NaN where no data is available.
+    pd.DataFrame
+        A DataFrame with all combinations of isin × dtposicao from the union of
+        base dates and the provided date range, merged with the original data.
+        Missing values are filled with NaN where no data is available.
     """
     unique_dates_base = base['dtposicao'].drop_duplicates()
     mandatory_dates = pd.Series(range_date)
