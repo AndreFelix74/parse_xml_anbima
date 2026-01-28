@@ -124,20 +124,6 @@ def load_db_cad_fi_cvm(data_aux_path):
     return db_cad_fi_cvm.add_prefix('dCadFI_CVM.')
 
 
-def load_dcadplano(data_aux_path):
-    """
-    Loads the 'dCadPlano' sheet from the dbAux Excel file.
-
-    Args:
-        data_aux_path (str): Path to the directory containing 'dbAux.xlsx'.
-
-    Returns:
-        pd.DataFrame: Loaded DataFrame from the 'dCadPlano' sheet.
-    """
-    dbaux_path = f"{data_aux_path}dbAux.xlsx"
-    return pd.read_excel(dbaux_path, sheet_name='dCadPlano', dtype=str)
-
-
 def load_enrich_auxiliary_data(data_aux_path):
     """
     Loads all auxiliary datasets required for data enrichment and classification.
@@ -147,43 +133,13 @@ def load_enrich_auxiliary_data(data_aux_path):
 
     Returns:
         dict: A dictionary with the following keys:
-            - 'dcadplano': DataFrame from the 'dCadPlano' sheet in dbAux.xlsx
             - 'assets': Merged DataFrame from numeraca and emissor
             - 'cad_fi_cvm': Cleaned and prefixed CVM fund registration DataFrame
     """
     return {
-        'dcadplano': load_dcadplano(data_aux_path),
         'assets': load_assets_aux(data_aux_path),
         'cad_fi_cvm': load_db_cad_fi_cvm(data_aux_path),
     }
-
-
-def load_governance_struct(data_aux_path):
-    """
-    Loads the 'dEstruturaGerencial' sheet from the dbAux Excel file.
-
-    Args:
-        data_aux_path (str): Path to the directory containing 'dbAux.xlsx'.
-
-    Returns:
-        pd.DataFrame: Loaded DataFrame from the 'dEstruturaGerencial' sheet.
-    """
-    dbaux_path = f"{data_aux_path}dbAux.xlsx"
-    return pd.read_excel(dbaux_path, sheet_name='dEstruturaGerencial', dtype=str)
-
-
-def load_range_eom(data_aux_path):
-    """
-    Loads the 'dDataMes' sheet from the dbAux Excel file.
-
-    Args:
-        data_aux_path (str): Path to the directory containing 'dbAux.xlsx'.
-
-    Returns:
-        pd.DataFrame: Loaded DataFrame from the 'dEstruturaGerencial' sheet.
-    """
-    dbaux_path = f"{data_aux_path}dbAux.xlsx"
-    return pd.read_excel(dbaux_path, sheet_name='dDataMes', dtype=str)
 
 
 def load_returns_by_puposicao(data_aux_path):
@@ -319,46 +275,6 @@ def load_cnpb_codcli_mapping(data_aux_path):
     return mapping.rename(columns={'CNPB_x': 'cnpb'})[['cnpb', 'CODCLI_SAC']]
 
 
-def load_dcadplanosac(data_aux_path):
-    """
-    Loads the dCadPlanoSAC sheet from dbAux.xlsx.
-
-    Args:
-        data_aux_path (str): Path to dbAux.xlsx.
-
-    Returns:
-        pd.DataFrame: A DataFrame containing the dCadPlanoSAC sheet with
-        portfolio codes adjusted according to the selected portfolio_type.
-    """
-    dcadplanosac = pd.read_excel(f"{data_aux_path}dbAux.xlsx",
-                                 sheet_name='dCadPlanoSAC',
-                                 dtype=str)
-
-    # Substitui carteira com contencioso pela carteira sem contencioso (soh investimentos)
-    dcadplanosac['CODCLI_SAC'] = (
-        dcadplanosac['CODCLI_SAC_INVEST'].where(
-            dcadplanosac['CODCLI_SAC_INVEST'].notnull(),
-            dcadplanosac['CODCLI_SAC']
-        )
-    )
-
-    return dcadplanosac
-
-
-def load_performance_struct(data_aux_path):
-    """
-    Loads the 'dEstruturaDesempenho' sheet from the dbAux Excel file.
-
-    Args:
-        data_aux_path (str): Path to the directory containing 'dbAux.xlsx'.
-
-    Returns:
-        pd.DataFrame: Loaded DataFrame from the 'dEstruturaDesempenho' sheet.
-    """
-    dbaux_path = f"{data_aux_path}dbAux.xlsx"
-    return pd.read_excel(dbaux_path, sheet_name='dEstruturaDesempenho', dtype=str)
-
-
 def load_performance(performance_path):
     raw_data = []
 
@@ -407,3 +323,69 @@ def load_performance(performance_path):
     performance['PERFIL_BASE'] = performance['PERFIL_BASE'].astype(str).str.strip().str.upper()
 
     return performance
+
+
+import os
+import pandas as pd
+
+def load_dbaux(data_aux_path: str) -> dict:
+    """
+    Lê de uma vez as planilhas necessárias do dbAux.xlsx e constrói
+    DataFrames derivados (dcadplanosac ajustado e dcadsubmassa).
+
+    Args:
+        data_aux_path (str): Caminho do diretório contendo 'dbAux.xlsx'.
+
+    Returns:
+        dict[str, pd.DataFrame]:
+            - governance_struct  -> dEstruturaGerencial
+            - dcadplano          -> dCadPlano
+            - range_eom          -> dDataMes
+            - performance_struct -> dEstruturaDesempenho
+            - dcadplanosac       -> dCadPlanoSAC ajustado
+            - dcadsubmassa       -> derivado de dCadPlanoSAC
+    """
+    mapping = {
+        'governance_struct': 'dEstruturaGerencial',
+        'dcadplano': 'dCadPlano',
+        'range_eom': 'dDataMes',
+        'performance_struct': 'dEstruturaDesempenho',
+        'dcadplanosac': 'dCadPlanoSAC',
+    }
+
+    dbaux_path = os.path.join(data_aux_path, 'dbAux.xlsx')
+
+    sheets = pd.read_excel(
+        dbaux_path,
+        sheet_name=list(mapping.values()),
+        dtype=str
+    )
+
+    dcadplanosac = sheets['dCadPlanoSAC'].copy()
+    dcadplanosac['CODCLI_SAC'] = dcadplanosac['CODCLI_SAC_INVEST'].where(
+        dcadplanosac['CODCLI_SAC_INVEST'].notnull(),
+        dcadplanosac['CODCLI_SAC']
+    )
+
+    cols_cad_submassa = [
+        'CNPB', 'COD_PLANO', 'CODCART', 'CODCLI_SAC',
+        'COD_SUBMASSA', 'SUBMASSA',
+    ]
+
+    dcadsubmassa = (
+        dcadplanosac[cols_cad_submassa]
+        .dropna(subset=['CODCART'])
+        .drop_duplicates()
+    )
+
+    result = {
+        key: sheets[sheet_name]
+        for key, sheet_name in mapping.items()
+        if key != 'dcadplanosac'
+    }
+
+    result['dcadplanosac'] = dcadplanosac
+
+    result['dcadsubmassa'] = dcadsubmassa
+
+    return result

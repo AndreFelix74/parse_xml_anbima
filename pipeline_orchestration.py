@@ -7,6 +7,7 @@ Created on Fri May 30 11:33:22 2025
 """
 
 
+from datetime import datetime
 import os
 import re
 import locale
@@ -48,7 +49,20 @@ def setup_folders(paths):
             os.makedirs(path)
 
 
-def save_intermediate(dtfrm, filename, config, log):
+def _save_file_with_run_id(dtfrm, filename, root_path, file_fmt, log, log_msg_key):
+    """
+    Helper function to save a DataFrame to a RUN_ID subfolder.
+    """
+    run_folder = os.path.join(root_path, RUN_ID)
+    os.makedirs(run_folder, exist_ok=True)
+
+    full_path = os.path.join(run_folder, filename)
+    save_df(dtfrm, full_path, file_fmt)
+
+    log.info(log_msg_key, arquivo=f"{full_path}.{file_fmt}")
+
+
+def debug_save(dtfrm, filename, config, timing_msg, timing_detail_msg):
     """
     Saves an intermediate DataFrame to a unique RUN_ID subfolder.
 
@@ -63,11 +77,6 @@ def save_intermediate(dtfrm, filename, config, log):
     run_id : str
         Unique identifier for this pipeline execution.
 
-    Returns
-    -------
-    str
-        Full path of saved file.
-
     Raises
     ------
     KeyError
@@ -75,13 +84,33 @@ def save_intermediate(dtfrm, filename, config, log):
     ValueError
         If file writing is disabled by configuration.
     """
-    run_folder = os.path.join(config['output_path'], RUN_ID)
-    os.makedirs(run_folder, exist_ok=True)
+    if not config['save']:
+        return
 
-    full_path = os.path.join(run_folder, filename)
-    save_df(dtfrm, full_path, config['file_format'])
+    with log_timing(timing_msg, timing_detail_msg) as log:
+        _save_file_with_run_id(
+            dtfrm,
+            filename,
+            config['output_path'],
+            config['file_format'],
+            log, 
+            'intermediate_files_saved'
+        )
 
-    log.info('intermediate_files_saved', arquivo=f"{full_path}.{config['file_format']}")
+
+def save_log_evidence(dtfrm, filename, config, log):
+    """
+    Saves a DataFrame as evidence of a validation error/warning.
+    Uses RUN_ID to create a subfolder within the evidence path.
+    """
+    _save_file_with_run_id(
+        dtfrm,
+        filename,
+        config['log_evidence_root'],
+        config['log_evidence_file_format'],
+        log,
+        'evidence_saved'
+    )
 
 
 def find_all_files(files_path, file_ext):
@@ -264,7 +293,7 @@ def create_numeric_fields_set(funds_dtypes, port_dtypes):
     )
 
 
-def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys, numeric_fields):
+def parse_files(debug_cfg, xml_source_path, processes, daily_keys, numeric_fields):
     with log_timing('parse', 'find_xml_files') as log:
         all_xml_files = find_all_files(xml_source_path, '.xml')
         xml_files_to_process, xml_discarted = select_latest_xml_by_cnpj_and_date(all_xml_files)
@@ -289,15 +318,13 @@ def parse_files(intermediate_cfg, xml_source_path, processes, daily_keys, numeri
         funds = convert_entity_to_dataframe(funds_list, 'fundos', daily_keys)
         portfolios = convert_entity_to_dataframe(portfolios_list, 'carteiras', daily_keys)
 
-    if intermediate_cfg['save']:
-        with log_timing('parse', 'save_parsed_raw_data') as log:
-            save_intermediate(funds, 'fundos-raw', intermediate_cfg, log)
-            save_intermediate(portfolios, 'carteiras-raw', intermediate_cfg, log)
+    debug_save(funds, 'fundos-raw', debug_cfg, 'parse', 'debug_save_parsed_raw_data')
+    debug_save(portfolios, 'carteiras-raw', debug_cfg, 'parse', 'debug_save_parsed_raw_data')
 
     return [funds, portfolios]
 
 
-def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
+def clean_and_prepare_raw(debug_cfg, funds, portfolios, types_to_exclude,
                           types_series, harmonization_rules, funds_dtypes, port_dtypes):
     with log_timing('clean', 'clean_and_prepare'):
         funds = cleaner.clean_data(funds, funds_dtypes, types_to_exclude,
@@ -306,10 +333,8 @@ def clean_and_prepare_raw(intermediate_cfg, funds, portfolios, types_to_exclude,
         portfolios = cleaner.clean_data(portfolios, port_dtypes, types_to_exclude,
                                         types_series, harmonization_rules)
 
-    if intermediate_cfg['save']:
-        with log_timing('clean', 'save_cleaned_data') as log:
-            save_intermediate(funds, 'fundos-cleaned', intermediate_cfg, log)
-            save_intermediate(portfolios, 'carteiras-cleaned', intermediate_cfg, log)
+    debug_save(funds, 'fundos-cleaned', debug_cfg, 'clean', 'debug_save_cleaned_data')
+    debug_save(portfolios, 'carteiras-cleaned', debug_cfg, 'clean', 'debug_save_cleaned_data')
 
     return [funds, portfolios]
 
@@ -322,7 +347,7 @@ def check_puposicao_consistency_merge(inconsistenci_data, entity, cols_entity):
     )
 
 
-def check_puposicao_consistency(intermediate_cfg, funds, portfolios):
+def check_puposicao_consistency(debug_cfg, funds, portfolios):
     with log_timing('check', 'puposicao_consistency') as log:
         group_cols = ['isin', 'dtposicao', 'puposicao']
         funds_mask = funds['isin'].notnull() & (funds['NEW_TIPO'] != 'OVER')
@@ -360,12 +385,10 @@ def check_puposicao_consistency(intermediate_cfg, funds, portfolios):
                 dados=all_inconsistencies[0:100].to_dict(orient='records')
             )
 
-            save_intermediate(all_inconsistencies,
-                              'puposicao_divergente_mesma_data',
-                              intermediate_cfg, log)
+            save_log_evidence(all_inconsistencies, 'puposicao_divergente_mesma_data', debug_cfg, log)
 
 
-def check_values_integrity(intermediate_cfg, entity, entity_name, invested, group_keys):
+def check_values_integrity(debug_cfg, entity, entity_name, invested, group_keys):
     investor_holdings_cols = ['cnpjfundo', 'qtdisponivel', 'dtposicao', 'isin',
                               'nome', 'puposicao']
 
@@ -375,20 +398,18 @@ def check_values_integrity(intermediate_cfg, entity, entity_name, invested, grou
 
         if not divergent_puposicao_vlcota.empty:
             log.warn('check', dados=divergent_puposicao_vlcota.to_dict(orient="records"))
-            save_intermediate(divergent_puposicao_vlcota,
-                              f"{entity_name}_puposicao_divergente_vlcota",
-                              intermediate_cfg, log)
+            save_log_evidence(divergent_puposicao_vlcota,
+                              f"{entity_name}_puposicao_divergente_vlcota", debug_cfg, log)
 
     with log_timing('check', f"pl_consistency_{entity_name}") as log:
         divergent_pl = checker.check_composition_consistency(entity, group_keys, 0.01 / 100.0)
 
         if not divergent_pl.empty:
             log.warn('check', dados=divergent_pl.to_dict(orient="records"))
-            save_intermediate(divergent_pl, f"{entity_name}_pl_divergente",
-                              intermediate_cfg, log)
+            save_log_evidence(divergent_pl, f"{entity_name}_pl_divergente", debug_cfg, log)
 
 
-def explode_partplanprev(intermediate_cfg, portfolios):
+def explode_partplanprev(debug_cfg, portfolios):
     with log_timing('enrich', 'explode_partplanprev'):
         allocated_partplanprev = crt.explode_partplanprev_and_allocate(portfolios)
         if allocated_partplanprev is None:
@@ -396,9 +417,7 @@ def explode_partplanprev(intermediate_cfg, portfolios):
 
         portfolios = crt.integrate_allocated_partplanprev(portfolios, allocated_partplanprev)
 
-    if intermediate_cfg['save']:
-        with log_timing('enrich', 'save_exploded_partplanprev') as log:
-            save_intermediate(portfolios, 'carterias-exploded', intermediate_cfg, log)
+    debug_save(portfolios, 'carterias-exploded', debug_cfg, 'enrich', 'debug_save_exploded_partplanprev')
 
     with log_timing('enrich', 'remove_partplanprev'):
         mask = portfolios['tipo'] == 'partplanprev'
@@ -407,7 +426,7 @@ def explode_partplanprev(intermediate_cfg, portfolios):
     return portfolios[~mask]
 
 
-def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
+def enrich(debug_cfg, funds, portfolios, types_series, data_aux_path, dcadplano,
            new_tipo_rules, gestor_name_stopwords, name_standardization_rules):
 
     with log_timing('enrich', 'load_aux_data'):
@@ -416,7 +435,7 @@ def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
     with log_timing('enrich', 'merge_aux_data'):
         portfolios = merge_aux_data(
             portfolios,
-            aux_data['dcadplano'],
+            dcadplano,
             aux_data['assets'],
             aux_data['cad_fi_cvm'],
             'fEMISSOR.CNPJ_EMISSOR'
@@ -424,7 +443,7 @@ def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
 
         funds = merge_aux_data(
             funds,
-            aux_data['dcadplano'],
+            dcadplano,
             aux_data['assets'],
             aux_data['cad_fi_cvm'],
             'cnpjfundo'
@@ -443,20 +462,47 @@ def enrich(intermediate_cfg, funds, portfolios, types_series, data_aux_path,
         if alerts:
             log.warning(f"Classification alerts for funds: {alerts}")
 
-    if intermediate_cfg['save']:
-        with log_timing('enrich', 'save_enriched_data') as log:
-            save_intermediate(funds, 'fundos-enriched', intermediate_cfg, log)
-            save_intermediate(portfolios, 'carteiras-enriched', intermediate_cfg, log)
+    debug_save(funds, 'fundos-enriched', debug_cfg, 'enrich', 'debug_save_enriched_data')
+    debug_save(portfolios, 'carteiras-enriched', debug_cfg, 'enrich', 'debug_save_enriched_data')
 
     return [funds, portfolios]
 
 
 def compute_metrics(funds, portfolios, types_series):
-    with log_timing('enrich', 'compute_metrics'):
+    with log_timing('compute', 'metrics'):
         metrics.compute(funds, funds, types_series, ['cnpj'])
 
         group_keys_port = ['cnpjcpf', 'codcart', 'dtposicao', 'nome', 'cnpb']
         metrics.compute(portfolios, funds, types_series, group_keys_port)
+
+
+def extract_portfolio_submassa(debug_cfg, cad_submassa, portfolios):
+    with log_timing('submassa', 'extract_portfolio_submassa'):
+        mask = portfolios['codcart'].isin(cad_submassa['CODCART'])
+
+        port_submassa = portfolios.loc[mask].merge(
+            cad_submassa,
+            left_on='codcart',
+            right_on='CODCART',
+            how='left',
+        )
+
+    debug_save(port_submassa, 'submassa-carterias', debug_cfg, 'submassa', 'debug_save_portfolio_submassa')
+
+    return [portfolios.loc[~mask], port_submassa]
+
+
+def compute_composition_portfolio_submassa(debug_cfg, port_submassa):
+    with log_timing('submassa', 'compute_composition_portfolio_submassa'):
+        port_submassa['total_submassa_isin_cnpb'] = (
+            port_submassa.groupby(['dtposicao', 'CNPB', 'isin'])['valor_calc'].transform('sum')
+        )
+
+        port_submassa['pct_submassa_isin_cnpb'] = (
+            port_submassa['valor_calc'] / port_submassa['total_submassa_isin_cnpb']
+        )
+
+    debug_save(port_submassa, 'submassa-carterias-composicao', debug_cfg, 'submassa', 'debug_save_portfolio_submassa_composition')
 
 
 def validate_fund_graph_is_acyclic(funds):
@@ -490,12 +536,12 @@ def validate_fund_graph_is_acyclic(funds):
 
 
 def assign_returns(entity, entity_key, entity_name):
-    with log_timing('enrich', f"assing_returns_{entity_name}"):
+    with log_timing('compute', f"returns_{entity_name}"):
         entity.sort_values(by=entity_key + ['isin', 'dtposicao'], inplace=True)
         pct = entity.groupby(entity_key + ['isin'])['puposicao'].pct_change(fill_method=None)
         entity['rentab'] = pct.round(8)
 
-    with log_timing('enrich', f"assing_returns_over_{entity_name}"):
+    with log_timing('compute', f"returns_{entity_name}_over"):
         mask_over = entity['NEW_TIPO'] == 'OVER'
 
         if mask_over.any():
@@ -507,10 +553,71 @@ def assign_returns(entity, entity_key, entity_name):
     return entity
 
 
-def build_horizontal_tree(funds, portfolios, data_aux_path):
+def build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa):
     with log_timing('tree', 'build_tree'):
         tree_horzt = build_tree(funds, portfolios)
 
+        mask = (
+            tree_horzt['cnpb'].isin(port_submassa['CNPB'].unique()) &
+            tree_horzt['dtposicao'].isin(port_submassa['dtposicao'].unique())
+        )
+
+        tree_horzt_submassa = tree_horzt[mask].copy()
+
+    debug_save(tree_horzt_submassa, 'submassa-arvore', debug_cfg, 'tree', 'debug_save_tree_submassa')
+
+    return tree_horzt.loc[~mask], tree_horzt_submassa
+
+#PASSAR EXPLODE SUBMASSA para tree/tree_operations como eh com carteira_operations
+def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
+    with log_timing('tree', 'build_tree_submassa'):
+        cols_port_submassa = ['dtposicao', 'CNPB', 'isin', 'CODCART',
+                              'COD_SUBMASSA', 'SUBMASSA', 'pct_submassa_isin_cnpb']
+        mask_port = (~port_submassa['isin'].isna())
+
+        tree_horzt_sub['COD_SUBMASSA'] = None
+        tree_horzt_sub['SUBMASSA'] = None
+        tree_horzt_sub['pct_submassa_isin_cnpb'] = 1.0
+        tree_horzt_sub['CODCART'] = None
+
+        max_depth = tree_horzt_sub['nivel'].max()
+
+        if pd.isna(max_depth):
+            return tree_horzt_sub
+
+        for i in range(0, max_depth + 1):
+            suffix = '' if i == 0 else f'_nivel_{i}'
+            isin_col = f"isin{suffix}"
+
+            tree_horzt_sub = tree_horzt_sub.merge(
+                port_submassa[mask_port][cols_port_submassa],
+                left_on=['dtposicao', 'cnpb', isin_col],
+                right_on=['dtposicao', 'CNPB', 'isin'],
+                how='left',
+                suffixes=('', f"_{suffix}"),
+                indicator=True,
+            )
+
+            mask_merge = (tree_horzt_sub['_merge'] == 'both')
+
+            tree_horzt_sub.loc[mask_merge, 'COD_SUBMASSA'] = tree_horzt_sub[f"COD_SUBMASSA_{suffix}"]
+            tree_horzt_sub.loc[mask_merge, 'SUBMASSA'] = tree_horzt_sub[f"SUBMASSA_{suffix}"]
+            tree_horzt_sub.loc[mask_merge, 'pct_submassa_isin_cnpb'] = tree_horzt_sub[f"pct_submassa_isin_cnpb_{suffix}"]
+            tree_horzt_sub.loc[mask_merge, 'CODCART'] = tree_horzt_sub[f"CODCART_{suffix}"]
+
+            tree_horzt_sub.drop(columns=['_merge'], inplace=True)
+
+    tree_horzt_sub['pct_submassa_isin_cnpb'] = tree_horzt_sub['pct_submassa_isin_cnpb'].astype(float).fillna(1.0)
+    mask_bsps = (tree_horzt_sub['SUBMASSA'].isna())
+    tree_horzt_sub.loc[mask_bsps, 'COD_SUBMASSA'] = '1'
+    tree_horzt_sub.loc[mask_bsps, 'SUBMASSA'] = 'BSPS'
+
+    debug_save(tree_horzt_sub, 'submassa-arvore-pct_part', debug_cfg, 'tree', 'debug_save_tree_submassa_pct_part')
+
+    return tree_horzt_sub
+
+
+def enrich_horizontal_tree(tree_horzt, governance_struct):
     with log_timing('tree', 'enrich_values'):
         enrich_values(tree_horzt)
 
@@ -518,28 +625,13 @@ def build_horizontal_tree(funds, portfolios, data_aux_path):
         enrich_text(tree_horzt)
 
     with log_timing('tree', 'governance_struct'):
-        governance_struct = aux_loader.load_governance_struct(data_aux_path)
         governance_struct = governance_struct[governance_struct['KEY_VEICULO'].notna()]
 
         assign_governance_struct_keys(tree_horzt, governance_struct)
 
-        return tree_horzt
-
 
 def load_config():
     config = utl.load_config('config.ini')
-
-    xml_source_path = config['Paths']['xml_source_path']
-    xml_source_path = f"{os.path.dirname(utl.format_path(xml_source_path))}/"
-
-    xlsx_destination_path = config['Paths']['xlsx_destination_path']
-    xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
-
-    data_aux_path = config['Paths']['data_aux_path']
-    data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
-
-    mec_sac_path = config['Paths']['mec_sac_path']
-    mec_sac_path = f"{os.path.dirname(utl.format_path(mec_sac_path))}/"
 
     if not config.has_section('Debug'):
         raise KeyError('Missing [Debug] section in config.ini')
@@ -547,37 +639,60 @@ def load_config():
     if not config.has_section('Paths'):
         raise KeyError('Missing [Paths] section in config.ini')
 
-    intermediate_cfg = {
-        'save': config['Debug'].get('write_intermediate_files').lower() == 'yes',
-        'output_path': config['Debug'].get('intermediate_output_path'),
-        'file_format': config['Paths'].get('destination_file_extension')
+    xml_source_path = config['Paths']['xml_source_path']
+    xml_source_path = f"{os.path.dirname(utl.format_path(xml_source_path))}/"
+
+    destination_path = config['Paths']['destination_path']
+    destination_path = f"{os.path.dirname(utl.format_path(destination_path))}/"
+
+    destination_file_format = config['Paths']['destination_file_format']
+
+    data_aux_path = config['Paths']['data_aux_path']
+    data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
+
+    mec_sac_path = config['Paths']['mec_sac_path']
+    mec_sac_path = f"{os.path.dirname(utl.format_path(mec_sac_path))}/"
+
+    debug_cfg = {
+        'save': config['Debug'].get('debug').lower() == 'yes',
+        'output_path': config['Debug'].get('debug_path'),
+        'file_format': config['Debug'].get('debug_file_format')
     }
 
-    return [xml_source_path, xlsx_destination_path, data_aux_path,
-            intermediate_cfg, mec_sac_path]
+    evidence_root = config['Paths']['log_evidence_root']
+    evidence_root = f"{os.path.dirname(utl.format_path(evidence_root))}/"
+    log_cfg = {
+        'log_evidence_root': evidence_root,
+        'log_evidence_file_format': config['Paths']['log_evidence_file_format'],
+    }
+
+    return [xml_source_path, destination_path, destination_file_format,
+            data_aux_path, debug_cfg, log_cfg, mec_sac_path]
 
 
-def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
-                                mec_sac_path, processes):
+def compute_plan_returns_adjust(debug_cfg, tree_hrztl, dcadplanosac,
+                                mec_sac_path, processes, port_submassa):
     mec_sac = load_mecsac(mec_sac_path, processes)
-
-    with log_timing('plans_returns', 'load_dcadplanosac'):
-        dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
 
     with log_timing('plans_returns', 'compute_adjustment'):
         mec_sac_returns_by_plan, tree_returns_by_plan, plan_returns_adjust = (
-            compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac)
+            compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac, port_submassa)
             )
 
-    if intermediate_cfg['save']:
-        with log_timing('tree', 'compute_returns_adjust') as log:
-            save_intermediate(mec_sac_returns_by_plan, 'rentab-plano-mecsac', intermediate_cfg, log)
-            save_intermediate(tree_returns_by_plan, 'rentab-plano-tree', intermediate_cfg, log)
-            save_intermediate(plan_returns_adjust , 'rentab-plano-ajuste', intermediate_cfg, log)
+    debug_save(mec_sac_returns_by_plan, 'rentab-plano-mecsac', debug_cfg, 'tree', 'debug_save_compute_returns_adjust')
+    debug_save(tree_returns_by_plan, 'rentab-plano-tree', debug_cfg, 'tree', 'debug_save_compute_returns_adjust')
+    debug_save(plan_returns_adjust , 'rentab-plano-ajuste', debug_cfg, 'tree', 'debug_save_compute_returns_adjust')
 
     with log_timing('plans_returns', 'enrich_adjustment'):
-        adjust_rentab = plan_returns_adjust[['cnpb', 'dtposicao', 'contribution_ajuste_rentab',
-                                            'contribution_ajuste_rentab_fator']].copy()
+
+        cols_adjust = ['cnpb', 'dtposicao', 'contribution_ajuste_rentab',
+                   'contribution_ajuste_rentab_fator', 'CODCART']
+
+        adjust_rentab = plan_returns_adjust[cols_adjust].merge(
+            dcadplanosac[['CODCART', 'COD_SUBMASSA', 'SUBMASSA']],
+            on=['CODCART'],
+            how='left',
+            )
         adjust_rentab.rename(columns={'contribution_ajuste_rentab': 'contribution_rentab_ponderada'}, inplace=True)
         adjust_rentab['nivel'] = 0
         cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
@@ -592,7 +707,26 @@ def compute_plan_returns_adjust(intermediate_cfg, tree_hrztl, data_aux_path,
         for col in cols_adjust:
             adjust_rentab[col] = 'VIVEST'
 
-    return adjust_rentab
+        adjust_rentab['CODCART'] = adjust_rentab['CODCART'].fillna('')
+
+        return adjust_rentab
+
+
+def assign_adjustments(tree_hrztl, adjust_rentab):
+    with log_timing('plans_returns', 'assign_adjustment'):
+        tree_hrztl = tree_hrztl.merge(
+            adjust_rentab[['cnpb', 'CODCART', 'dtposicao', 'contribution_ajuste_rentab_fator']],
+            on=['cnpb', 'CODCART', 'dtposicao'],
+            how='left',
+            )
+        tree_hrztl['contribution_rentab_ponderada_ajustada'] = (
+            tree_hrztl['contribution_rentab_ponderada']
+            * tree_hrztl['contribution_ajuste_rentab_fator']
+            )
+
+        tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
+
+    return tree_hrztl
 
 
 def run_pipeline():
@@ -600,13 +734,18 @@ def run_pipeline():
 
     (
         xml_source_path,
-        xlsx_destination_path,
+        destination_path,
+        destination_file_format,
         data_aux_path,
-        intermediate_cfg,
+        debug_cfg,
+        log_cfg,
         mec_sac_path,
     ) = load_config()
 
-    setup_folders([xlsx_destination_path])
+    setup_folders([destination_path])
+
+    with log_timing('load', 'load_dbaux'):
+        db_aux = aux_loader.load_dbaux(data_aux_path)
 
     funds_dtypes = dta.read('fundos_metadata')
     port_dtypes = dta.read('carteiras_metadata')
@@ -617,13 +756,13 @@ def run_pipeline():
 
     processes = min(8, multiprocessing.cpu_count())
     numeric_fields = create_numeric_fields_set(funds_dtypes, port_dtypes)
-    funds, portfolios = parse_files(intermediate_cfg, xml_source_path,
+    funds, portfolios = parse_files(debug_cfg, xml_source_path,
                                     processes, daily_keys, numeric_fields)
 
     types_to_exclude = dta.read('types_to_exclude')
     harmonization_rules = dta.read('harmonization_values_rules')
 
-    funds, portfolios = clean_and_prepare_raw(intermediate_cfg, funds, portfolios,
+    funds, portfolios = clean_and_prepare_raw(debug_cfg, funds, portfolios,
                                               types_to_exclude, types_series,
                                               harmonization_rules, funds_dtypes, port_dtypes)
 
@@ -631,16 +770,16 @@ def run_pipeline():
     new_tipo_rules = dta.read('enrich_de_para_tipos')
     gestor_name_stopwords = dta.read('gestor_name_stopwords')
 
-    portfolios = explode_partplanprev(intermediate_cfg, portfolios)
+    portfolios = explode_partplanprev(debug_cfg, portfolios)
 
-    funds, portfolios = enrich(intermediate_cfg, funds, portfolios, types_series,
-                               data_aux_path, new_tipo_rules, gestor_name_stopwords,
+    funds, portfolios = enrich(debug_cfg, funds, portfolios, types_series, data_aux_path,
+                               db_aux['dcadplano'], new_tipo_rules, gestor_name_stopwords,
                                name_standardization_rules)
 
-    check_values_integrity(intermediate_cfg, funds, 'fundos', funds, ['cnpj'])
-    check_values_integrity(intermediate_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
+    check_values_integrity(log_cfg, funds, 'fundos', funds, ['cnpj'])
+    check_values_integrity(log_cfg, portfolios, 'carteiras', funds, ['cnpjcpf', 'codcart'])
 
-    check_puposicao_consistency(intermediate_cfg, funds, portfolios)
+    check_puposicao_consistency(log_cfg, funds, portfolios)
 
     validate_fund_graph_is_acyclic(funds)
 
@@ -649,31 +788,31 @@ def run_pipeline():
     assign_returns(funds, ['cnpj'], 'fundos')
     assign_returns(portfolios, ['cnpjcpf', 'codcart', 'cnpb'], 'carteiras')
 
-    tree_hrztl = build_horizontal_tree(funds, portfolios, data_aux_path)
-    adjust_rentab = compute_plan_returns_adjust(intermediate_cfg, tree_hrztl,
-                                                data_aux_path, mec_sac_path,
-                                                processes)
+    portfolios, port_submassa = extract_portfolio_submassa(debug_cfg, db_aux['dcadsubmassa'], portfolios)
+    compute_composition_portfolio_submassa(debug_cfg, port_submassa)
 
-    with log_timing('plans_returns', 'assing_adjustment'):
-        tree_hrztl = tree_hrztl.merge(
-            adjust_rentab[['cnpb', 'dtposicao', 'contribution_ajuste_rentab_fator']],
-            on=['cnpb', 'dtposicao'],
-            how='left',
-            )
-        tree_hrztl['contribution_rentab_ponderada_ajustada'] = (
-            tree_hrztl['contribution_rentab_ponderada']
-            * tree_hrztl['contribution_ajuste_rentab_fator']
-            )
+    tree_hrztl, tree_hrztl_sub = build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa)
+    tree_hrztl_sub = explode_horizontal_tree_submassa(debug_cfg, tree_hrztl_sub, port_submassa)
+    tree_hrztl = pd.concat([tree_hrztl, tree_hrztl_sub], ignore_index=True)
+    #Preenche CODCART com vazio para as demais partes do codigo que passam a usar essa coluna
+    #para agregacoes
+    tree_hrztl['CODCART'] = tree_hrztl['CODCART'].fillna('')
+    enrich_horizontal_tree(tree_hrztl, db_aux['governance_struct'])
 
-        tree_hrztl = pd.concat([tree_hrztl, adjust_rentab])
+    adjust_rentab = compute_plan_returns_adjust(debug_cfg, tree_hrztl,
+                                                db_aux['dcadplanosac'], mec_sac_path,
+                                                processes, port_submassa)
+
+    tree_hrztl = assign_adjustments(tree_hrztl, adjust_rentab)
 
     with log_timing('finish', 'save_final_files'):
-        file_frmt = intermediate_cfg['file_format']
-        save_df(portfolios, f"{xlsx_destination_path}carteiras", file_frmt)
-        save_df(funds,      f"{xlsx_destination_path}fundos",    file_frmt)
-        save_df(tree_hrztl, f"{xlsx_destination_path}arvore_carteiras", file_frmt)
+        save_df(portfolios, f"{destination_path}carteiras", destination_file_format)
+        save_df(funds,      f"{destination_path}fundos",    destination_file_format)
+        save_df(tree_hrztl, f"{destination_path}arvore_carteiras", destination_file_format)
 
 
 if __name__ == "__main__":
+    start_time = datetime.now()
     with log_timing('full', 'all_process'):
         run_pipeline()
+    print(f"Execucao: {start_time} -> {datetime.now()}")

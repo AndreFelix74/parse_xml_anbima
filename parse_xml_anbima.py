@@ -165,13 +165,15 @@ def split_header(header, daily_keys):
 
 def flatten_data(data_list, daily_keys, non_propagated_header_keys):
     """
-    Convert structured fund and portfolio data into a pandas DataFrame.
+    Normalize structured fund/portfolio data into a list of dictionaries.
 
     Args:
-        data_list (list): List of data dictionaries.
+        data_list (list): List of fund/portfolio dictionaries.
+        daily_keys (set): Keys considered as daily financial data.
+        non_propagated_header_keys (set): Keys to exclude from header info.
 
     Returns:
-        pandas.DataFrame: DataFrame containing the combined data.
+        list[dict]: Normalized list of dictionaries representing data rows.
     """
     all_rows = []
 

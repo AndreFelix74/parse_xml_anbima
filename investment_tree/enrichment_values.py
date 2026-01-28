@@ -55,6 +55,7 @@ def compute_proportional_value(tree_horzt, max_depth):
         tree_horzt.loc[mask_level, 'valor_calc_proporcional'] = (
             tree_horzt.loc[mask_level, col_name]
             * tree_horzt.loc[mask_level, 'equity_stake_leaf']
+            * tree_horzt.loc[mask_level, 'pct_submassa_isin_cnpb'].fillna(1.0)
         )
 
 
@@ -84,6 +85,7 @@ def compute_weighted_returns(tree_horzt, max_depth):
         tree_horzt.loc[mask_level, 'rentab_ponderada'] = (
             tree_horzt.loc[mask_level, 'composicao']
             * tree_horzt.loc[mask_level, col_returns].fillna(0.0)
+            * tree_horzt.loc[mask_level, 'pct_submassa_isin_cnpb'].fillna(1.0)
         )
         tree_horzt.loc[mask_level, 'rentab_nominal'] = tree_horzt.loc[mask_level, col_returns]
 
@@ -118,7 +120,7 @@ def enrich_values(tree_horzt):
     compute_proportional_value(tree_horzt, max_depth)
 
     tree_horzt['total_invest'] = (
-        tree_horzt.groupby(['cnpb', 'dtposicao'])['valor_calc_proporcional'].transform('sum')
+        tree_horzt.groupby(['cnpb', 'CODCART', 'dtposicao'])['valor_calc_proporcional'].transform('sum')
     )
 
     tree_horzt['composicao'] = (
