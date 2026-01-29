@@ -334,11 +334,11 @@ def save_returns(api_ctx, missing_returns_maestro):
     for _, row in missing_returns_maestro.iterrows():
         payload_base = {
             'planoId': int(row['api_id']),
+            'mes': int(row['MES']),
             'ano': int(row['ANO']),
             }
         payload_mes = {
             **payload_base,
-            'mes': int(row['MES']),
             'valor': float(row['RENTAB_MES']) * 100.0
             }
         payload_ano = {
