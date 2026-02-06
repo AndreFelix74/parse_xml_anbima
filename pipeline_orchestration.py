@@ -693,6 +693,8 @@ def compute_plan_returns_adjust(debug_cfg, tree_hrztl, dcadplanosac,
             on=['CODCART'],
             how='left',
             )
+        mask = adjust_rentab['SUBMASSA'].isna() | (adjust_rentab['SUBMASSA'] == '')
+        adjust_rentab.loc[mask, 'SUBMASSA'] = '#AJUSTE'
         adjust_rentab.rename(columns={'contribution_ajuste_rentab': 'contribution_rentab_ponderada'}, inplace=True)
         adjust_rentab['nivel'] = 0
         cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
