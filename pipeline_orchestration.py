@@ -695,17 +695,21 @@ def compute_plan_returns_adjust(debug_cfg, tree_hrztl, dcadplanosac,
             )
         adjust_rentab.rename(columns={'contribution_ajuste_rentab': 'contribution_rentab_ponderada'}, inplace=True)
         adjust_rentab['nivel'] = 0
-        cols_adjust = ['KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
-                    'NEW_NOME_ATIVO', 'SEARCH', 'NEW_TIPO_FINAL',
-                    'NEW_NOME_ATIVO_FINAL', 'isin', 'contribution_ativo', 'contribution_match']
-        for col in cols_adjust:
-            adjust_rentab[col] = '#AJUSTE'
+        adjust_map = {
+            '#AJUSTE': [
+                'KEY_ESTRUTURA_GERENCIAL', 'codcart', 'nome', 'NEW_TIPO',
+                'NEW_NOME_ATIVO', 'SEARCH', 'NEW_TIPO_FINAL', 'isin',
+                'contribution_ativo', 'contribution_match'
+            ],
+            'VIVEST': [
+                'fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR', 'NEW_GESTOR_WORD_CLOUD',
+                'NEW_NOME_ATIVO_FINAL', 'NEW_GESTOR_WORD_CLOUD_FINAL',
+                'fEMISSOR.NOME_EMISSOR_FINAL'
+            ]
+        }
 
-        cols_adjust = ['fEMISSOR.NOME_EMISSOR', 'NEW_GESTOR', 'NEW_GESTOR_WORD_CLOUD',
-                    'NEW_NOME_ATIVO_FINAL', 'NEW_GESTOR_WORD_CLOUD_FINAL',
-                    'fEMISSOR.NOME_EMISSOR_FINAL']
-        for col in cols_adjust:
-            adjust_rentab[col] = 'VIVEST'
+        for value, cols in adjust_map.items():
+            adjust_rentab[cols] = value
 
         adjust_rentab['CODCART'] = adjust_rentab['CODCART'].fillna('')
 
