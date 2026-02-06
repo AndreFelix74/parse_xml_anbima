@@ -57,15 +57,28 @@ def load_df(file_path, file_format, dtype=None):
     """
     full_path = f"{file_path}.{file_format}"
 
-    if file_format == 'csv':
+    def _load_csv():
         field_sep, decimal_sep = get_csv_separators()
-        return pd.read_csv(full_path, dtype=dtype, sep=field_sep,
-                           decimal=decimal_sep, encoding='utf-8')
+        return pd.read_csv(
+            full_path,
+            dtype=dtype,
+            sep=field_sep,
+            decimal=decimal_sep,
+            encoding="utf-8",
+        )
 
-    if file_format == 'xlsx':
+    def _load_xlsx():
         return pd.read_excel(full_path, dtype=dtype)
 
-    raise ValueError(f"Unsupported file format: {file_format}")
+    loaders = {
+        "csv": _load_csv,
+        "xlsx": _load_xlsx,
+    }
+
+    try:
+        return loaders[file_format]()
+    except KeyError as e:
+        raise ValueError(f"Unsupported file format: {file_format}") from e
 
 
 def save_df(dtfrm, file_path, file_format):
