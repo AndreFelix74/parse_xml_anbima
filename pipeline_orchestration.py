@@ -544,11 +544,10 @@ def assign_returns(entity, entity_key, entity_name):
     with log_timing('compute', f"returns_{entity_name}_over"):
         mask_over = entity['NEW_TIPO'] == 'OVER'
 
-        if mask_over.any():
-            entity.loc[mask_over, 'rentab'] = (
-                entity.loc[mask_over, 'compromisso_puretorno']
-                / entity.loc[mask_over, 'pucompra']
-            ) - 1
+        entity.loc[mask_over, 'rentab'] = (
+            entity.loc[mask_over, 'compromisso_puretorno']
+            / entity.loc[mask_over, 'pucompra']
+        ) - 1
 
     return entity
 
