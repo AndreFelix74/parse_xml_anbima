@@ -12,6 +12,12 @@ import re
 from collections import defaultdict
 
 
+def _parse_field(key, text, numeric_fields):
+    if key in numeric_fields:
+        return parse_decimal_value(text)
+    return text.strip() if text else None
+
+
 def parse_decimal_value(value):
     """
     Parse and convert a monetary value from string to float, removing currency symbols.
@@ -43,7 +49,7 @@ def parse_decimal_value(value):
     return value
 
 
-def parse_file(file_name, numeric_fileds):
+def parse_file(file_name, numeric_fields):
     """
     Parse the contents of an XML file and extract its structured data.
 
@@ -61,10 +67,10 @@ def parse_file(file_name, numeric_fileds):
     if root.find('.//header') is None:
         raise ValueError('header not found')
 
-    return extract_node_data(root, numeric_fileds)
+    return extract_node_data(root, numeric_fields)
 
 
-def extract_node_data(root, numeric_fileds):
+def extract_node_data(root, numeric_fields):
     """
     Traverse the XML tree and extract structured data,
     including special handling for nested tags such as <compromisso> inside <titulopublico>.
@@ -89,15 +95,9 @@ def extract_node_data(root, numeric_fileds):
                 if subchild.tag in inline_children.get(child.tag, set()):
                     for nested in subchild:
                         key = f"{subchild.tag}_{nested.tag}"
-                        if key in numeric_fileds:
-                            node_data[key] = parse_decimal_value(nested.text)
-                        else:
-                            node_data[key] = nested.text.strip() if nested.text else None
+                        node_data[key] = _parse_field(key, nested.text, numeric_fields)
                 else:
-                    if child.tag in numeric_fileds:
-                        node_data[subchild.tag] = parse_decimal_value(subchild.text)
-                    else:
-                        node_data[subchild.tag] = subchild.text.strip() if subchild.text else None
+                    node_data[subchild.tag] = _parse_field(subchild.tag, subchild.text, numeric_fields)
 
             data[child.tag].append(node_data)
 
@@ -118,25 +118,19 @@ def split_funds_and_portfolios(xml_content):
     portfolios = []
 
     for file_data in xml_content:
-        header = []
-        posicao = defaultdict(list)
-
-        for key, value in file_data.items():
-            if key == 'header':
-                header_data = file_data['header'][0]
-                header.append(header_data)
-                continue
-            for entry in value:
-                posicao[key].append(entry)
-
-        if 'header' in file_data:
-            joined_data = {'header': header_data, 'posicao': posicao}
-            if header_data.get('cnpjcpf', None) is None:
-                funds.append(joined_data)
-            else:
-                portfolios.append(joined_data)
-        else:
+        header_list = file_data.get('header')
+        if not header_list:
             raise ValueError('header not found')
+
+        header_data = header_list[0]
+        posicao = {k: v for k, v in file_data.items() if k != 'header'}
+
+        joined_data = {'header': header_data, 'posicao': posicao}
+
+        if header_data.get('cnpjcpf') is None:
+            funds.append(joined_data)
+        else:
+            portfolios.append(joined_data)
 
     return [funds, portfolios]
 
