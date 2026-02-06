@@ -786,7 +786,7 @@ def run_pipeline():
     compute_metrics(funds, portfolios, types_series)
 
     assign_returns(funds, ['cnpj'], 'fundos')
-    assign_returns(portfolios, ['cnpjcpf', 'codcart', 'cnpb'], 'carteiras')
+    assign_returns(portfolios, ['codcart', 'cnpb'], 'carteiras')
 
     portfolios, port_submassa = extract_portfolio_submassa(debug_cfg, db_aux['dcadsubmassa'], portfolios)
     compute_composition_portfolio_submassa(debug_cfg, port_submassa)
