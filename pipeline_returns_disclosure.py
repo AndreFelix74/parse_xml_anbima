@@ -69,6 +69,23 @@ def print_missing_env():
     )
 
 
+def _confirm_mass_delete(api_base: str) -> bool:
+    """
+    Confirmação explícita para operação destrutiva.
+
+    Regras:
+    - exige digitar: APAGAR TUDO
+    - imprime o API_BASE para reduzir risco de rodar no ambiente errado
+    """
+    print("\nATENÇÃO: operação destrutiva — vai apagar TODOS os registros de rentabilidades na API.")
+    print(f"API_BASE atual: {api_base}\n")
+    token = input("Para confirmar, digite exatamente: APAGAR TUDO\n> ").strip()
+    if token != "APAGAR TUDO":
+        print("Confirmação inválida. Operação cancelada.")
+        return False
+    return True
+
+
 def load_config():
     """
     Load configuration paths from config.ini and validate sections.
@@ -505,6 +522,56 @@ def reconcile_returns(out_file_frmt, run_folder, data_aux_path,
     return missing_returns
 
 
+def purge_all_returns(api_ctx) -> dict:
+    """
+    Apaga TODOS os registros de rentabilidades (mensais e anuais), item a item.
+
+    Pré-condições assumidas pelo usuário:
+    - não há endpoint de exclusão em massa
+    - não há paginação
+    - não há rate limit
+    - exclusão é definitiva
+    """
+
+    api_base = os.environ.get('API_BASE', '')
+
+    if not _confirm_mass_delete(api_base):
+        return {'status': 'cancelled', 'deleted': {}, 'errors': {}}
+
+    api_returns_map = {
+        'MENSAL': '/investimentos/Rentabilidades/mensais',
+        'ANUAL': '/investimentos/Rentabilidades/anuais',
+    }
+
+    deleted = {}
+    errors = {}
+
+    for label, endpoint in api_returns_map.items():
+        resp = api.api_get(api_ctx, endpoint)
+        resp.raise_for_status()
+
+        items = resp.json() or []
+        ids = [it.get('id') for it in items if isinstance(it, dict) and it.get('id') is not None]
+
+        print(f"\n[{label}] encontrados {len(ids)} registros para apagar.")
+
+        deleted[label] = 0
+        errors[label] = []
+
+        for _id in ids:
+            try:
+                del_resp = api.api_delete(api_ctx, f"{endpoint}/{int(_id)}")
+                del_resp.raise_for_status()
+                deleted[label] += 1
+            except Exception as e:
+                errors[label].append({"id": _id, "error": str(e)})
+
+        print(f"[{label}] apagados: {deleted[label]} | erros: {len(errors[label])}")
+
+    ok = all(len(v) == 0 for v in errors.values())
+    return {"status": "ok" if ok else "partial", "deleted": deleted, "errors": errors}
+
+
 def main():
     """
     Main entry point for executing reconciliation and synchronization tasks
@@ -562,6 +629,9 @@ def main():
             )
         elif usr_option == '4':
             save_returns(api_ctx, missing_returns_maestro)
+        elif usr_option == '5':
+            result = purge_all_returns(api_ctx)
+            print("\nResultado do purge:", result)
         elif usr_option == '0':
             print('Saindo...')
             exit()
