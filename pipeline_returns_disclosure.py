@@ -13,6 +13,7 @@ from pathlib import Path
 import json
 import multiprocessing
 import os
+import sys
 import pandas as pd
 
 import auxiliary_loaders as aux_loader
@@ -25,6 +26,12 @@ from returns_disclosure import (
     reconcile_monthly_returns,
     reconcile_annually_returns
     )
+
+
+def parse_args(argv):
+    return {
+        'purge_returns': '--purge-returns' in argv,
+    }
 
 
 def show_menu():
@@ -69,21 +76,8 @@ def print_missing_env():
     )
 
 
-def _confirm_mass_delete(api_base: str) -> bool:
-    """
-    Confirmação explícita para operação destrutiva.
-
-    Regras:
-    - exige digitar: APAGAR TUDO
-    - imprime o API_BASE para reduzir risco de rodar no ambiente errado
-    """
-    print("\nATENÇÃO: operação destrutiva — vai apagar TODOS os registros de rentabilidades na API.")
-    print(f"API_BASE atual: {api_base}\n")
-    token = input("Para confirmar, digite exatamente: APAGAR TUDO\n> ").strip()
-    if token != "APAGAR TUDO":
-        print("Confirmação inválida. Operação cancelada.")
-        return False
-    return True
+def purge_enabled_by_cli():
+    return "--enable-purge" in sys.argv
 
 
 def load_config():
@@ -522,7 +516,33 @@ def reconcile_returns(out_file_frmt, run_folder, data_aux_path,
     return missing_returns
 
 
-def purge_all_returns(api_ctx) -> dict:
+def validate_purge_preconditions():
+    """
+    Todas as barreiras de segurança para permitir purge.
+    Retorna True quando pode prosseguir.
+    """
+    api_base = os.environ.get('API_BASE', '')
+    api_base_allowed = 'http://74.163.208.137/api-bi-maestro/'
+    normalized = (api_base or '').strip().rstrip('/') + '/'
+    if normalized != api_base_allowed:
+        print(
+            "Bloqueado: purge permitido apenas em homologação.\n"
+            f"API_BASE atual: {api_base}\n"
+            f"API_BASE permitido: {api_base_allowed}"
+        )
+        return False
+
+    print("\nATENÇÃO: operação destrutiva — vai apagar TODOS os registros de rentabilidades na API.")
+    print(f"API_BASE atual: {api_base}\n")
+    token = input('Para confirmar, digite exatamente: APAGAR TUDO\n> ').strip()
+    if token != 'APAGAR TUDO':
+        print('Confirmação inválida. Operação cancelada.')
+        return False
+
+    return True
+
+
+def purge_all_returns(api_ctx):
     """
     Apaga TODOS os registros de rentabilidades (mensais e anuais), item a item.
 
@@ -532,11 +552,8 @@ def purge_all_returns(api_ctx) -> dict:
     - não há rate limit
     - exclusão é definitiva
     """
-
-    api_base = os.environ.get('API_BASE', '')
-
-    if not _confirm_mass_delete(api_base):
-        return {'status': 'cancelled', 'deleted': {}, 'errors': {}}
+    if not validate_purge_preconditions():
+        return {"status": "cancelled", "deleted": {}, "errors": {}}
 
     api_returns_map = {
         'MENSAL': '/investimentos/Rentabilidades/mensais',
@@ -605,6 +622,13 @@ def main():
     entities_sent_maestro = False
     missing_returns_maestro = None
 
+    args = parse_args(sys.argv[1:])
+
+    if args['purge_returns']:
+        purge_result = purge_all_returns(api_ctx)
+        print("\nResultado do purge:", purge_result)
+        return
+
     while True:
         show_menu()
         usr_option = input('Digite o número da opção desejada: ')
@@ -629,9 +653,6 @@ def main():
             )
         elif usr_option == '4':
             save_returns(api_ctx, missing_returns_maestro)
-        elif usr_option == '5':
-            result = purge_all_returns(api_ctx)
-            print("\nResultado do purge:", result)
         elif usr_option == '0':
             print('Saindo...')
             exit()
