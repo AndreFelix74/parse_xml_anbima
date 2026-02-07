@@ -468,9 +468,23 @@ def reconcile_returns_mecsac_maestro(returns_mecsac, out_file_frmt, run_folder, 
         )
         return [None, None]
 
+
+    def _guardrail_empty_api(api_dt):
+        """
+        Guardrail: se api_dt vier vazio, devolve um DataFrame vazio com schema.
+        Caso contrário, devolve api_dt.
+        """
+        result = pd.DataFrame(api_dt)
+
+        if result.empty:
+            expected_api_cols = ['id', 'planoId', 'mes', 'ano']
+            result = pd.DataFrame(columns=expected_api_cols)
+
+        return result
+
     api_data = load_returns_ids(api_ctx)
-    returns_reconciled = reconcile_monthly_returns(returns_mecsac, pd.DataFrame(api_data['MENSAL']))
-    returns_reconciled = reconcile_annually_returns(returns_reconciled, pd.DataFrame(api_data['ANUAL']))
+    returns_reconciled = reconcile_monthly_returns(returns_mecsac, _guardrail_empty_api(api_data['MENSAL']))
+    returns_reconciled = reconcile_annually_returns(returns_reconciled, _guardrail_empty_api(api_data['ANUAL']))
 
     return [returns_reconciled, api_data]
 
