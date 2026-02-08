@@ -39,7 +39,7 @@ def reconcile_annually_returns(rentab_mecsac, api_data):
     """
     return rentab_mecsac.merge(
         api_data.add_suffix('_anual'),
-        left_on=['api_id', 'ANO'],
-        right_on=['planoId_anual', 'ano_anual'],
+        left_on=['api_id', 'MES', 'ANO'],
+        right_on=['planoId_anual', 'mes_anual', 'ano_anual'],
         how='left',
         )
