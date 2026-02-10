@@ -9,7 +9,6 @@ Created on Tue Sep 23 16:21:21 2025
 
 import uuid
 from concurrent.futures import ProcessPoolExecutor
-from pathlib import Path
 import json
 import multiprocessing
 import os
@@ -18,7 +17,6 @@ import pandas as pd
 
 from config_loader import load_settings
 import auxiliary_loaders as aux_loader
-import util as utl
 from file_handler import save_df
 from data_io import auth_provider as auth, maestro_api as api
 from returns_disclosure import (
@@ -609,6 +607,13 @@ def main():
     if api_ctx is None:
         return
 
+    args = parse_args(sys.argv[1:])
+
+    if args['purge_returns']:
+        purge_result = purge_all_returns(api_ctx)
+        print('\nResultado do purge:', purge_result)
+        return
+
     destination_path, data_aux_path, mec_sac_path = load_config()
 
     db_aux = aux_loader.load_dbaux(data_aux_path)
@@ -623,20 +628,13 @@ def main():
     entities_sent_maestro = False
     missing_returns_maestro = None
 
-    args = parse_args(sys.argv[1:])
-
-    if args['purge_returns']:
-        purge_result = purge_all_returns(api_ctx)
-        print('\nResultado do purge:', purge_result)
-        return
-
     while True:
         show_menu()
         usr_option = input('Digite o número da opção desejada: ')
 
         if usr_option == '1':
             missing_entities_maestro = (
-                reconcile_entities(db_aux['dcadplanosac'], api_ctx, run_folder, out_file_frmt)
+                reconcile_entities(db_aux['dcadplanosac'].copy(), api_ctx, run_folder, out_file_frmt)
             )
         elif usr_option == '2':
             entities_sent_maestro = save_entities(api_ctx, missing_entities_maestro)
@@ -649,7 +647,7 @@ def main():
                 print('Execute as etapas 1 e 2 antes de reconciliar as rentabilidades.\n')
                 continue
             missing_returns_maestro = (
-                reconcile_returns(out_file_frmt, run_folder, db_aux['dcadplanosac'],
+                reconcile_returns(out_file_frmt, run_folder, db_aux['dcadplanosac'].copy(),
                                   mec_sac_path, api_ctx)
             )
         elif usr_option == '4':
