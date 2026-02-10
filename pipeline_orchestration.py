@@ -537,11 +537,11 @@ def validate_fund_graph_is_acyclic(funds):
 
 def assign_returns(entity, entity_key, entity_name):
     with log_timing('compute', f"returns_{entity_name}"):
-        entity.sort_values(by=entity_key + ['isin', 'dtposicao'], inplace=True)
-        pct = entity.groupby(entity_key + ['isin'])['puposicao'].pct_change(fill_method=None)
+        entity['idinternoativo'] = entity['idinternoativo'].fillna('')
+        entity.sort_values(by=entity_key + ['isin', 'idinternoativo', 'dtposicao'], inplace=True)
+        pct = entity.groupby(entity_key + ['isin', 'idinternoativo'])['puposicao'].pct_change(fill_method=None)
         entity['rentab'] = pct.round(8)
 
-    with log_timing('compute', f"returns_{entity_name}_over"):
         mask_over = entity['NEW_TIPO'] == 'OVER'
 
         if mask_over.any():
@@ -786,7 +786,7 @@ def run_pipeline():
     compute_metrics(funds, portfolios, types_series)
 
     assign_returns(funds, ['cnpj'], 'fundos')
-    assign_returns(portfolios, ['cnpjcpf', 'codcart', 'cnpb'], 'carteiras')
+    assign_returns(portfolios, ['codcart', 'cnpb'], 'carteiras')
 
     portfolios, port_submassa = extract_portfolio_submassa(debug_cfg, db_aux['dcadsubmassa'], portfolios)
     compute_composition_portfolio_submassa(debug_cfg, port_submassa)

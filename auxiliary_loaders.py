@@ -325,9 +325,6 @@ def load_performance(performance_path):
     return performance
 
 
-import os
-import pandas as pd
-
 def load_dbaux(data_aux_path: str) -> dict:
     """
     Lê de uma vez as planilhas necessárias do dbAux.xlsx e constrói
@@ -340,7 +337,6 @@ def load_dbaux(data_aux_path: str) -> dict:
         dict[str, pd.DataFrame]:
             - governance_struct  -> dEstruturaGerencial
             - dcadplano          -> dCadPlano
-            - range_eom          -> dDataMes
             - performance_struct -> dEstruturaDesempenho
             - dcadplanosac       -> dCadPlanoSAC ajustado
             - dcadsubmassa       -> derivado de dCadPlanoSAC
@@ -348,7 +344,6 @@ def load_dbaux(data_aux_path: str) -> dict:
     mapping = {
         'governance_struct': 'dEstruturaGerencial',
         'dcadplano': 'dCadPlano',
-        'range_eom': 'dDataMes',
         'performance_struct': 'dEstruturaDesempenho',
         'dcadplanosac': 'dCadPlanoSAC',
     }
