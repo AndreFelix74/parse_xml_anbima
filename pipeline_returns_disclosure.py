@@ -1,0 +1,663 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Sep 23 16:21:21 2025
+
+@author: andrefelix
+"""
+
+
+import uuid
+from concurrent.futures import ProcessPoolExecutor
+import json
+import multiprocessing
+import os
+import sys
+import pandas as pd
+
+from config_loader import load_settings
+import auxiliary_loaders as aux_loader
+from file_handler import save_df
+from data_io import auth_provider as auth, maestro_api as api
+from returns_disclosure import (
+    compute_aggregate_returns,
+    reconcile_entities_ids,
+    reconcile_monthly_returns,
+    reconcile_annually_returns
+    )
+
+
+def parse_args(argv):
+    return {
+        'purge_returns': '--purge-returns' in argv,
+    }
+
+
+def show_menu():
+    """
+    Display the available menu options to the user.
+
+    Prints a numbered list of actions related to reconciling and synchronizing
+    entities and returns with Maestro. Options include reconciliation, synchronization,
+    and exit from the program.
+    """
+    print('Escolha uma das opções abaixo:')
+    print('1. Reconciliar entidades MEC-SAC com Maestro')
+    print('2. Sincronizar entidades MEC-SAC com Maestro')
+    print('3. Reconciliar rentabilidades MEC-SAC com Maestro')
+    print('4. Sincronizar rentabilidades MEC-SAC com Maestro')
+    print('0. Sair')
+
+
+def print_overview():
+    """Mostra visão geral de alto nível do script."""
+    msg = (
+        "\n=== O que este script faz ===\n"
+        "Este script integra dados do MEC-SAC ao Maestro.\n"
+        "Fluxo completo, em alto nível:\n"
+        "  1) Reconciliar entidades: lê dados de dCadPlanoSAC e compara com o cadastro do Maestro.\n"
+        "  2) Sincronizar entidades: cria no Maestro as entidades faltantes.\n"
+        "  3) Reconciliar rentabilidades: agrega MEC-SAC, confere IDs, compara mensal e anual com o Maestro.\n"
+        "  4) Sincronizar rentabilidades: envia rentabilidades para o fluxo de aprovação no Maestro.\n"
+    )
+    print(msg)
+
+
+def print_missing_env():
+    print(
+        "Erro: variáveis de ambiente não configuradas.\n"
+        "É necessário definir as seguintes variáveis:\n"
+        "- TENANT_ID\n"
+        "- CLIENT_ID\n"
+        "- CLIENT_SECRET\n"
+        "- SCOPE\n"
+        "- API_BASE"
+    )
+
+
+def purge_enabled_by_cli():
+    return "--enable-purge" in sys.argv
+
+
+def load_config():
+    """
+    Load configuration paths from config.ini using the centralized config loader.
+
+    Returns:
+        list[str]: [xlsx_destination_path, data_aux_path, mec_sac_path]
+    """
+    cfg = load_settings('config.ini')
+    paths = cfg['paths']
+
+    destination_path = paths['destination_path']
+    data_aux_path = paths['data_aux_path']
+    mec_sac_path = paths['mec_sac_path']
+
+    return [destination_path, str(data_aux_path), str(mec_sac_path)]
+
+
+def load_api_context():
+    required_vars = [
+        'TENANT_ID',
+        'CLIENT_ID',
+        'CLIENT_SECRET',
+        'SCOPE',
+        'API_BASE',
+    ]
+
+    if not any(var in os.environ for var in required_vars):
+        print_missing_env()
+        return None
+
+    tenant_id = os.environ['TENANT_ID']
+    client_id = os.environ['CLIENT_ID']
+    client_secret = os.environ['CLIENT_SECRET']
+    scope = os.environ['SCOPE']
+    api_base = os.environ['API_BASE']
+
+    auth_ctx = auth.new_auth_context(tenant_id, client_id, client_secret, scope)
+    api_ctx = api.new_api_context(api_base, lambda: auth.get_auth_header(auth_ctx))
+
+    print(f"API configurada para: {api_base}\n")
+
+    return api_ctx
+
+
+def find_all_mecsac_files(files_path):
+    """
+    Recursively find all mec_sac Excel files and return metadata.
+
+    Args:
+        files_path (str): Root directory.
+
+    Returns:
+        dict: Mapping full file paths to metadata with keys:
+            - 'filename' (str): File name.
+            - 'mtime' (float): Last modification time.
+    """
+    return {
+        os.path.join(root, file): {
+            'filename': file,
+            'mtime': os.path.getmtime(os.path.join(root, file))
+        }
+        for root, _, files in os.walk(files_path)
+        for file in files
+        if file.startswith('_mecSAC_') and file.endswith('.xlsx')
+    }
+
+
+def load_entities_ids(api_ctx):
+    """
+    Load entity identifiers from the Maestro API.
+
+    Args:
+        api_ctx (object): API context object containing authentication
+                          and configuration for requests.
+
+    Returns:
+        dict: A dictionary mapping entity labels to their data,
+              where each key corresponds to one of:
+                - 'GRUPO': Groups of investments
+                - 'INDEXADOR': Indexers
+                - 'PLANO': Investment plans
+                - 'TIPO_PLANO': Plan types
+              and each value is the JSON response from the API.
+    """
+    result = {}
+
+    api_entities_map = {
+        'GRUPO': '/investimentos/Grupos',
+        'INDEXADOR': '/investimentos/Indexadores',
+        'PLANO': '/investimentos/Planos',
+        'TIPO_PLANO': '/investimentos/TiposPlanos',
+    }
+
+    for label, endpoint in api_entities_map.items():
+        api_resp = api.api_get(api_ctx, endpoint)
+        result[label] = api_resp.json()
+
+    return result
+
+
+def load_returns_ids(api_ctx):
+    result = {}
+
+    api_entities_map = {
+        'MENSAL': '/investimentos/Rentabilidades/mensais',
+        'ANUAL': '/investimentos/Rentabilidades/anuais',
+    }
+
+    for label, endpoint in api_entities_map.items():
+        api_resp = api.api_get(api_ctx, endpoint)
+        result[label] = api_resp.json()
+    
+    return result
+
+
+def get_maestro_entity_spec():
+    return {
+        'GRUPO': {
+            'order': 0,
+            'endpoint': '/investimentos/Grupos',
+            'identity_map': {},
+            'payload': lambda row, resolved_fk_ids: {'nome': row['NOME']},
+        },
+        'INDEXADOR': {
+            'order': 1,
+            'endpoint': '/investimentos/Indexadores',
+            'identity_map': {},
+            'payload': lambda row, resolved_fk_ids: {'nome': row['NOME']},
+        },
+        'TIPO_PLANO': {
+            'order': 2,
+            'endpoint': '/investimentos/TiposPlanos',
+            'identity_map': {},
+            'payload': lambda row, resolved_fk_ids: {'nome': row['NOME']},
+        },
+        'PLANO': {
+            'order': 3,
+            'endpoint': '/investimentos/Planos',
+            'identity_map': None,
+            'foreign_keys': [
+                #(tabela, id_api, nome_coluna) o ultimo eh para qd nao existir na api
+                ('GRUPO',      'id_GRUPO',      'GRUPO'),
+                ('INDEXADOR',  'id_INDEXADOR',  'INDEXADOR'),
+                ('TIPO_PLANO', 'id_TIPO_PLANO', 'TIPO_PLANO'),
+            ],
+            'payload': lambda row, resolved_fk_ids: {
+                'grupoId': resolved_fk_ids['GRUPO'],
+                'nome': row['NOME'],
+                'codigoCNPB': str(row['CNPB']),
+                'codigoSAC': str(row['CODCLI_SAC']),
+                'codigoPlano': str(row['COD_PLANO']),
+                'indexadorId': resolved_fk_ids['INDEXADOR'],
+                'tipoPlanoId': resolved_fk_ids['TIPO_PLANO'],
+            }
+        }
+    }
+
+
+def save_entities(api_ctx, missing_entities_maestro):
+    """
+    Save missing entities into the Maestro API.
+
+    Args:
+        api_ctx (object): API context object containing authentication
+                          and configuration for requests.
+        missing_entities_maestro (dataframe): entities not yet present in Maestro.
+
+    Behavior:
+        - Maps each entity type to its corresponding Maestro API endpoint.
+        - For each entity, constructs the required payload:
+            * For 'GRUPO' and 'INDEXADOR': only the entity name.
+            * For 'PLANO': includes group ID, name, CNPB code,
+              SAC code, plan code, indexer ID, and plan type ID.
+        - Sends POST requests to the Maestro API to create the entities.
+    """
+    if missing_entities_maestro is None:
+        print('\nEntidades não reconciliadas com Maestro.')
+        print('Execute a etapa 1 antes de sincronizar as entidades com Maestro.\n')
+        return False
+    elif len(missing_entities_maestro) == 0:
+        print('\nNão há entidades para reconciliadar. Nada a enviar.\n')
+        return True
+
+    def extract_id(resp: dict) -> int:
+        data = resp.json()
+        return data.get('id')
+
+    entity_spec = get_maestro_entity_spec()
+
+    missing_entities_maestro['_ord'] = missing_entities_maestro['TIPO'].map(lambda t: entity_spec[t]['order'])
+    missing_entities_maestro = missing_entities_maestro.sort_values(['_ord', 'NOME'])
+
+    for _, row in missing_entities_maestro.iterrows():
+        cfg = entity_spec[row['TIPO']]
+
+        resolved_fk_ids = {}
+
+        for fk_entity, fk_id_col, fk_alt_key_col in cfg.get('foreign_keys', []):
+            fk_id_val = row.get(fk_id_col)
+
+            if pd.notna(fk_id_val):
+                resolved_fk_ids[fk_entity] = int(fk_id_val)
+                continue
+
+            fk_alt_key = row.get(fk_alt_key_col)
+
+            if pd.isna(fk_alt_key) or str(fk_alt_key).strip() == '':
+                raise ValueError(
+                    f"FK não resolvida para {row['TIPO']}='{row.get('NOME')}'. "
+                    f"Campos vazios: {fk_id_col}=NaN e {fk_alt_key_col}=NaN/'' "
+                    f"(fk_entity={fk_entity})."
+                )
+
+            fk_alt_key = str(fk_alt_key).strip()
+
+            fk_map = entity_spec[fk_entity]['identity_map'] or {}
+            fk_id = fk_map.get(fk_alt_key)
+
+            if fk_id is None:
+                raise KeyError(
+                    f"FK não encontrada no identity_map: fk_entity={fk_entity}, chave='{fk_alt_key}'. "
+                    f"Item atual: {row['TIPO']}='{row.get('NOME')}'. "
+                    f"Chaves disponíveis (amostra): {list(fk_map.keys())[:10]}"
+                )
+
+            resolved_fk_ids[fk_entity] = int(fk_id)
+
+        payload = cfg['payload'](row, resolved_fk_ids)
+        resp = api.api_post(api_ctx, cfg['endpoint'], json=payload)
+        resp.raise_for_status()
+
+        if cfg['identity_map'] is not None:
+            cfg['identity_map'][row['NOME']] = extract_id(resp)
+
+    print('\nEntidades sincronizadas com Maestro com sucesso.\n')
+    return True
+
+
+def save_returns(api_ctx, missing_returns_maestro):
+    if missing_returns_maestro is None:
+        print('\nRentabilidades não reconciliadas com Maestro.')
+        print('Execute a etapa 3 antes de sincronizar as rentabilidades com Maestro.\n')
+        return
+
+    api_returns_map = {
+        'MENSAL': '/investimentos/Rentabilidades/mensais',
+        'ANUAL': '/investimentos/Rentabilidades/anuais',
+    }
+
+    for _, row in missing_returns_maestro.iterrows():
+        payload_base = {
+            'planoId': int(row['api_id']),
+            'mes': int(row['MES']),
+            'ano': int(row['ANO']),
+            }
+        payload_mes = {
+            **payload_base,
+            'valor': float(row['RENTAB_MES']) * 100.0
+            }
+        payload_ano = {
+            **payload_base,
+            'valor': float(row['RENTAB_ANO']) * 100.0
+            }
+
+        if pd.isna(row.get('id_mensal')):
+            api.api_post(api_ctx, api_returns_map['MENSAL'], json=payload_mes)
+        if pd.isna(row.get('id_anual')):
+            api.api_post(api_ctx, api_returns_map['ANUAL'], json=payload_ano)
+
+    print('\nRentabilidades sincronizadas com Maestro com sucesso.\n')
+
+
+def reconcile_entities_dcadplanosac_maestro(dcadplanosac, api_ctx):
+    groups = ['TIPO_PLANO', 'GRUPO', 'INDEXADOR', 'PLANO']
+
+    #renomeia a coluna para compatibilizar com os quatro grupos
+    dcadplanosac.rename(columns={'NOME_PLANO': 'PLANO'}, inplace=True)
+    df_melt = dcadplanosac[groups].melt(var_name='TIPO', value_name='NOME')
+    entities = df_melt.dropna().drop_duplicates().reset_index(drop=True)
+
+    api_data = load_entities_ids(api_ctx)
+    for label, json_content in api_data.items():
+        reconcile_entities_ids(entities, label, json_content)
+
+    mask = entities['api_id'].isna()
+    missing_entities = entities[mask].copy()
+    #As duas linhas seguintes sao gambiarra para colocar sufixo nos merges. nao sao usadas
+    missing_entities['id'] = None
+    missing_entities['nome'] = None
+    missing_entities = missing_entities.merge(
+        dcadplanosac,
+        left_on=['NOME'],
+        right_on=['PLANO'],
+        how='left'
+    )
+    for group in groups:
+        if group == 'PLANO':
+            continue
+        entities_maestro = pd.DataFrame(api_data[group])
+        entities_maestro['nome'] = entities_maestro['nome'].str.upper()
+        missing_entities[group] = missing_entities[group].str.upper()
+        missing_entities = missing_entities.merge(
+            entities_maestro,
+            left_on=[group],
+            right_on=['nome'],
+            how='left',
+            suffixes=('', '_' + group)
+        )
+
+    return [missing_entities, api_data, entities]
+
+
+def reconcile_entities(dcadplanosac, api_ctx, run_folder, out_file_frmt):
+    print('Reconciliando entidades com Maestro...')
+    missing_entities, api_data, entities = (
+        reconcile_entities_dcadplanosac_maestro(dcadplanosac, api_ctx)
+        )
+
+    missing_maestro_entities_file = (
+        run_folder / "divulga_rentab_entidades_a_sincronizar"
+    )
+
+    save_df(missing_entities, missing_maestro_entities_file, out_file_frmt)
+    save_df(entities, run_folder / "divulga_rentab_ids_comparados", out_file_frmt)
+    with open(run_folder  / "divulga_rentab_ids_maestro.json", 'w', encoding='utf-8') as file:
+        json.dump(api_data, file, ensure_ascii=False, indent=2)
+
+    if len(missing_entities) == 0:
+        print('Não há entidades para sincronizar.')
+        print('Execute o passo 3 para reconciliação de rentabilidades.')
+    else:
+        print(f"Encontradas {len(missing_entities)} entidades para sincronizar com Maestro")
+        print(f"Valide o arquivo {missing_maestro_entities_file}.{out_file_frmt}")
+        print('Se estiver correto, execute o passo 2 para envio das entidades para o Maestro')
+
+    return missing_entities
+
+
+def load_mec_sac(mec_sac_path):
+    processes = min(8, multiprocessing.cpu_count())
+
+    all_mecsac_files = find_all_mecsac_files(mec_sac_path)
+
+    with ProcessPoolExecutor(max_workers=processes) as executor:
+        dfs = list(executor.map(aux_loader.load_mecsac_file,
+                                all_mecsac_files))
+
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
+
+def reconcile_returns_mecsac_maestro(returns_mecsac, out_file_frmt, run_folder, api_ctx):
+    api_data = load_entities_ids(api_ctx)
+
+    for label, json_content in api_data.items():
+        reconcile_entities_ids(returns_mecsac, label, json_content)
+
+    #na nova versao do site soh ha divulgacao por plano, nao tem agregados
+    #remover essa linha caso haja divulgacao de rentabilidades por agregados
+    returns_mecsac = returns_mecsac[returns_mecsac['TIPO'] == 'PLANO']
+    mask = returns_mecsac['api_id'].isna()
+    if mask.any():
+        file_name = run_folder / 'divulga_rentab_rentab_ERROR_missing_ids'
+        save_df(returns_mecsac[mask], file_name, out_file_frmt)
+        missing_rows = int(mask.sum())
+        missing_entities = returns_mecsac.loc[mask, "NOME"].nunique(dropna=True)
+        print(
+            "Não é possível reconciliar as rentabilidades.\n"
+            f"Existem {missing_rows} registros com api_id ausente em dCadPlanoSAC.\n"
+            f"({missing_entities} entidades distintas por NOME; NOME está vazio nesses casos.)\n"
+            f"Verifique o arquivo {file_name}.{out_file_frmt}\n"
+            "Para corrigir, execute a etapa de sincronizar entidades com Maestro."
+        )
+        return [None, None]
+
+
+    def _guardrail_empty_api(api_dt):
+        """
+        Guardrail: se api_dt vier vazio, devolve um DataFrame vazio com schema.
+        Caso contrário, devolve api_dt.
+        """
+        result = pd.DataFrame(api_dt)
+
+        if result.empty:
+            expected_api_cols = ['id', 'planoId', 'mes', 'ano']
+            result = pd.DataFrame(columns=expected_api_cols)
+
+        return result
+
+    api_data = load_returns_ids(api_ctx)
+    returns_reconciled = reconcile_monthly_returns(returns_mecsac, _guardrail_empty_api(api_data['MENSAL']))
+    returns_reconciled = reconcile_annually_returns(returns_reconciled, _guardrail_empty_api(api_data['ANUAL']))
+
+    return [returns_reconciled, api_data]
+
+
+def reconcile_returns(out_file_frmt, run_folder, dcadplanosac,
+                      mec_sac_path, api_ctx):
+    print('Reconciliando rentabilidades com Maestro...')
+
+    mec_sac = load_mec_sac(mec_sac_path)
+
+    returns_mecsac = compute_aggregate_returns(mec_sac, dcadplanosac)
+
+    save_df(returns_mecsac, run_folder / 'divulga_rentab_agregados', out_file_frmt)
+
+    returns_reconciled, api_data = (
+        reconcile_returns_mecsac_maestro(returns_mecsac, out_file_frmt, run_folder, api_ctx)
+        )
+
+    save_df(returns_reconciled, run_folder / 'divulga_rentab_rentab_comparadas', out_file_frmt)
+
+    mask = (
+        returns_reconciled['id_mensal'].isna() |
+        returns_reconciled['id_anual'].isna()
+    )
+    missing_returns = returns_reconciled[mask].copy()
+
+    missing_maestro_returns_file = run_folder / 'divulga_rentab_rentab_a_sincronizar'
+    save_df(missing_returns, missing_maestro_returns_file, out_file_frmt)
+
+    with open(run_folder / 'divulga_rentab_rentab_maestro.json', 'w', encoding='utf-8') as file:
+        json.dump(api_data, file, ensure_ascii=False, indent=2)
+
+    if len(missing_returns) == 0:
+        print('Não há rentabilidades para sincronizar.')
+        print('Nada a fazer.')
+    else:
+        print(f"Encontradas {len(missing_returns)} rentabilidades para sincronizar com Maestro")
+        print(f"Valide o arquivo {missing_maestro_returns_file}.{out_file_frmt}")
+        print('Se estiver correto, execute o passo 4 para envio das rentabilidades para o Maestro')
+
+    return missing_returns
+
+
+def validate_purge_preconditions():
+    """
+    Todas as barreiras de segurança para permitir purge.
+    Retorna True quando pode prosseguir.
+    """
+    api_base = os.environ.get('API_BASE', '')
+    api_base_allowed = 'http://74.163.208.137/api-bi-maestro/'
+    normalized = (api_base or '').strip().rstrip('/') + '/'
+    if normalized != api_base_allowed:
+        print(
+            "Bloqueado: purge permitido apenas em homologação.\n"
+            f"API_BASE atual: {api_base}\n"
+            f"API_BASE permitido: {api_base_allowed}"
+        )
+        return False
+
+    print("\nATENÇÃO: operação destrutiva — vai apagar TODOS os registros de rentabilidades na API.")
+    print(f"API_BASE atual: {api_base}\n")
+    token = input('Para confirmar, digite exatamente: APAGAR TUDO\n> ').strip()
+    if token != 'APAGAR TUDO':
+        print('Confirmação inválida. Operação cancelada.')
+        return False
+
+    return True
+
+
+def purge_all_returns(api_ctx):
+    """
+    Apaga TODOS os registros de rentabilidades (mensais e anuais), item a item.
+
+    Pré-condições assumidas pelo usuário:
+    - não há endpoint de exclusão em massa
+    - não há paginação
+    - não há rate limit
+    - exclusão é definitiva
+    """
+    if not validate_purge_preconditions():
+        return {"status": "cancelled", "deleted": {}, "errors": {}}
+
+    api_returns_map = {
+        'MENSAL': '/investimentos/Rentabilidades/mensais',
+        'ANUAL': '/investimentos/Rentabilidades/anuais',
+    }
+
+    deleted = {}
+    errors = {}
+
+    for label, endpoint in api_returns_map.items():
+        resp = api.api_get(api_ctx, endpoint)
+        resp.raise_for_status()
+
+        items = resp.json() or []
+        ids = [it.get('id') for it in items if isinstance(it, dict) and it.get('id') is not None]
+
+        print(f"\n[{label}] encontrados {len(ids)} registros para apagar.")
+
+        deleted[label] = 0
+        errors[label] = []
+
+        for _id in ids:
+            try:
+                del_resp = api.api_delete(api_ctx, f"{endpoint}/{int(_id)}")
+                del_resp.raise_for_status()
+                deleted[label] += 1
+            except Exception as e:
+                errors[label].append({"id": _id, "error": str(e)})
+
+        print(f"[{label}] apagados: {deleted[label]} | erros: {len(errors[label])}")
+
+    ok = all(len(v) == 0 for v in errors.values())
+    return {"status": "ok" if ok else "partial", "deleted": deleted, "errors": errors}
+
+
+def main():
+    """
+    Main entry point for executing reconciliation and synchronization tasks
+    between MEC-SAC and Maestro systems.
+
+    Args:
+        option (str): The selected menu option
+
+    Behavior:
+        - Initializes authentication and API contexts using environment variables:
+            TENANT_ID, CLIENT_ID, CLIENT_SECRET, SCOPE, API_BASE.
+        - Loads configuration paths for data and outputs.
+        - Executes the corresponding task based on the provided option
+    """
+    print_overview()
+
+    api_ctx = load_api_context()
+
+    if api_ctx is None:
+        return
+
+    args = parse_args(sys.argv[1:])
+
+    if args['purge_returns']:
+        purge_result = purge_all_returns(api_ctx)
+        print('\nResultado do purge:', purge_result)
+        return
+
+    destination_path, data_aux_path, mec_sac_path = load_config()
+
+    db_aux = aux_loader.load_dbaux(data_aux_path)
+
+    run_id = str(uuid.uuid4())
+    run_folder = destination_path / run_id
+    run_folder.mkdir(parents=True, exist_ok=True)
+
+    out_file_frmt = 'csv'
+
+    missing_entities_maestro = None
+    entities_sent_maestro = False
+    missing_returns_maestro = None
+
+    while True:
+        show_menu()
+        usr_option = input('Digite o número da opção desejada: ')
+
+        if usr_option == '1':
+            missing_entities_maestro = (
+                reconcile_entities(db_aux['dcadplanosac'].copy(), api_ctx, run_folder, out_file_frmt)
+            )
+        elif usr_option == '2':
+            entities_sent_maestro = save_entities(api_ctx, missing_entities_maestro)
+        elif usr_option == '3':
+            if missing_entities_maestro is None:
+                print('\nExecute a etapa 1 antes de reconciliar as rentabilidades.\n')
+                continue
+            if len(missing_entities_maestro) > 0 and not entities_sent_maestro:
+                print('\nEntidades não enviadas para Maestro.')
+                print('Execute as etapas 1 e 2 antes de reconciliar as rentabilidades.\n')
+                continue
+            missing_returns_maestro = (
+                reconcile_returns(out_file_frmt, run_folder, db_aux['dcadplanosac'].copy(),
+                                  mec_sac_path, api_ctx)
+            )
+        elif usr_option == '4':
+            save_returns(api_ctx, missing_returns_maestro)
+        elif usr_option == '0':
+            print('Saindo...')
+            exit()
+        else:
+            print('Opção inválida. Escolha uma das opções do menu.')
+
+
+if __name__ == "__main__":
+    main()

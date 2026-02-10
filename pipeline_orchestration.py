@@ -730,8 +730,6 @@ def assign_adjustments(tree_hrztl, adjust_rentab):
 
 
 def run_pipeline():
-    locale.setlocale(locale.LC_ALL, '')
-
     (
         xml_source_path,
         destination_path,

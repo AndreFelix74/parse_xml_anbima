@@ -1,0 +1,5 @@
+export TENANT_ID=""
+export CLIENT_ID=""
+export CLIENT_SECRET=""
+export SCOPE=""
+export API_BASE=""

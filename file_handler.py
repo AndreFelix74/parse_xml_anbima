@@ -24,6 +24,7 @@ def get_csv_separators():
         - field_sep: str, separator for fields in CSV (',' or ';')
         - decimal_sep: str, decimal mark ('.' or ',')
     """
+    locale.setlocale(locale.LC_ALL, '')
     conv = locale.localeconv()
     decimal_sep = conv['decimal_point']
     field_sep = ';' if decimal_sep == ',' else ','
