@@ -19,7 +19,7 @@ def reconcile_entities_ids(dcadplanosac, label, api_data):
     Returns:
         None: Updates `dcadplanosac` in place by adding or filling the 'api_id' column.
     """
-    mapa = {item["nome"].upper(): item["id"] for item in api_data}
+    mapa = {item['nome'].upper(): item['id'] for item in api_data}
 
     mask = dcadplanosac['TIPO'] == label
 
