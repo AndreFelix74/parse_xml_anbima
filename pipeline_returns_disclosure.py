@@ -16,6 +16,7 @@ import os
 import sys
 import pandas as pd
 
+from config_loader import load_settings
 import auxiliary_loaders as aux_loader
 import util as utl
 from file_handler import save_df
@@ -82,32 +83,19 @@ def purge_enabled_by_cli():
 
 def load_config():
     """
-    Load configuration paths from config.ini and validate sections.
+    Load configuration paths from config.ini using the centralized config loader.
 
     Returns:
-        list[str]: A list containing [xlsx_destination_path, data_aux_path, mec_sac_path].
-
-    Raises:
-        KeyError: If required sections [Debug] or [Paths] are missing.
+        list[str]: [xlsx_destination_path, data_aux_path, mec_sac_path]
     """
-    config = utl.load_config('config.ini')
+    cfg = load_settings('config.ini')
+    paths = cfg['paths']
 
-    xlsx_destination_path = config['Paths']['xlsx_destination_path']
-    xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
+    destination_path = paths['destination_path']
+    data_aux_path = paths['data_aux_path']
+    mec_sac_path = paths['mec_sac_path']
 
-    data_aux_path = config['Paths']['data_aux_path']
-    data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
-
-    mec_sac_path = config['Paths']['mec_sac_path']
-    mec_sac_path = f"{os.path.dirname(utl.format_path(mec_sac_path))}/"
-
-    if not config.has_section('Debug'):
-        raise KeyError('Missing [Debug] section in config.ini')
-
-    if not config.has_section('Paths'):
-        raise KeyError('Missing [Paths] section in config.ini')
-
-    return [xlsx_destination_path, data_aux_path, mec_sac_path]
+    return [destination_path, str(data_aux_path), str(mec_sac_path)]
 
 
 def load_api_context():
@@ -365,10 +353,9 @@ def save_returns(api_ctx, missing_returns_maestro):
     print('\nRentabilidades sincronizadas com Maestro com sucesso.\n')
 
 
-def reconcile_entities_dcadplanosac_maestro(data_aux_path, api_ctx):
+def reconcile_entities_dcadplanosac_maestro(dcadplanosac, api_ctx):
     groups = ['TIPO_PLANO', 'GRUPO', 'INDEXADOR', 'PLANO']
 
-    dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
     #renomeia a coluna para compatibilizar com os quatro grupos
     dcadplanosac.rename(columns={'NOME_PLANO': 'PLANO'}, inplace=True)
     df_melt = dcadplanosac[groups].melt(var_name='TIPO', value_name='NOME')
@@ -406,10 +393,10 @@ def reconcile_entities_dcadplanosac_maestro(data_aux_path, api_ctx):
     return [missing_entities, api_data, entities]
 
 
-def reconcile_entities(data_aux_path, api_ctx, run_folder, out_file_frmt):
+def reconcile_entities(dcadplanosac, api_ctx, run_folder, out_file_frmt):
     print('Reconciliando entidades com Maestro...')
     missing_entities, api_data, entities = (
-        reconcile_entities_dcadplanosac_maestro(data_aux_path, api_ctx)
+        reconcile_entities_dcadplanosac_maestro(dcadplanosac, api_ctx)
         )
 
     missing_maestro_entities_file = (
@@ -455,7 +442,7 @@ def reconcile_returns_mecsac_maestro(returns_mecsac, out_file_frmt, run_folder, 
     returns_mecsac = returns_mecsac[returns_mecsac['TIPO'] == 'PLANO']
     mask = returns_mecsac['api_id'].isna()
     if mask.any():
-        file_name = run_folder / "divulga_rentab_rentab_ERROR_missing_ids"
+        file_name = run_folder / 'divulga_rentab_rentab_ERROR_missing_ids'
         save_df(returns_mecsac[mask], file_name, out_file_frmt)
         missing_rows = int(mask.sum())
         missing_entities = returns_mecsac.loc[mask, "NOME"].nunique(dropna=True)
@@ -489,23 +476,21 @@ def reconcile_returns_mecsac_maestro(returns_mecsac, out_file_frmt, run_folder, 
     return [returns_reconciled, api_data]
 
 
-def reconcile_returns(out_file_frmt, run_folder, data_aux_path,
+def reconcile_returns(out_file_frmt, run_folder, dcadplanosac,
                       mec_sac_path, api_ctx):
     print('Reconciliando rentabilidades com Maestro...')
 
     mec_sac = load_mec_sac(mec_sac_path)
 
-    dcadplanosac = aux_loader.load_dcadplanosac(data_aux_path)
-
     returns_mecsac = compute_aggregate_returns(mec_sac, dcadplanosac)
 
-    save_df(returns_mecsac, run_folder / "divulga_rentab_agregados", out_file_frmt)
+    save_df(returns_mecsac, run_folder / 'divulga_rentab_agregados', out_file_frmt)
 
     returns_reconciled, api_data = (
         reconcile_returns_mecsac_maestro(returns_mecsac, out_file_frmt, run_folder, api_ctx)
         )
 
-    save_df(returns_reconciled, run_folder / "divulga_rentab_rentab_comparadas", out_file_frmt)
+    save_df(returns_reconciled, run_folder / 'divulga_rentab_rentab_comparadas', out_file_frmt)
 
     mask = (
         returns_reconciled['id_mensal'].isna() |
@@ -513,10 +498,10 @@ def reconcile_returns(out_file_frmt, run_folder, data_aux_path,
     )
     missing_returns = returns_reconciled[mask].copy()
 
-    missing_maestro_returns_file = run_folder / "divulga_rentab_rentab_a_sincronizar"
+    missing_maestro_returns_file = run_folder / 'divulga_rentab_rentab_a_sincronizar'
     save_df(missing_returns, missing_maestro_returns_file, out_file_frmt)
 
-    with open(run_folder / "divulga_rentab_rentab_maestro.json", 'w', encoding='utf-8') as file:
+    with open(run_folder / 'divulga_rentab_rentab_maestro.json', 'w', encoding='utf-8') as file:
         json.dump(api_data, file, ensure_ascii=False, indent=2)
 
     if len(missing_returns) == 0:
@@ -624,10 +609,12 @@ def main():
     if api_ctx is None:
         return
 
-    xlsx_destination_path, data_aux_path, mec_sac_path = load_config()
+    destination_path, data_aux_path, mec_sac_path = load_config()
+
+    db_aux = aux_loader.load_dbaux(data_aux_path)
 
     run_id = str(uuid.uuid4())
-    run_folder = Path(xlsx_destination_path) / run_id
+    run_folder = destination_path / run_id
     run_folder.mkdir(parents=True, exist_ok=True)
 
     out_file_frmt = 'csv'
@@ -640,7 +627,7 @@ def main():
 
     if args['purge_returns']:
         purge_result = purge_all_returns(api_ctx)
-        print("\nResultado do purge:", purge_result)
+        print('\nResultado do purge:', purge_result)
         return
 
     while True:
@@ -649,7 +636,7 @@ def main():
 
         if usr_option == '1':
             missing_entities_maestro = (
-                reconcile_entities(data_aux_path, api_ctx, run_folder, out_file_frmt)
+                reconcile_entities(db_aux['dcadplanosac'], api_ctx, run_folder, out_file_frmt)
             )
         elif usr_option == '2':
             entities_sent_maestro = save_entities(api_ctx, missing_entities_maestro)
@@ -662,7 +649,7 @@ def main():
                 print('Execute as etapas 1 e 2 antes de reconciliar as rentabilidades.\n')
                 continue
             missing_returns_maestro = (
-                reconcile_returns(out_file_frmt, run_folder, data_aux_path,
+                reconcile_returns(out_file_frmt, run_folder, db_aux['dcadplanosac'],
                                   mec_sac_path, api_ctx)
             )
         elif usr_option == '4':
@@ -676,3 +663,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+# dcadplanosac = db_aux['dcadplanosac']
