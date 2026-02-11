@@ -8,6 +8,7 @@ Created on Fri May 30 17:43:29 2025
 
 
 import os
+from pathlib import Path
 import pandas as pd
 import data_access as dta
 
@@ -171,7 +172,7 @@ def load_returns_by_puposicao(data_aux_path):
     return returns_by_puposicao
 
 
-def load_mecsac_file(file_path):
+def load_mecsac_file(file_path: str) -> pd.DataFrame:
     """
     Loads the row with the latest DT for one _mecSAC_*.xlsx file.
 
@@ -188,6 +189,7 @@ def load_mecsac_file(file_path):
     if mec_sac.empty:
         print(f"Empty mecSAC file: {file_path}")
         return pd.DataFrame()
+
     mec_sac['DT'] = pd.to_datetime(mec_sac['DT'], dayfirst=True)
 
     result = mec_sac[columns].copy()
@@ -203,37 +205,27 @@ def load_mecsac_file(file_path):
     return result
 
 
-def load_mec_sac_last_day_month(data_aux_path):
+def load_mec_sac_last_day_month(file_path: str) -> pd.DataFrame:
     """
-    Loads the row with the latest DT for each CODCLI from each _mecSAC_*.xlsx file.
+    Loads the row corresponding to the last day of each month for each CODCLI.
 
     Args:
-        data_aux_path (str): Path to the directory containing the _mecSAC files.
+        file_path (str): Path to the _mecSAC_*.xlsx file.
 
     Returns:
-        pd.DataFrame: DataFrame containing the latest row per CODCLI from each file.
+        pd.DataFrame: DataFrame containing the last available day
+                      of each month per CODCLI.
     """
-    dfs = []
+    mec_sac = load_mecsac_file(file_path)
+    mec_sac['year_month'] = mec_sac['DT'].dt.to_period('M').dt.to_timestamp()
 
-    for filename in os.listdir(data_aux_path):
-        if filename.startswith('_mecSAC_') and filename.endswith('.xlsx'):
-            file_path = os.path.join(data_aux_path, filename)
-            mec_sac = pd.read_excel(file_path)
+    idx = (
+        mec_sac
+        .groupby(['CODCLI', 'year_month'])['DT']
+        .idxmax()
+    )
 
-            if mec_sac.empty:
-                print(f"Empty mecSAC file: {filename}")
-                continue
-
-            mec_sac = load_mecsac_file(file_path)
-            idx = mec_sac.groupby('CODCLI')['DT'].idxmax()
-            last_day_per_codcli = mec_sac.loc[idx].copy()
-
-            dfs.append(last_day_per_codcli)
-
-    if dfs:
-        return pd.concat(dfs, ignore_index=True)
-
-    return pd.DataFrame()
+    return mec_sac.loc[idx].copy()
 
 
 def load_cnpb_codcli_mapping(data_aux_path):
@@ -277,30 +269,20 @@ def load_cnpb_codcli_mapping(data_aux_path):
     return mapping.rename(columns={'CNPB_x': 'cnpb'})[['cnpb', 'CODCLI_SAC']]
 
 
-def load_performance(performance_path):
-    raw_data = []
+def load_performance(file_path: str) -> pd.DataFrame:
+    performance = pd.DataFrame()
 
-    for filename in os.listdir(performance_path):
-        if filename.startswith('Desempenho'):
-            file_path = os.path.join(performance_path, filename)
-            try:
-                raw_sheet = pd.read_excel(file_path, sheet_name='Resumo', header=None)
-            except Exception as excp:
-                print('')
-                print(f"Erro ao abrir o arquivo {file_path}")
-                print(excp)
-                continue
+    try:
+        performance = pd.read_excel(file_path, sheet_name='Resumo', header=None)
+    except Exception as excp:
+        print('')
+        print(f"Erro ao abrir o arquivo {file_path}")
+        print(excp)
+        return performance
 
-            if raw_sheet.empty:
-                print(f"Empty performance file: {filename}")
-                continue
-
-            raw_data.append(raw_sheet)
-
-    if not raw_data:
-        return pd.DataFrame()
-
-    performance = pd.concat(raw_data, ignore_index=True)
+    if performance.empty:
+        print(f"Empty performance file: {file_path}")
+        return performance
 
     performance = performance[
         (~performance[2].isin(['Patrimônio de Investimentos', 'Patrimônio Total'])) &
@@ -327,7 +309,7 @@ def load_performance(performance_path):
     return performance
 
 
-def load_dbaux(data_aux_path: str) -> dict:
+def load_dbaux(data_aux_path: Path) -> dict:
     """
     Lê de uma vez as planilhas necessárias do dbAux.xlsx e constrói
     DataFrames derivados (dcadplanosac ajustado e dcadsubmassa).
@@ -338,19 +320,17 @@ def load_dbaux(data_aux_path: str) -> dict:
     Returns:
         dict[str, pd.DataFrame]:
             - governance_struct  -> dEstruturaGerencial
-            - dcadplano          -> dCadPlano
-            - performance_struct -> dEstruturaDesempenho
-            - dcadplanosac       -> dCadPlanoSAC ajustado
-            - dcadsubmassa       -> derivado de dCadPlanoSAC
+            ...
     """
     mapping = {
         'governance_struct': 'dEstruturaGerencial',
         'dcadplano': 'dCadPlano',
         'performance_struct': 'dEstruturaDesempenho',
         'dcadplanosac': 'dCadPlanoSAC',
+        'struct_perform': 'dEstruturaDesempenho',
     }
 
-    dbaux_path = os.path.join(data_aux_path, 'dbAux.xlsx')
+    dbaux_path = data_aux_path / 'dbAux.xlsx'
 
     sheets = pd.read_excel(
         dbaux_path,
@@ -386,3 +366,30 @@ def load_dbaux(data_aux_path: str) -> dict:
     result['dcadsubmassa'] = dcadsubmassa
 
     return result
+
+
+def find_files(files_path: Path, predicate):
+    return {
+        str(file): {
+            'filename': file.name,
+            'mtime': file.stat().st_mtime
+        }
+        for file in files_path.rglob('*')
+        if file.is_file() and predicate(file.name)
+    }
+
+
+def is_performance_file(filename: str) -> bool:
+    return filename.lower().startswith('desempenho')
+
+
+def is_mecsac_file(filename: str) -> bool:
+    return filename.startswith('_mecSAC_') and filename.endswith('.xlsx')
+
+
+def find_all_performance_files(files_path: Path):
+    return find_files(files_path, is_performance_file)
+
+
+def find_all_mecsac_files(files_path: Path):
+    return find_files(files_path, is_mecsac_file)

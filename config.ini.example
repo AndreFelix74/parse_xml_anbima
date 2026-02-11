@@ -1,12 +1,22 @@
-[Paths]
-xml_source_path = ./bar/
-xlsx_destination_path = ./output/
-data_aux_path = ./data_aux/
-destination_file_extension = csv
-logs = ./logs/
-mec_sac_path = ./_data/mecSAC
-performance_path = 
+[InputPaths]
+data_aux_path =
+xml_source_path =
+mec_sac_path =
+performance_path =
+
+[OutputPaths]
+destination_path =
+logs =
+log_evidence_root =
+debug_path =
+
+[OutputFormats]
+destination_file_format =
+log_evidence_file_format =
+debug_file_format =
+
+[Processing]
+workers = auto
 
 [Debug]
-write_intermediate_files = no
-intermediate_output_path = ./debug_output/
+debug = no
