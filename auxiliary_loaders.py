@@ -35,13 +35,13 @@ def convert_column_types(dtfrm, dtype_map):
             raise ValueError(f"Tipo não suportado: {tipo}")
 
 
-def load_assets_aux(data_aux_path):
+def load_assets_aux(data_aux_path: Path) -> pd.DataFrame:
     """
     Loads auxiliary tables for asset identification (numeraca and emissor) and
     merges them.
 
     Args:
-        data_aux_path (str): Path to the auxiliary data directory.
+        data_aux_path (Path): Path to the auxiliary data directory.
 
     Returns:
         pd.DataFrame: Merged DataFrame with prefix 'fNUMERACA.' and 'fEMISSOR.'
@@ -64,7 +64,7 @@ def load_assets_aux(data_aux_path):
         cols_names = dta.read(f"{table_name}_columns")
         dtypes = dta.read(f"{table_name}_dtypes")
 
-        table_aux = pd.read_csv(f"{data_aux_path}{table_name.upper()}.TXT",
+        table_aux = pd.read_csv(data_aux_path / f"{table_name.upper()}.TXT",
                                 header=None,
                                 names=cols_names,
                                 encoding='utf-8',
@@ -83,17 +83,17 @@ def load_assets_aux(data_aux_path):
     )
 
 
-def load_db_cad_fi_cvm(data_aux_path):
+def load_db_cad_fi_cvm(data_aux_path: Path) -> pd.DataFrame:
     """
     Loads and cleans the CVM fund registration database.
 
     Args:
-        data_aux_path (str): Path to the CSV file 'dbCadFI_CVM.csv'.
+        data_aux_path (Path): Path to the CSV file 'dbCadFI_CVM.csv'.
 
     Returns:
         pd.DataFrame: Cleaned and typed DataFrame filtered by operational funds.
     """
-    db_cad_fi_cvm = pd.read_csv(f"{data_aux_path}dbCadFI_CVM.csv",
+    db_cad_fi_cvm = pd.read_csv(data_aux_path / 'dbCadFI_CVM.csv',
                                 sep=';',
                                 encoding='latin1',
                                 dtype=str)
@@ -125,12 +125,12 @@ def load_db_cad_fi_cvm(data_aux_path):
     return db_cad_fi_cvm.add_prefix('dCadFI_CVM.')
 
 
-def load_enrich_auxiliary_data(data_aux_path):
+def load_enrich_auxiliary_data(data_aux_path: Path) -> dict:
     """
     Loads all auxiliary datasets required for data enrichment and classification.
 
     Args:
-        data_aux_path (str): Path to the directory containing auxiliary data files.
+        data_aux_path (Path): Path to the directory containing auxiliary data files.
 
     Returns:
         dict: A dictionary with the following keys:
@@ -157,7 +157,7 @@ def load_returns_by_puposicao(data_aux_path):
                       If the file does not exist, returns an empty DataFrame
                       with the correct schema.
     """
-    returns_path = f"{data_aux_path}isin_rentab.xlsx"
+    returns_path = data_aux_path / 'isin_rentab.xlsx'
 
     try:
         returns_by_puposicao = pd.read_excel(returns_path, dtype=str)
@@ -177,7 +177,7 @@ def load_mecsac_file(file_path: str) -> pd.DataFrame:
     Loads the row with the latest DT for one _mecSAC_*.xlsx file.
 
     Args:
-        data_aux_path (str): Path to the directory containing the _mecSAC files.
+        file_path (str): Path to the directory containing the _mecSAC files.
 
     Returns:
         pd.DataFrame: DataFrame containing the latest row per CODCLI from each file.
@@ -243,8 +243,8 @@ def load_cnpb_codcli_mapping(data_aux_path):
     pd.DataFrame
         DataFrame with columns ['CNPB', 'CODCLI_SAC'].
     """
-    dcadplano = pd.read_excel(f"{data_aux_path}dbAux.xlsx", sheet_name='dCadPlano')
-    dcadplanosac = pd.read_excel(f"{data_aux_path}dbAux.xlsx", sheet_name='dCadPlanoSAC')
+    dcadplano = pd.read_excel(data_aux_path / 'dbAux.xlsx', sheet_name='dCadPlano')
+    dcadplanosac = pd.read_excel(data_aux_path / 'dbAux.xlsx', sheet_name='dCadPlanoSAC')
 
     dcadplano['COD_PLANO'] = dcadplano['COD_PLANO'].astype(str).str.strip()
     dcadplanosac['COD_PLANO'] = dcadplanosac['COD_PLANO'].astype(str).str.strip()
@@ -315,7 +315,7 @@ def load_dbaux(data_aux_path: Path) -> dict:
     DataFrames derivados (dcadplanosac ajustado e dcadsubmassa).
 
     Args:
-        data_aux_path (str): Caminho do diretório contendo 'dbAux.xlsx'.
+        data_aux_path (Path): Caminho do diretório contendo 'dbAux.xlsx'.
 
     Returns:
         dict[str, pd.DataFrame]:
@@ -325,7 +325,6 @@ def load_dbaux(data_aux_path: Path) -> dict:
     mapping = {
         'governance_struct': 'dEstruturaGerencial',
         'dcadplano': 'dCadPlano',
-        'performance_struct': 'dEstruturaDesempenho',
         'dcadplanosac': 'dCadPlanoSAC',
         'struct_perform': 'dEstruturaDesempenho',
     }
