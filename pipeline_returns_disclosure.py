@@ -93,7 +93,7 @@ def load_config():
     data_aux_path = paths['data_aux_path']
     mec_sac_path = paths['mec_sac_path']
 
-    return [destination_path, str(data_aux_path), str(mec_sac_path)]
+    return [destination_path, data_aux_path, str(mec_sac_path)]
 
 
 def load_api_context():

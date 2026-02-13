@@ -18,6 +18,7 @@ import networkx as nx
 import pandas as pd
 from logger import log_timing, RUN_ID
 
+from config_loader import load_settings
 import auxiliary_loaders as aux_loader
 import parse_xml_anbima as parser
 import clean_and_prepare_raw_data as cleaner
@@ -631,43 +632,24 @@ def enrich_horizontal_tree(tree_horzt, governance_struct):
 
 
 def load_config():
-    config = utl.load_config('config.ini')
+    """
+    Load configuration paths from config.ini using the centralized config loader.
 
-    if not config.has_section('Debug'):
-        raise KeyError('Missing [Debug] section in config.ini')
+    Returns:
+        list[Path]: [destination_path, data_aux_path, mec_sac_path, performance_path]
+    """
+    cfg = load_settings('config.ini')
+    paths = cfg['paths']
+    processing = cfg['processing']
 
-    if not config.has_section('Paths'):
-        raise KeyError('Missing [Paths] section in config.ini')
-
-    xml_source_path = config['Paths']['xml_source_path']
-    xml_source_path = f"{os.path.dirname(utl.format_path(xml_source_path))}/"
-
-    destination_path = config['Paths']['destination_path']
-    destination_path = f"{os.path.dirname(utl.format_path(destination_path))}/"
-
-    destination_file_format = config['Paths']['destination_file_format']
-
-    data_aux_path = config['Paths']['data_aux_path']
-    data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
-
-    mec_sac_path = config['Paths']['mec_sac_path']
-    mec_sac_path = f"{os.path.dirname(utl.format_path(mec_sac_path))}/"
-
-    debug_cfg = {
-        'save': config['Debug'].get('debug').lower() == 'yes',
-        'output_path': config['Debug'].get('debug_path'),
-        'file_format': config['Debug'].get('debug_file_format')
-    }
-
-    evidence_root = config['Paths']['log_evidence_root']
-    evidence_root = f"{os.path.dirname(utl.format_path(evidence_root))}/"
-    log_cfg = {
-        'log_evidence_root': evidence_root,
-        'log_evidence_file_format': config['Paths']['log_evidence_file_format'],
-    }
+    xml_source_path = str(paths['xml_source_path'])
+    destination_path = str(paths['destination_path'])
+    destination_file_format = str(paths['destination_file_format'])
+    mec_sac_path = str(paths['mec_sac_path'])
 
     return [xml_source_path, destination_path, destination_file_format,
-            data_aux_path, debug_cfg, log_cfg, mec_sac_path]
+            paths['data_aux_path'], cfg['debug'], cfg['log'], mec_sac_path,
+            processing['workers']]
 
 
 def compute_plan_returns_adjust(debug_cfg, tree_hrztl, dcadplanosac,
@@ -738,6 +720,7 @@ def run_pipeline():
         debug_cfg,
         log_cfg,
         mec_sac_path,
+        processes,
     ) = load_config()
 
     setup_folders([destination_path])
@@ -752,7 +735,6 @@ def run_pipeline():
     daily_keys = header_daily_values.keys()
     types_series = [key for key, value in header_daily_values.items() if value.get('serie', False)]
 
-    processes = min(8, multiprocessing.cpu_count())
     numeric_fields = create_numeric_fields_set(funds_dtypes, port_dtypes)
     funds, portfolios = parse_files(debug_cfg, xml_source_path,
                                     processes, daily_keys, numeric_fields)

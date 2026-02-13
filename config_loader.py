@@ -10,6 +10,42 @@ Created on Tue Feb 10 17:34:19 2026
 from configparser import ConfigParser
 from pathlib import Path
 from typing import Any
+from collections.abc import Mapping, Sequence
+
+
+def required_schema() -> dict[str, list[str]]:
+    return {
+        'InputPaths': [
+            'data_aux_path',
+            'xml_source_path',
+            'mec_sac_path',
+            'performance_path',
+        ],
+        'OutputPaths': [
+            'destination_path',
+            'logs',
+            'log_evidence_root',
+            'debug_path',
+        ],
+        'OutputFormats': [
+            'destination_file_format',
+            'debug_file_format',
+            'log_evidence_file_format',
+        ],
+        'Debug': [
+            'debug',
+        ],
+        'Processing': [
+            'workers',
+        ],
+    }
+
+
+def validate_config_schema(config: ConfigParser) -> None:
+    schema = required_schema()
+    _require_sections(config, list(schema.keys()))
+    for section, keys in schema.items():
+        _require_keys(config, section, keys)
 
 
 def _read_ini(config_file: str | Path) -> ConfigParser:
@@ -78,7 +114,19 @@ def _yesno(value: str | None, default: bool = False) -> bool:
     return value.strip().lower() in {'yes', 'y', 'true', '1', 'on'}
 
 
-def load_settings(config_file: str | Path = "config.ini") -> dict[str, Any]:
+def _parse_workers(value: str | None) -> int | None:
+    if value is None:
+        return None
+    raw = value.strip().lower()
+    if raw in {'auto', ''}:
+        return None
+    n = int(raw)
+    if n < 1:
+        raise ValueError("Processing.workers must be >= 1 or 'auto'")
+    return n
+
+
+def load_settings(config_file: str | Path = 'config.ini') -> dict[str, Any]:
     """
     Unified config loader for Sofia.
 
@@ -96,48 +144,36 @@ def load_settings(config_file: str | Path = "config.ini") -> dict[str, Any]:
     cfg_path = Path(config_file)
     config = _read_ini(cfg_path)
 
-    _require_sections(config, ["Paths", "Debug"])
-
-    # Declare the superset of keys you rely on (adjust as needed).
-    _require_keys(
-        config,
-        'Paths',
-        [
-            'data_aux_path',
-            'mec_sac_path',
-            # Orchestration pipeline
-            'xml_source_path',
-            'destination_path',
-            'destination_file_format',
-            # Logging evidence
-            'log_evidence_root',
-            'log_evidence_file_format',
-        ],
-    )
+    validate_config_schema(config)
 
     paths = {
-        'xml_source_path': _resolve_path(config['Paths']['xml_source_path'], config_file=cfg_path, want_dir=True),
-        'destination_path': _resolve_path(config['Paths']['destination_path'], config_file=cfg_path, want_dir=True),
-        'destination_file_format': config['Paths']['destination_file_format'].strip(),
-        'data_aux_path': _resolve_path(config['Paths']['data_aux_path'], config_file=cfg_path, want_dir=True),
-        'mec_sac_path': _resolve_path(config['Paths']['mec_sac_path'], config_file=cfg_path, want_dir=True),
-        'log_evidence_root': _resolve_path(config['Paths']['log_evidence_root'], config_file=cfg_path, want_dir=True),
-        'log_evidence_file_format': config['Paths']['log_evidence_file_format'].strip(),
+        'data_aux_path': _resolve_path(config['InputPaths']['data_aux_path'], config_file=cfg_path, want_dir=True),
+        'xml_source_path': _resolve_path(config['InputPaths']['xml_source_path'], config_file=cfg_path, want_dir=True),
+        'mec_sac_path': _resolve_path(config['InputPaths']['mec_sac_path'], config_file=cfg_path, want_dir=True),
+        'performance_path': _resolve_path(config['InputPaths']['performance_path'], config_file=cfg_path, want_dir=True),
+        'destination_path': _resolve_path(config['OutputPaths']['destination_path'], config_file=cfg_path, want_dir=True),
+        'destination_file_format': config['OutputFormats']['destination_file_format'].strip(),
     }
 
     debug = {
         'save': _yesno(config['Debug'].get('debug'), default=False),
-        'output_path': _resolve_path(config['Debug'].get('debug_path', ''), config_file=cfg_path, want_dir=True),
-        'file_format': (config['Debug'].get('debug_file_format') or '').strip(),
+        'output_path': _resolve_path(config['OutputPaths']['debug_path'], config_file=cfg_path, want_dir=True),
+        'file_format': config['OutputFormats']['debug_file_format'].strip(),
+    }
+
+    processing = {
+        'workers': _parse_workers(config['Processing'].get('workers')),
     }
 
     log_cfg = {
-        'log_evidence_root': paths['log_evidence_root'],
-        'log_evidence_file_format': paths['log_evidence_file_format'],
+        'logs': _resolve_path(config['OutputPaths']['logs'], config_file=cfg_path, want_dir=True),
+        'log_evidence_root': config['OutputPaths']['log_evidence_root'],
+        'log_evidence_file_format': config['OutputFormats']['log_evidence_file_format'],
     }
 
     return {
         'paths': paths,
         'debug': debug,
+        'processing': processing,
         'log': log_cfg,
     }
