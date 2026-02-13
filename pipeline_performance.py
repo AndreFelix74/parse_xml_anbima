@@ -292,10 +292,12 @@ def calc_adjust(perf_returns_by_plan, mec_sac_returns):
             - 'RETORNO_MES': the difference between the reference and original monthly return.
             - 'PL': the difference between the reference and original monthly return.
     """
+    mec_sac_returns['DT_MES'] = mec_sac_returns['DT'].dt.to_period('M').dt.to_timestamp()
+
     adjust_returns = perf_returns_by_plan.merge(
         mec_sac_returns,
         left_on=['PLANO', 'DATA'],
-        right_on=['NOME_PLANO_KEY_DESEMPENHO', 'DT'],
+        right_on=['NOME_PLANO_KEY_DESEMPENHO', 'DT_MES'],
         how='left'
     )
 
@@ -402,5 +404,7 @@ def run_pipeline():
 
 
 if __name__ == "__main__":
+    #Para evitar mensagem de warning na conversao de datas do dos arquivos de desempenho
+    pd.set_option('future.no_silent_downcasting', True)
     with log_timing('full', 'all_process'):
         run_pipeline()
