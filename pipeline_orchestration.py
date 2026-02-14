@@ -8,9 +8,9 @@ Created on Fri May 30 11:33:22 2025
 
 
 from datetime import datetime
-import os
+from pathlib import Path
+from typing import Iterable
 import re
-import locale
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 from collections import defaultdict
@@ -18,6 +18,7 @@ import networkx as nx
 import pandas as pd
 from logger import log_timing, RUN_ID
 
+from config_loader import load_settings
 import auxiliary_loaders as aux_loader
 import parse_xml_anbima as parser
 import clean_and_prepare_raw_data as cleaner
@@ -37,7 +38,7 @@ import data_access as dta
 from file_handler import save_df
 
 
-def setup_folders(paths):
+def setup_folders(paths: Iterable[Path]) -> None:
     """
     Create directories if they do not already exist.
 
@@ -45,21 +46,7 @@ def setup_folders(paths):
         paths (list): List of directory paths to create.
     """
     for path in paths:
-        if not os.path.exists(path):
-            os.makedirs(path)
-
-
-def _save_file_with_run_id(dtfrm, filename, root_path, file_fmt, log, log_msg_key):
-    """
-    Helper function to save a DataFrame to a RUN_ID subfolder.
-    """
-    run_folder = os.path.join(root_path, RUN_ID)
-    os.makedirs(run_folder, exist_ok=True)
-
-    full_path = os.path.join(run_folder, filename)
-    save_df(dtfrm, full_path, file_fmt)
-
-    log.info(log_msg_key, arquivo=f"{full_path}.{file_fmt}")
+        path.mkdir(parents=True, exist_ok=True)
 
 
 def debug_save(dtfrm, filename, config, timing_msg, timing_detail_msg):
@@ -88,14 +75,9 @@ def debug_save(dtfrm, filename, config, timing_msg, timing_detail_msg):
         return
 
     with log_timing(timing_msg, timing_detail_msg) as log:
-        _save_file_with_run_id(
-            dtfrm,
-            filename,
-            config['output_path'],
-            config['file_format'],
-            log, 
-            'intermediate_files_saved'
-        )
+        save_df(dtfrm, config['output_path'] / filename, config['file_format'])
+        log.info('debug_file_saved',
+                 arquivo=f"{config['output_path'] / filename}.{config['file_format']}")
 
 
 def save_log_evidence(dtfrm, filename, config, log):
@@ -103,72 +85,14 @@ def save_log_evidence(dtfrm, filename, config, log):
     Saves a DataFrame as evidence of a validation error/warning.
     Uses RUN_ID to create a subfolder within the evidence path.
     """
-    _save_file_with_run_id(
-        dtfrm,
-        filename,
-        config['log_evidence_root'],
-        config['log_evidence_file_format'],
-        log,
-        'evidence_saved'
-    )
-
-
-def find_all_files(files_path, file_ext):
-    """
-    Recursively finds all files with the given extension and returns metadata.
-
-    Args:
-        files_path (str): Root directory.
-        file_ext (str): File extension (e.g., '.xml').
-
-    Returns:
-        dict: {
-            full_path (str): {
-                'filename': str,
-                'mtime': float
-            }
-        }
-    """
-    return {
-        os.path.join(root, file): {
-            'filename': file,
-            'mtime': os.path.getmtime(os.path.join(root, file))
-        }
-        for root, _, files in os.walk(files_path)
-        for file in files
-        if file.lower().endswith(file_ext.lower())
-    }
-
-
-def find_all_mecsac_files(files_path):
-    """
-    Recursively finds all files mec_sac, and returns metadata.
-
-    Args:
-        files_path (str): Root directory.
-
-    Returns:
-        dict: {
-            full_path (str): {
-                'filename': str,
-                'mtime': float
-            }
-        }
-    """
-    return {
-        os.path.join(root, file): {
-            'filename': file,
-            'mtime': os.path.getmtime(os.path.join(root, file))
-        }
-        for root, _, files in os.walk(files_path)
-        for file in files
-        if file.startswith('_mecSAC_') and file.endswith('.xlsx')
-    }
+    save_df(dtfrm, config['evidence_root'] / filename, config['evidence_file_format'])
+    log.info('evidence_file_saved',
+                arquivo=f"{config['evidence_root'] / filename}.{config['evidence_file_format']}")
 
 
 def load_mecsac(mec_source_path, processes):
     with log_timing('load', 'find_mecsac_files') as log:
-        all_mecsac_files = find_all_mecsac_files(mec_source_path)
+        all_mecsac_files = aux_loader.find_all_mecsac_files(mec_source_path)
 
         log.info(
             'load',
@@ -295,7 +219,7 @@ def create_numeric_fields_set(funds_dtypes, port_dtypes):
 
 def parse_files(debug_cfg, xml_source_path, processes, daily_keys, numeric_fields):
     with log_timing('parse', 'find_xml_files') as log:
-        all_xml_files = find_all_files(xml_source_path, '.xml')
+        all_xml_files = aux_loader.find_all_xml_files(xml_source_path)
         xml_files_to_process, xml_discarted = select_latest_xml_by_cnpj_and_date(all_xml_files)
 
         log.info(
@@ -388,7 +312,7 @@ def check_puposicao_consistency(debug_cfg, funds, portfolios):
             save_log_evidence(all_inconsistencies, 'puposicao_divergente_mesma_data', debug_cfg, log)
 
 
-def check_values_integrity(debug_cfg, entity, entity_name, invested, group_keys):
+def check_values_integrity(log_cfg, entity, entity_name, invested, group_keys):
     investor_holdings_cols = ['cnpjfundo', 'qtdisponivel', 'dtposicao', 'isin',
                               'nome', 'puposicao']
 
@@ -399,14 +323,14 @@ def check_values_integrity(debug_cfg, entity, entity_name, invested, group_keys)
         if not divergent_puposicao_vlcota.empty:
             log.warn('check', dados=divergent_puposicao_vlcota.to_dict(orient="records"))
             save_log_evidence(divergent_puposicao_vlcota,
-                              f"{entity_name}_puposicao_divergente_vlcota", debug_cfg, log)
+                              f"{entity_name}_puposicao_divergente_vlcota", log_cfg, log)
 
     with log_timing('check', f"pl_consistency_{entity_name}") as log:
         divergent_pl = checker.check_composition_consistency(entity, group_keys, 0.01 / 100.0)
 
         if not divergent_pl.empty:
             log.warn('check', dados=divergent_pl.to_dict(orient="records"))
-            save_log_evidence(divergent_pl, f"{entity_name}_pl_divergente", debug_cfg, log)
+            save_log_evidence(divergent_pl, f"{entity_name}_pl_divergente", log_cfg, log)
 
 
 def explode_partplanprev(debug_cfg, portfolios):
@@ -537,11 +461,11 @@ def validate_fund_graph_is_acyclic(funds):
 
 def assign_returns(entity, entity_key, entity_name):
     with log_timing('compute', f"returns_{entity_name}"):
-        entity.sort_values(by=entity_key + ['isin', 'dtposicao'], inplace=True)
-        pct = entity.groupby(entity_key + ['isin'])['puposicao'].pct_change(fill_method=None)
+        entity['idinternoativo'] = entity['idinternoativo'].fillna('')
+        entity.sort_values(by=entity_key + ['isin', 'idinternoativo', 'dtposicao'], inplace=True)
+        pct = entity.groupby(entity_key + ['isin', 'idinternoativo'])['puposicao'].pct_change(fill_method=None)
         entity['rentab'] = pct.round(8)
 
-    with log_timing('compute', f"returns_{entity_name}_over"):
         mask_over = entity['NEW_TIPO'] == 'OVER'
 
         entity.loc[mask_over, 'rentab'] = (
@@ -630,43 +554,20 @@ def enrich_horizontal_tree(tree_horzt, governance_struct):
 
 
 def load_config():
-    config = utl.load_config('config.ini')
+    """
+    Load configuration paths from config.ini using the centralized config loader.
 
-    if not config.has_section('Debug'):
-        raise KeyError('Missing [Debug] section in config.ini')
+    Returns:
+        list[Path]: [xml_source_path, destination_path,...]
+    """
+    cfg = load_settings('config.ini')
+    paths = cfg['paths']
+    processing = cfg['processing']
 
-    if not config.has_section('Paths'):
-        raise KeyError('Missing [Paths] section in config.ini')
-
-    xml_source_path = config['Paths']['xml_source_path']
-    xml_source_path = f"{os.path.dirname(utl.format_path(xml_source_path))}/"
-
-    destination_path = config['Paths']['destination_path']
-    destination_path = f"{os.path.dirname(utl.format_path(destination_path))}/"
-
-    destination_file_format = config['Paths']['destination_file_format']
-
-    data_aux_path = config['Paths']['data_aux_path']
-    data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
-
-    mec_sac_path = config['Paths']['mec_sac_path']
-    mec_sac_path = f"{os.path.dirname(utl.format_path(mec_sac_path))}/"
-
-    debug_cfg = {
-        'save': config['Debug'].get('debug').lower() == 'yes',
-        'output_path': config['Debug'].get('debug_path'),
-        'file_format': config['Debug'].get('debug_file_format')
-    }
-
-    evidence_root = config['Paths']['log_evidence_root']
-    evidence_root = f"{os.path.dirname(utl.format_path(evidence_root))}/"
-    log_cfg = {
-        'log_evidence_root': evidence_root,
-        'log_evidence_file_format': config['Paths']['log_evidence_file_format'],
-    }
-
-    return [xml_source_path, destination_path, destination_file_format,
-            data_aux_path, debug_cfg, log_cfg, mec_sac_path]
+    return [paths['xml_source_path'], paths['destination_path'],
+            paths['destination_file_format'],
+            paths['data_aux_path'], cfg['debug'], cfg['log'],
+            paths['mec_sac_path'], processing['workers']]
 
 
 def compute_plan_returns_adjust(debug_cfg, tree_hrztl, dcadplanosac,
@@ -733,8 +634,6 @@ def assign_adjustments(tree_hrztl, adjust_rentab):
 
 
 def run_pipeline():
-    locale.setlocale(locale.LC_ALL, '')
-
     (
         xml_source_path,
         destination_path,
@@ -743,9 +642,13 @@ def run_pipeline():
         debug_cfg,
         log_cfg,
         mec_sac_path,
+        processes,
     ) = load_config()
 
-    setup_folders([destination_path])
+    debug_cfg['output_path'] = debug_cfg['output_path'] / RUN_ID
+    log_cfg['evidence_root'] = log_cfg['evidence_root'] / RUN_ID
+
+    setup_folders([destination_path, debug_cfg['output_path'], log_cfg['evidence_root']])
 
     with log_timing('load', 'load_dbaux'):
         db_aux = aux_loader.load_dbaux(data_aux_path)
@@ -757,7 +660,6 @@ def run_pipeline():
     daily_keys = header_daily_values.keys()
     types_series = [key for key, value in header_daily_values.items() if value.get('serie', False)]
 
-    processes = min(8, multiprocessing.cpu_count())
     numeric_fields = create_numeric_fields_set(funds_dtypes, port_dtypes)
     funds, portfolios = parse_files(debug_cfg, xml_source_path,
                                     processes, daily_keys, numeric_fields)
@@ -789,7 +691,7 @@ def run_pipeline():
     compute_metrics(funds, portfolios, types_series)
 
     assign_returns(funds, ['cnpj'], 'fundos')
-    assign_returns(portfolios, ['cnpjcpf', 'codcart', 'cnpb'], 'carteiras')
+    assign_returns(portfolios, ['codcart', 'cnpb'], 'carteiras')
 
     portfolios, port_submassa = extract_portfolio_submassa(debug_cfg, db_aux['dcadsubmassa'], portfolios)
     compute_composition_portfolio_submassa(debug_cfg, port_submassa)
@@ -810,9 +712,9 @@ def run_pipeline():
     tree_hrztl = assign_adjustments(tree_hrztl, adjust_rentab)
 
     with log_timing('finish', 'save_final_files'):
-        save_df(portfolios, f"{destination_path}carteiras", destination_file_format)
-        save_df(funds,      f"{destination_path}fundos",    destination_file_format)
-        save_df(tree_hrztl, f"{destination_path}arvore_carteiras", destination_file_format)
+        save_df(portfolios, destination_path / 'carteiras', destination_file_format)
+        save_df(funds,      destination_path / 'fundos',    destination_file_format)
+        save_df(tree_hrztl, destination_path / 'arvore_carteiras', destination_file_format)
 
 
 if __name__ == "__main__":

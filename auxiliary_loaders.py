@@ -7,7 +7,7 @@ Created on Fri May 30 17:43:29 2025
 """
 
 
-import os
+from pathlib import Path
 import pandas as pd
 import data_access as dta
 
@@ -34,13 +34,13 @@ def convert_column_types(dtfrm, dtype_map):
             raise ValueError(f"Tipo não suportado: {tipo}")
 
 
-def load_assets_aux(data_aux_path):
+def load_assets_aux(data_aux_path: Path) -> pd.DataFrame:
     """
     Loads auxiliary tables for asset identification (numeraca and emissor) and
     merges them.
 
     Args:
-        data_aux_path (str): Path to the auxiliary data directory.
+        data_aux_path (Path): Path to the auxiliary data directory.
 
     Returns:
         pd.DataFrame: Merged DataFrame with prefix 'fNUMERACA.' and 'fEMISSOR.'
@@ -63,7 +63,7 @@ def load_assets_aux(data_aux_path):
         cols_names = dta.read(f"{table_name}_columns")
         dtypes = dta.read(f"{table_name}_dtypes")
 
-        table_aux = pd.read_csv(f"{data_aux_path}{table_name.upper()}.TXT",
+        table_aux = pd.read_csv(data_aux_path / f"{table_name.upper()}.TXT",
                                 header=None,
                                 names=cols_names,
                                 encoding='utf-8',
@@ -82,17 +82,17 @@ def load_assets_aux(data_aux_path):
     )
 
 
-def load_db_cad_fi_cvm(data_aux_path):
+def load_db_cad_fi_cvm(data_aux_path: Path) -> pd.DataFrame:
     """
     Loads and cleans the CVM fund registration database.
 
     Args:
-        data_aux_path (str): Path to the CSV file 'dbCadFI_CVM.csv'.
+        data_aux_path (Path): Path to the CSV file 'dbCadFI_CVM.csv'.
 
     Returns:
         pd.DataFrame: Cleaned and typed DataFrame filtered by operational funds.
     """
-    db_cad_fi_cvm = pd.read_csv(f"{data_aux_path}dbCadFI_CVM.csv",
+    db_cad_fi_cvm = pd.read_csv(data_aux_path / 'dbCadFI_CVM.csv',
                                 sep=';',
                                 encoding='latin1',
                                 dtype=str)
@@ -124,12 +124,12 @@ def load_db_cad_fi_cvm(data_aux_path):
     return db_cad_fi_cvm.add_prefix('dCadFI_CVM.')
 
 
-def load_enrich_auxiliary_data(data_aux_path):
+def load_enrich_auxiliary_data(data_aux_path: Path) -> dict:
     """
     Loads all auxiliary datasets required for data enrichment and classification.
 
     Args:
-        data_aux_path (str): Path to the directory containing auxiliary data files.
+        data_aux_path (Path): Path to the directory containing auxiliary data files.
 
     Returns:
         dict: A dictionary with the following keys:
@@ -156,7 +156,7 @@ def load_returns_by_puposicao(data_aux_path):
                       If the file does not exist, returns an empty DataFrame
                       with the correct schema.
     """
-    returns_path = f"{data_aux_path}isin_rentab.xlsx"
+    returns_path = data_aux_path / 'isin_rentab.xlsx'
 
     try:
         returns_by_puposicao = pd.read_excel(returns_path, dtype=str)
@@ -171,12 +171,12 @@ def load_returns_by_puposicao(data_aux_path):
     return returns_by_puposicao
 
 
-def load_mecsac_file(file_path):
+def load_mecsac_file(file_path: str) -> pd.DataFrame:
     """
     Loads the row with the latest DT for one _mecSAC_*.xlsx file.
 
     Args:
-        data_aux_path (str): Path to the directory containing the _mecSAC files.
+        file_path (str): Path to the directory containing the _mecSAC files.
 
     Returns:
         pd.DataFrame: DataFrame containing the latest row per CODCLI from each file.
@@ -188,6 +188,7 @@ def load_mecsac_file(file_path):
     if mec_sac.empty:
         print(f"Empty mecSAC file: {file_path}")
         return pd.DataFrame()
+
     mec_sac['DT'] = pd.to_datetime(mec_sac['DT'], dayfirst=True)
 
     result = mec_sac[columns].copy()
@@ -203,35 +204,27 @@ def load_mecsac_file(file_path):
     return result
 
 
-def load_mec_sac_last_day_month(data_aux_path):
+def load_mec_sac_last_day_month(file_path: str) -> pd.DataFrame:
     """
-    Loads the row with the latest DT for each CODCLI from each _mecSAC_*.xlsx file.
+    Loads the row corresponding to the last day of each month for each CODCLI.
 
     Args:
-        data_aux_path (str): Path to the directory containing the _mecSAC files.
+        file_path (str): Path to the _mecSAC_*.xlsx file.
 
     Returns:
-        pd.DataFrame: DataFrame containing the latest row per CODCLI from each file.
+        pd.DataFrame: DataFrame containing the last available day
+                      of each month per CODCLI.
     """
-    dfs = []
+    mec_sac = load_mecsac_file(file_path)
+    mec_sac['year_month'] = mec_sac['DT'].dt.to_period('M').dt.to_timestamp()
 
-    for filename in os.listdir(data_aux_path):
-        if filename.startswith('_mecSAC_') and filename.endswith('.xlsx'):
-            file_path = os.path.join(data_aux_path, filename)
-            mec_sac = pd.read_excel(file_path)
+    idx = (
+        mec_sac
+        .groupby(['CODCLI', 'year_month'])['DT']
+        .idxmax()
+    )
 
-            if mec_sac.empty:
-                print(f"Empty mecSAC file: {filename}")
-                continue
-
-            mec_sac['DT'] = pd.to_datetime(mec_sac['DT'], dayfirst=True)
-
-            dfs.append(load_mecsac_file(file_path))
-
-    if dfs:
-        return pd.concat(dfs, ignore_index=True)
-
-    return pd.DataFrame()
+    return mec_sac.loc[idx].copy()
 
 
 def load_cnpb_codcli_mapping(data_aux_path):
@@ -249,8 +242,8 @@ def load_cnpb_codcli_mapping(data_aux_path):
     pd.DataFrame
         DataFrame with columns ['CNPB', 'CODCLI_SAC'].
     """
-    dcadplano = pd.read_excel(f"{data_aux_path}dbAux.xlsx", sheet_name='dCadPlano')
-    dcadplanosac = pd.read_excel(f"{data_aux_path}dbAux.xlsx", sheet_name='dCadPlanoSAC')
+    dcadplano = pd.read_excel(data_aux_path / 'dbAux.xlsx', sheet_name='dCadPlano')
+    dcadplanosac = pd.read_excel(data_aux_path / 'dbAux.xlsx', sheet_name='dCadPlanoSAC')
 
     dcadplano['COD_PLANO'] = dcadplano['COD_PLANO'].astype(str).str.strip()
     dcadplanosac['COD_PLANO'] = dcadplanosac['COD_PLANO'].astype(str).str.strip()
@@ -275,30 +268,20 @@ def load_cnpb_codcli_mapping(data_aux_path):
     return mapping.rename(columns={'CNPB_x': 'cnpb'})[['cnpb', 'CODCLI_SAC']]
 
 
-def load_performance(performance_path):
-    raw_data = []
+def load_performance(file_path: str) -> pd.DataFrame:
+    performance = pd.DataFrame()
 
-    for filename in os.listdir(performance_path):
-        if filename.startswith('Desempenho'):
-            file_path = os.path.join(performance_path, filename)
-            try:
-                raw_sheet = pd.read_excel(file_path, sheet_name='Resumo', header=None)
-            except Exception as excp:
-                print('')
-                print(f"Erro ao abrir o arquivo {file_path}")
-                print(excp)
-                continue
+    try:
+        performance = pd.read_excel(file_path, sheet_name='Resumo', header=None)
+    except Exception as excp:
+        print('')
+        print(f"Erro ao abrir o arquivo {file_path}")
+        print(excp)
+        return performance
 
-            if raw_sheet.empty:
-                print(f"Empty performance file: {filename}")
-                continue
-
-            raw_data.append(raw_sheet)
-
-    if not raw_data:
-        return pd.DataFrame()
-
-    performance = pd.concat(raw_data, ignore_index=True)
+    if performance.empty:
+        print(f"Empty performance file: {file_path}")
+        return performance
 
     performance = performance[
         (~performance[2].isin(['Patrimônio de Investimentos', 'Patrimônio Total'])) &
@@ -325,35 +308,27 @@ def load_performance(performance_path):
     return performance
 
 
-import os
-import pandas as pd
-
-def load_dbaux(data_aux_path: str) -> dict:
+def load_dbaux(data_aux_path: Path) -> dict:
     """
     Lê de uma vez as planilhas necessárias do dbAux.xlsx e constrói
     DataFrames derivados (dcadplanosac ajustado e dcadsubmassa).
 
     Args:
-        data_aux_path (str): Caminho do diretório contendo 'dbAux.xlsx'.
+        data_aux_path (Path): Caminho do diretório contendo 'dbAux.xlsx'.
 
     Returns:
         dict[str, pd.DataFrame]:
             - governance_struct  -> dEstruturaGerencial
-            - dcadplano          -> dCadPlano
-            - range_eom          -> dDataMes
-            - performance_struct -> dEstruturaDesempenho
-            - dcadplanosac       -> dCadPlanoSAC ajustado
-            - dcadsubmassa       -> derivado de dCadPlanoSAC
+            ...
     """
     mapping = {
         'governance_struct': 'dEstruturaGerencial',
         'dcadplano': 'dCadPlano',
-        'range_eom': 'dDataMes',
-        'performance_struct': 'dEstruturaDesempenho',
         'dcadplanosac': 'dCadPlanoSAC',
+        'struct_perform': 'dEstruturaDesempenho',
     }
 
-    dbaux_path = os.path.join(data_aux_path, 'dbAux.xlsx')
+    dbaux_path = data_aux_path / 'dbAux.xlsx'
 
     sheets = pd.read_excel(
         dbaux_path,
@@ -389,3 +364,38 @@ def load_dbaux(data_aux_path: str) -> dict:
     result['dcadsubmassa'] = dcadsubmassa
 
     return result
+
+
+def find_files(files_path: Path, predicate):
+    return {
+        str(file): {
+            'filename': file.name,
+            'mtime': file.stat().st_mtime
+        }
+        for file in files_path.rglob('*')
+        if file.is_file() and predicate(file.name)
+    }
+
+
+def is_xml_file(filename: str) -> bool:
+    return filename.lower().endswith('.xml')
+
+
+def is_performance_file(filename: str) -> bool:
+    return filename.lower().startswith('desempenho')
+
+
+def is_mecsac_file(filename: str) -> bool:
+    return filename.startswith('_mecSAC_') and filename.lower().endswith('.xlsx')
+
+
+def find_all_xml_files(files_path: Path):
+    return find_files(files_path, is_xml_file)
+
+
+def find_all_performance_files(files_path: Path):
+    return find_files(files_path, is_performance_file)
+
+
+def find_all_mecsac_files(files_path: Path):
+    return find_files(files_path, is_mecsac_file)
