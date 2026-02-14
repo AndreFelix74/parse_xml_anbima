@@ -377,12 +377,20 @@ def find_files(files_path: Path, predicate):
     }
 
 
+def is_xml_file(filename: str) -> bool:
+    return filename.lower().endswith('.xml')
+
+
 def is_performance_file(filename: str) -> bool:
     return filename.lower().startswith('desempenho')
 
 
 def is_mecsac_file(filename: str) -> bool:
-    return filename.startswith('_mecSAC_') and filename.endswith('.xlsx')
+    return filename.startswith('_mecSAC_') and filename.lower().endswith('.xlsx')
+
+
+def find_all_xml_files(files_path: Path):
+    return find_files(files_path, is_xml_file)
 
 
 def find_all_performance_files(files_path: Path):
