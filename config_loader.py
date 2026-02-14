@@ -167,8 +167,8 @@ def load_settings(config_file: str | Path = 'config.ini') -> dict[str, Any]:
 
     log_cfg = {
         'logs': _resolve_path(config['OutputPaths']['logs'], config_file=cfg_path, want_dir=True),
-        'log_evidence_root': config['OutputPaths']['log_evidence_root'],
-        'log_evidence_file_format': config['OutputFormats']['log_evidence_file_format'],
+        'evidence_root': _resolve_path(config['OutputPaths']['log_evidence_root'], config_file=cfg_path, want_dir=True),
+        'evidence_file_format': config['OutputFormats']['log_evidence_file_format'],
     }
 
     return {
