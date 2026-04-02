@@ -151,6 +151,7 @@ def load_settings(config_file: str | Path = 'config.ini') -> dict[str, Any]:
         'xml_source_path': _resolve_path(config['InputPaths']['xml_source_path'], config_file=cfg_path, want_dir=True),
         'mec_sac_path': _resolve_path(config['InputPaths']['mec_sac_path'], config_file=cfg_path, want_dir=True),
         'performance_path': _resolve_path(config['InputPaths']['performance_path'], config_file=cfg_path, want_dir=True),
+        'custodia_path': _resolve_path(config['InputPaths']['custodia_path'], config_file=cfg_path, want_dir=True),
         'destination_path': _resolve_path(config['OutputPaths']['destination_path'], config_file=cfg_path, want_dir=True),
         'destination_file_format': config['OutputFormats']['destination_file_format'].strip(),
     }

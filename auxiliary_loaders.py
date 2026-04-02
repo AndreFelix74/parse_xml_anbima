@@ -326,6 +326,7 @@ def load_dbaux(data_aux_path: Path) -> dict:
         'dcadplano': 'dCadPlano',
         'dcadplanosac': 'dCadPlanoSAC',
         'struct_perform': 'dEstruturaDesempenho',
+        'dcadcrtbrad': 'dCadCrtBRA',
     }
 
     dbaux_path = data_aux_path / 'dbAux.xlsx'
@@ -399,3 +400,7 @@ def find_all_performance_files(files_path: Path):
 
 def find_all_mecsac_files(files_path: Path):
     return find_files(files_path, is_mecsac_file)
+
+def find_all_custody(files_path: Path, file_ext: str):
+    ext = file_ext.lower()
+    return find_files(files_path, lambda name: name.lower().endswith(ext))

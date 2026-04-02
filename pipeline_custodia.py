@@ -12,7 +12,9 @@ import multiprocessing
 import numpy as np
 import pandas as pd
 from logger import log_timing, RUN_ID
+from pathlib import Path
 
+from config_loader import load_settings
 import auxiliary_loaders as aux_loader
 from parse_pdf_custodia import cetip, selic
 import util as utl
@@ -21,37 +23,19 @@ from file_handler import save_df, load_df
 
 def load_config():
     """
-    Loads and parses configuration values from config.ini.
+    Load configuration paths from config.ini using the centralized config loader.
 
     Returns:
-        tuple:
-            - custodia_source_path (str): Directory containing input PDF files.
-            - custodia_destin_path (str): Directory to save final outputs.
-            - intermediate_cfg (dict): Debug settings including whether to save
-                intermediates.
+        list[Path]: [xml_source_path, destination_path,...]
     """
-    config = utl.load_config('config.ini')
+    cfg = load_settings('config.ini')
+    paths = cfg['paths']
+    processing = cfg['processing']
 
-    data_aux_path = config['Paths']['data_aux_path']
-    data_aux_path = f"{os.path.dirname(utl.format_path(data_aux_path))}/"
-
-    xlsx_destination_path = config['Paths']['xlsx_destination_path']
-    xlsx_destination_path = f"{os.path.dirname(utl.format_path(xlsx_destination_path))}/"
-
-    custodia_source_path = config['Paths']['custodia_source_path']
-    custodia_source_path = f"{os.path.dirname(utl.format_path(custodia_source_path))}/"
-
-    custodia_destin_path = config['Paths']['custodia_destin_path']
-    custodia_destin_path = f"{os.path.dirname(utl.format_path(custodia_destin_path))}/"
-
-    intermediate_cfg = {
-        'save': config['Debug'].get('write_intermediate_files').lower() == 'yes',
-        'output_path': config['Debug'].get('intermediate_output_path'),
-        'file_format': config['Paths'].get('destination_file_extension')
-    }
-
-    return [custodia_source_path, custodia_destin_path, intermediate_cfg,
-            data_aux_path, xlsx_destination_path]
+    return [paths['custodia_path'], paths['destination_path'],
+            paths['destination_file_format'],
+            paths['data_aux_path'], cfg['debug'], cfg['log'],
+            processing['workers']]
 
 
 def setup_folders(paths):
@@ -65,7 +49,8 @@ def setup_folders(paths):
         if not os.path.exists(path):
             os.makedirs(path)
 
-def save_intermediate(dtfrm, filename, config, log):
+
+def debug_save(dtfrm, filename, config, timing_msg, timing_detail_msg):
     """
     Saves an intermediate DataFrame to a unique RUN_ID subfolder.
 
@@ -80,11 +65,6 @@ def save_intermediate(dtfrm, filename, config, log):
     run_id : str
         Unique identifier for this pipeline execution.
 
-    Returns
-    -------
-    str
-        Full path of saved file.
-
     Raises
     ------
     KeyError
@@ -92,48 +72,21 @@ def save_intermediate(dtfrm, filename, config, log):
     ValueError
         If file writing is disabled by configuration.
     """
-    run_folder = os.path.join(config['output_path'], RUN_ID)
-    os.makedirs(run_folder, exist_ok=True)
+    if not config['save']:
+        return
 
-    full_path = os.path.join(run_folder, filename)
-    save_df(dtfrm, full_path, config['file_format'])
-
-    log.info('intermediate_files_saved', arquivo=f"{full_path}.{config['file_format']}")
-
-
-def find_all_files(files_path, file_ext):
-    """
-    Recursively finds all files with the given extension and returns metadata.
-
-    Args:
-        files_path (str): Root directory.
-        file_ext (str): File extension (e.g., '.xml').
-
-    Returns:
-        dict: {
-            full_path (str): {
-                'filename': str,
-                'mtime': float
-            }
-        }
-    """
-    return {
-        os.path.join(root, file): {
-            'filename': file,
-            'mtime': os.path.getmtime(os.path.join(root, file))
-        }
-        for root, _, files in os.walk(files_path)
-        for file in files
-        if file.lower().endswith(file_ext.lower())
-    }
+    with log_timing(timing_msg, timing_detail_msg) as log:
+        save_df(dtfrm, config['output_path'] / filename, config['file_format'])
+        log.info('debug_file_saved',
+                 arquivo=f"{config['output_path'] / filename}.{config['file_format']}")
 
 
-def parse_files(custodia_source_path, processes):
+def parse_files(custodia_path, processes):
     """
     Identifies PDF files and parses their contents in parallel using multiprocessing.
 
     Args:
-        custodia_source_path (str): Path where the source PDF files are located.
+        custodia_path (str): Path where the source PDF files are located.
         processes (int): Number of processes to use in parallel.
 
     Returns:
@@ -142,7 +95,7 @@ def parse_files(custodia_source_path, processes):
             - parsed_cetip_content (list[list[list[str]]]): Parsed rows from CETIP PDFs.
     """
     with log_timing('parse_custodia', 'load_pdf_files') as log:
-        pdf_files_to_process = find_all_files(custodia_source_path, '.pdf')
+        pdf_files_to_process = aux_loader.find_all_custody(custodia_path, '.pdf')
 
         pdf_selic_files = []
         pdf_cetip_files = []
@@ -173,7 +126,7 @@ def parse_files(custodia_source_path, processes):
     return [parsed_selic_content, parsed_cetip_content]
 
 
-def convert_parsed_to_dataframe(intermediate_cfg, parsed_selic_content, parsed_cetip_content):
+def convert_parsed_to_dataframe(debug_cfg, parsed_selic_content, parsed_cetip_content):
     """
     Converts the parsed raw content from PDF files into structured DataFrames.
 
@@ -204,10 +157,8 @@ def convert_parsed_to_dataframe(intermediate_cfg, parsed_selic_content, parsed_c
     for col in cols_float:
         custodia_cetip[col] = custodia_cetip[col].astype(float)
 
-    if intermediate_cfg['save']:
-        with log_timing('parse', 'save_parsed_data') as log:
-            save_intermediate(custodia_selic, 'custodia_selic-parsed', intermediate_cfg, log)
-            save_intermediate(custodia_cetip, 'custodia_cetip-parsed', intermediate_cfg, log)
+    debug_save(custodia_selic, 'custodia_selic-parsed', debug_cfg, 'parse', 'debug_save_parsed_raw_data')
+    debug_save(custodia_cetip, 'custodia_cetip-parsed', debug_cfg, 'parse', 'debug_save_parsed_raw_data')
 
     return [custodia_selic, custodia_cetip]
 
@@ -350,28 +301,31 @@ def run_pipeline():
     converts results into DataFrames, and saves final outputs.
     """
     (
-     custodia_source_path,
-     custodia_destin_path,
-     intermediate_cfg,
+     custodia_path,
+     destination_path,
+     destination_file_format,
      data_aux_path,
-     xlsx_destination_path
+     debug_cfg,
+     log_cfg,
+     processes,
      ) = load_config()
 
-    setup_folders([custodia_destin_path])
+    setup_folders([destination_path])
 
-    processes = min(8, multiprocessing.cpu_count())
-
-    parsed_selic_content, parsed_cetip_content = parse_files(custodia_source_path, processes)
-    custodia_selic, custodia_cetip = convert_parsed_to_dataframe(intermediate_cfg,
+    parsed_selic_content, parsed_cetip_content = parse_files(custodia_path, processes)
+    custodia_selic, custodia_cetip = convert_parsed_to_dataframe(debug_cfg,
                                                                  parsed_selic_content,
                                                                  parsed_cetip_content)
 
-    file_frmt = intermediate_cfg['file_format']
+    file_frmt = destination_file_format
 
     with log_timing('reconciliation', 'load_aux_data'):
-        dcad_crt_brad = aux_loader.load_dcad_crt_brad(data_aux_path)
-        portfolios = load_df(f"{xlsx_destination_path}carteiras", file_frmt)
-        funds = load_df(f"{xlsx_destination_path}fundos", file_frmt)
+        db_aux = aux_loader.load_dbaux(data_aux_path)
+        dcad_crt_brad = db_aux['dcadcrtbrad']
+
+    with log_timing('reconciliation', 'load_position_data'):
+        portfolios = load_df(destination_path / 'carteiras', file_frmt)
+        funds = load_df(destination_path / 'fundos', file_frmt)
 
     with log_timing('reconciliation', 'normalize_data'):
         normalize_dcad_crt_brad(dcad_crt_brad)
@@ -384,12 +338,12 @@ def run_pipeline():
         recon_selic, recon_cetip = reconciliation(unified_position, dcad_crt_brad,
                                                   custodia_selic, custodia_cetip)
 
-    file_frmt = 'xlsx' #intermediate_cfg['file_format']
+    file_frmt = 'xlsx' #destination_file_format
     with log_timing('finish_custodia', 'save_final_files'):
-        save_df(custodia_selic, f"{custodia_destin_path}custodia_selic", file_frmt)
-        save_df(custodia_cetip, f"{custodia_destin_path}custodia_cetip", file_frmt)
-        save_df(recon_selic, f"{custodia_destin_path}reconciliacao_selic", file_frmt)
-        save_df(recon_cetip, f"{custodia_destin_path}reconciliacao_cetip", file_frmt)
+        save_df(custodia_selic, destination_path  / 'custodia_selic', file_frmt)
+        save_df(custodia_cetip, destination_path  / 'custodia_cetip', file_frmt)
+        save_df(recon_selic, destination_path  / 'reconciliacao_selic', file_frmt)
+        save_df(recon_cetip, destination_path  / 'reconciliacao_cetip', file_frmt)
 
 
 if __name__ == "__main__":
