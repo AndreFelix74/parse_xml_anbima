@@ -10,6 +10,63 @@ Created on Thu Jul  3 18:17:22 2025
 import pandas as pd
 
 
+def _prefix_invest_mec_sac(mec_sac: pd.DataFrame) -> pd.DataFrame:
+    """
+    Aplica prefixo 'INVEST_' na coluna CODCLI do DataFrame mec_sac.
+
+    --- CONTEXTO E MOTIVAÇÃO (GAMBIARRA DOCUMENTADA) ---
+
+    A tabela dCadPlanoSAC (dbAux.xlsx) possui as colunas CODCLI_SAC e
+    CODCLI_SAC_INVEST. A função load_dbaux() em auxiliary_loaders.py substitui
+    CODCLI_SAC pelo valor de CODCLI_SAC_INVEST quando este está preenchido,
+    tornando CODCLI_SAC_INVEST o identificador efetivo usado nos merges.
+
+    Originalmente, apenas cinco carteiras tinham cálculo separado de
+    investimentos no sistema YMF (020046 CONSOLID, CPFL CD_CON, 47CPFL-CD PURO,
+    PIRA CD CONSOLI, PREV06 ENEL CON). Para essas carteiras, CODCLI_SAC_INVEST
+    já estava preenchido com um código distinto (ex: "CESP CD", "CPFL CD").
+
+    A partir de fevereiro de 2026, todas as carteiras passaram a ter cálculo
+    separado de investimentos. Os dados do sistema YMF passaram a chegar com o
+    código prefixado por 'INVEST_' (ex: 'INVEST_020046 CONSOLID'). A coluna
+    CODCLI_SAC_INVEST da dCadPlanoSAC foi atualizada para refletir esse padrão
+    em todas as linhas.
+
+    O resultado é uma inconsistência temporal em mec_sac:
+    - Registros anteriores a fev/2026: CODCLI sem prefixo 'INVEST_'
+    - Registros a partir de fev/2026:  CODCLI com prefixo 'INVEST_'
+
+    Como CODCLI_SAC_INVEST está preenchido em todas as linhas da dCadPlanoSAC,
+    o merge de mec_sac com dcadplanosac falha para registros históricos.
+
+    A solução correta seria uma tabela de vigência das carteiras de investimento,
+    controlando desde quando cada carteira passou a ter o cálculo separado.
+    Por restrições de tempo, optou-se por padronizar mec_sac aplicando o prefixo
+    'INVEST_' em todos os registros que ainda não o possuem, tornando o merge
+    agnóstico ao período.
+
+    TODO: Substituir esta função por um mecanismo de vigência quando houver
+    disponibilidade de tempo para refatoração adequada.
+
+    --- FIM DO CONTEXTO ---
+
+    Parâmetros
+    ----------
+    mec_sac : pd.DataFrame
+        DataFrame com a coluna CODCLI já convertida para str e stripada.
+
+    Retorno
+    -------
+    pd.DataFrame
+        O mesmo DataFrame com CODCLI padronizado com prefixo 'INVEST_'.
+        A operação é feita in-place na cópia recebida; o caller decide
+        se reassigna ou não a variável original.
+    """
+    mask = ~mec_sac['CODCLI'].str.startswith('INVEST_')
+    mec_sac.loc[mask, 'CODCLI'] = 'INVEST_' + mec_sac.loc[mask, 'CODCLI']
+    return mec_sac
+
+
 def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac, port_submassa):
     """
     Computes the difference between official monthly plan returns (from mec_sac)
@@ -43,10 +100,11 @@ def compute_plan_returns_adjustment(tree_hrztl, mec_sac, dcadplanosac, port_subm
         includes the adjustment column 'rentab_ajuste' (mec_sac - tree).
     """
     mec_sac['DT'] = pd.to_datetime(mec_sac['DT']).dt.strftime('%Y%m%d')
+    mec_sac['CODCLI'] = mec_sac['CODCLI'].astype(str).str.strip()
+    mec_sac = _prefix_invest_mec_sac(mec_sac)
 
     dcadplanosac['CODCLI_SAC'] = dcadplanosac['CODCLI_SAC'].astype(str).str.strip()
     dcadplanosac['CODCART'] = dcadplanosac['CODCART'].astype(str).str.strip()
-    mec_sac['CODCLI'] = mec_sac['CODCLI'].astype(str).str.strip()
 
     mec_sac_dcadplanosac = mec_sac.merge(
         dcadplanosac,
