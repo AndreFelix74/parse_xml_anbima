@@ -52,6 +52,7 @@ def _fill_contribution_cols(tree, mask, level):
     tree.loc[mask, 'contribution_valor_calc'] = (
         tree[vl_calc_col]
         * tree['contribution_equity_stake']
+        * tree['pct_submassa_isin_cnpb'].fillna(1)
         )
     tree.loc[mask, 'contribution_ativo'] = tree[ativo_col]
     tree.loc[mask, 'contribution_composicao'] = (
@@ -129,7 +130,7 @@ def assign_estrutura_gerencial_key(tree, key_vehicle_governance_struct, max_deep
     Returns:
         None: The input DataFrame is modified in place.
     """
-    group_cols = ['codcart', 'dtposicao', 'cnpb']
+    group_cols = ['codcart', 'dtposicao', 'cnpb', 'SUBMASSA']
     tree['KEY_ESTRUTURA_GERENCIAL'] = None
     tree['contribution_match'] = None
 

@@ -59,13 +59,13 @@ def log_timing(phase: str, step: str):
         structlog.BoundLogger: A logger pre-bound with `run_id`, `phase`, and `step`.
     """
     log = logger.bind(phase=phase, step=step)
-    print(f".... {phase} - {step}", end='\r')
+    print(f"..... {phase} - {step}", end='\r')
     start = time.time()
     try:
         yield log
         duration = round(time.time() - start, 2)
         log.info("timing", duration=duration)
-        print(f"{duration:.2f}")
+        print(f"{duration:>5.2f}")
     except Exception as excpt:
         log.error("timing", status="fail", error=str(excpt))
         raise

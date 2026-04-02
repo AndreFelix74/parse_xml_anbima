@@ -1,0 +1,5 @@
+set TENANT_ID=
+set CLIENT_ID=
+set CLIENT_SECRET=
+set SCOPE=
+set API_BASE=
