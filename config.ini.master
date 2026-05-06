@@ -1,0 +1,16 @@
+[Paths]
+;destination_file_extension = csv
+destination_file_extension = parquet
+xml_source_path = C:\Work\Vivest\API\Dataset\xmlAnbima\sta\data
+xlsx_destination_path = C:\Work\Vivest\API\Dataset\xmlAnbima\sta 
+xlsx_aux_path = C:\Work\Vivest\API\Dataset\xmlAnbima\sta
+data_aux_path = C:\Work\Vivest\API\Dataset\dbAux
+logs = C:\Work\Vivest\API\Dataset\xmlAnbima\sta\log
+mec_sac_path = C:\Work\Vivest\API\Dataset\mecSAC\_
+custodia_source_path = C:\Work\Vivest\API\Dataset\custodia
+custodia_destin_path = C:\Work\Vivest\API\Dataset\custodia\_
+performance_path = C:\Work\Vivest\API\Dataset\baseRentabilidade\resumoDesempenho
+
+[Debug]
+write_intermediate_files = no
+intermediate_output_path = ./debug_output/
