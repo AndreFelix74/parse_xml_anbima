@@ -633,7 +633,6 @@ def save_pipeline_results(
     destination_file_format: str,
 ) -> None:
     with log_timing('finish', 'save_final_files'):
-        print('')
         filtrd_cols = _filter_columns('columns.carteiras', portfolios.columns)
         save_df(portfolios[filtrd_cols], destination_path / 'carteiras', destination_file_format)
 
