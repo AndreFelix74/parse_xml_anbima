@@ -10,6 +10,7 @@ Created on Fri May 30 11:33:22 2025
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
+import fnmatch
 import re
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
@@ -499,10 +500,10 @@ def process_portfolio_submassa(portfolios, cad_submassa, debug_cfg):
     debug_save(port_submassa, 'submassa-carteiras-composicao', debug_cfg,
                'submassa', 'debug_save_portfolio_submassa_composition')
 
-    with log_timing('submassa', 'forward_fill_submassa_pct'):
-        port_submassa = crt.forward_fill_submassa_pct(port_submassa, portfolios)
-    debug_save(port_submassa, 'submassa-carteiras-ffill', debug_cfg,
-               'submassa', 'debug_save_portfolio_submassa_ffill')
+    # with log_timing('submassa', 'forward_fill_submassa_pct'):
+    #     port_submassa = crt.forward_fill_submassa_pct(port_submassa, portfolios)
+    # debug_save(port_submassa, 'submassa-carteiras-ffill', debug_cfg,
+    #            'submassa', 'debug_save_portfolio_submassa_ffill')
 
     return portfolios, port_submassa
 
@@ -596,6 +597,56 @@ def assign_adjustments(tree_hrztl, adjust_rentab):
     return tree_hrztl
 
 
+def _columns_patterns_from_df(columns: Iterable[str]) -> list[str]:
+    _nivel_col_re = re.compile(r'^(.*)_nivel_\d+$')
+    seen: set[str] = set()
+    out: list[str] = []
+    for col in columns:
+        m = _nivel_col_re.match(col)
+        pat = f'{m.group(1)}_nivel_*' if m else col
+        if pat not in seen:
+            seen.add(pat)
+            out.append(pat)
+    return out
+
+
+def _filter_columns(sys_data_key: str, df_columns: Iterable[str]) -> list[str]:
+    all_columns = list(df_columns)
+
+    dta.create_if_not_exists(sys_data_key, {'columns': _columns_patterns_from_df(all_columns)})
+
+    selectors = dta.read(sys_data_key)['columns']
+    glob_matched = {
+        col
+        for col in all_columns
+        for sel in selectors
+        if '*' in sel and fnmatch.fnmatchcase(col, sel)
+    }
+    return [col for col in all_columns if col in glob_matched or col in selectors]
+
+
+def save_pipeline_results(
+    portfolios: pd.DataFrame,
+    funds: pd.DataFrame,
+    tree_hrztl: pd.DataFrame,
+    destination_path: Path,
+    destination_file_format: str,
+) -> None:
+    with log_timing('finish', 'save_final_files'):
+        print('')
+        filtrd_cols = _filter_columns('columns.carteiras', portfolios.columns)
+        save_df(portfolios[filtrd_cols], destination_path / 'carteiras', destination_file_format)
+
+        filtrd_cols = _filter_columns('columns.fundos', funds.columns)
+        save_df(funds[filtrd_cols], destination_path / 'fundos', destination_file_format)
+    
+        filtrd_cols = _filter_columns('columns.arvore_carteiras', tree_hrztl.columns)
+        save_df(tree_hrztl[filtrd_cols], destination_path / 'arvore_carteiras', destination_file_format)
+
+        filtrd_cols = _filter_columns('columns.arvore_carteiras_rentab', tree_hrztl.columns)
+        save_df(tree_hrztl[filtrd_cols], destination_path / 'arvore_carteiras_rentab', destination_file_format)
+
+
 def run_pipeline():
     (
         xml_source_path,
@@ -669,10 +720,9 @@ def run_pipeline():
 
     tree_hrztl = assign_adjustments(tree_hrztl, adjust_rentab)
 
-    with log_timing('finish', 'save_final_files'):
-        save_df(portfolios, destination_path / 'carteiras', destination_file_format)
-        save_df(funds,      destination_path / 'fundos',    destination_file_format)
-        save_df(tree_hrztl, destination_path / 'arvore_carteiras', destination_file_format)
+    save_pipeline_results(
+        portfolios, funds, tree_hrztl, destination_path, destination_file_format
+    )
 
 
 if __name__ == "__main__":
