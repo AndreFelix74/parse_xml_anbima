@@ -10,6 +10,7 @@ Created on Fri May 30 11:33:22 2025
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
+import fnmatch
 import re
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
@@ -31,7 +32,12 @@ from returns import (
     compute_returns_from_puposicao,
     validate_unique_puposicao
     )
-from investment_tree import build_tree, enrich_text, enrich_values
+from investment_tree import (
+    build_tree,
+    enrich_text,
+    enrich_values,
+    explode_horizontal_tree_submassa,
+)
 from reporting import assign_governance_struct_keys
 import util as utl
 import data_access as dta
@@ -400,35 +406,6 @@ def compute_metrics(funds, portfolios, types_series):
         metrics.compute(portfolios, funds, types_series, group_keys_port)
 
 
-def extract_portfolio_submassa(debug_cfg, cad_submassa, portfolios):
-    with log_timing('submassa', 'extract_portfolio_submassa'):
-        mask = portfolios['codcart'].isin(cad_submassa['CODCART'])
-
-        port_submassa = portfolios.loc[mask].merge(
-            cad_submassa,
-            left_on='codcart',
-            right_on='CODCART',
-            how='left',
-        )
-
-    debug_save(port_submassa, 'submassa-carterias', debug_cfg, 'submassa', 'debug_save_portfolio_submassa')
-
-    return [portfolios.loc[~mask], port_submassa]
-
-
-def compute_composition_portfolio_submassa(debug_cfg, port_submassa):
-    with log_timing('submassa', 'compute_composition_portfolio_submassa'):
-        port_submassa['total_submassa_isin_cnpb'] = (
-            port_submassa.groupby(['dtposicao', 'CNPB', 'isin'])['valor_calc'].transform('sum')
-        )
-
-        port_submassa['pct_submassa_isin_cnpb'] = (
-            port_submassa['valor_calc'] / port_submassa['total_submassa_isin_cnpb']
-        )
-
-    debug_save(port_submassa, 'submassa-carterias-composicao', debug_cfg, 'submassa', 'debug_save_portfolio_submassa_composition')
-
-
 def validate_fund_graph_is_acyclic(funds):
     """
     Validates that the fund-to-fund relationships form a Directed Acyclic Graph (DAG).
@@ -488,57 +465,47 @@ def build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa):
 
         tree_horzt_submassa = tree_horzt[mask].copy()
 
-    debug_save(tree_horzt_submassa, 'submassa-arvore', debug_cfg, 'tree', 'debug_save_tree_submassa')
+    debug_save(tree_horzt_submassa, 'submassa-arvore', debug_cfg,
+               'tree', 'debug_save_tree_submassa')
 
-    return tree_horzt.loc[~mask], tree_horzt_submassa
+    with log_timing('tree', 'explode_horizontal_tree_submassa'):
+        tree_horzt_submassa = explode_horizontal_tree_submassa(
+            tree_horzt_submassa, port_submassa
+        )
 
-#PASSAR EXPLODE SUBMASSA para tree/tree_operations como eh com carteira_operations
-def explode_horizontal_tree_submassa(debug_cfg, tree_horzt_sub, port_submassa):
-    with log_timing('tree', 'build_tree_submassa'):
-        cols_port_submassa = ['dtposicao', 'CNPB', 'isin', 'CODCART',
-                              'COD_SUBMASSA', 'SUBMASSA', 'pct_submassa_isin_cnpb']
-        mask_port = (~port_submassa['isin'].isna())
+    debug_save(tree_horzt_submassa, 'submassa-arvore-pct_part', debug_cfg,
+               'tree', 'debug_save_tree_submassa_pct_part')
 
-        tree_horzt_sub['COD_SUBMASSA'] = None
-        tree_horzt_sub['SUBMASSA'] = None
-        tree_horzt_sub['pct_submassa_isin_cnpb'] = 1.0
-        tree_horzt_sub['CODCART'] = None
+    tree_horzt = pd.concat(
+        [tree_horzt.loc[~mask], tree_horzt_submassa], ignore_index=True
+    )
+    #Preenche CODCART com vazio para as demais partes do codigo que passam a usar essa coluna
+    #para agregacoes
+    tree_horzt['CODCART'] = tree_horzt['CODCART'].fillna('')
+    tree_horzt['SUBMASSA'] = tree_horzt['SUBMASSA'].fillna('')
 
-        max_depth = tree_horzt_sub['nivel'].max()
+    return tree_horzt
 
-        if pd.isna(max_depth):
-            return tree_horzt_sub
 
-        for i in range(0, max_depth + 1):
-            suffix = '' if i == 0 else f'_nivel_{i}'
-            isin_col = f"isin{suffix}"
+def process_portfolio_submassa(portfolios, cad_submassa, debug_cfg):
+    with log_timing('submassa', 'extract_portfolio_submassa'):
+        portfolios, port_submassa = crt.extract_portfolio_submassa(
+            cad_submassa, portfolios
+        )
+    debug_save(port_submassa, 'submassa-carteiras', debug_cfg,
+               'submassa', 'debug_save_portfolio_submassa')
 
-            tree_horzt_sub = tree_horzt_sub.merge(
-                port_submassa[mask_port][cols_port_submassa],
-                left_on=['dtposicao', 'cnpb', isin_col],
-                right_on=['dtposicao', 'CNPB', 'isin'],
-                how='left',
-                suffixes=('', f"_{suffix}"),
-                indicator=True,
-            )
+    with log_timing('submassa', 'compute_composition_portfolio_submassa'):
+        crt.compute_composition_portfolio_submassa(port_submassa)
+    debug_save(port_submassa, 'submassa-carteiras-composicao', debug_cfg,
+               'submassa', 'debug_save_portfolio_submassa_composition')
 
-            mask_merge = (tree_horzt_sub['_merge'] == 'both')
+    # with log_timing('submassa', 'forward_fill_submassa_pct'):
+    #     port_submassa = crt.forward_fill_submassa_pct(port_submassa, portfolios)
+    # debug_save(port_submassa, 'submassa-carteiras-ffill', debug_cfg,
+    #            'submassa', 'debug_save_portfolio_submassa_ffill')
 
-            tree_horzt_sub.loc[mask_merge, 'COD_SUBMASSA'] = tree_horzt_sub[f"COD_SUBMASSA_{suffix}"]
-            tree_horzt_sub.loc[mask_merge, 'SUBMASSA'] = tree_horzt_sub[f"SUBMASSA_{suffix}"]
-            tree_horzt_sub.loc[mask_merge, 'pct_submassa_isin_cnpb'] = tree_horzt_sub[f"pct_submassa_isin_cnpb_{suffix}"]
-            tree_horzt_sub.loc[mask_merge, 'CODCART'] = tree_horzt_sub[f"CODCART_{suffix}"]
-
-            tree_horzt_sub.drop(columns=['_merge'], inplace=True)
-
-    tree_horzt_sub['pct_submassa_isin_cnpb'] = tree_horzt_sub['pct_submassa_isin_cnpb'].astype(float).fillna(1.0)
-    mask_bsps = (tree_horzt_sub['SUBMASSA'].isna())
-    tree_horzt_sub.loc[mask_bsps, 'COD_SUBMASSA'] = '1'
-    tree_horzt_sub.loc[mask_bsps, 'SUBMASSA'] = 'BSPS'
-
-    debug_save(tree_horzt_sub, 'submassa-arvore-pct_part', debug_cfg, 'tree', 'debug_save_tree_submassa_pct_part')
-
-    return tree_horzt_sub
+    return portfolios, port_submassa
 
 
 def enrich_horizontal_tree(tree_horzt, governance_struct):
@@ -630,6 +597,55 @@ def assign_adjustments(tree_hrztl, adjust_rentab):
     return tree_hrztl
 
 
+def _columns_patterns_from_df(columns: Iterable[str]) -> list[str]:
+    _nivel_col_re = re.compile(r'^(.*)_nivel_\d+$')
+    seen: set[str] = set()
+    out: list[str] = []
+    for col in columns:
+        m = _nivel_col_re.match(col)
+        pat = f'{m.group(1)}_nivel_*' if m else col
+        if pat not in seen:
+            seen.add(pat)
+            out.append(pat)
+    return out
+
+
+def _filter_columns(sys_data_key: str, df_columns: Iterable[str]) -> list[str]:
+    all_columns = list(df_columns)
+
+    dta.create_if_not_exists(sys_data_key, {'columns': _columns_patterns_from_df(all_columns)})
+
+    selectors = dta.read(sys_data_key)['columns']
+    glob_matched = {
+        col
+        for col in all_columns
+        for sel in selectors
+        if '*' in sel and fnmatch.fnmatchcase(col, sel)
+    }
+    return [col for col in all_columns if col in glob_matched or col in selectors]
+
+
+def save_pipeline_results(
+    portfolios: pd.DataFrame,
+    funds: pd.DataFrame,
+    tree_hrztl: pd.DataFrame,
+    destination_path: Path,
+    destination_file_format: str,
+) -> None:
+    with log_timing('finish', 'save_final_files'):
+        filtrd_cols = _filter_columns('columns.carteiras', portfolios.columns)
+        save_df(portfolios[filtrd_cols], destination_path / 'carteiras', destination_file_format)
+
+        filtrd_cols = _filter_columns('columns.fundos', funds.columns)
+        save_df(funds[filtrd_cols], destination_path / 'fundos', destination_file_format)
+    
+        filtrd_cols = _filter_columns('columns.arvore_carteiras', tree_hrztl.columns)
+        save_df(tree_hrztl[filtrd_cols], destination_path / 'arvore_carteiras', destination_file_format)
+
+        filtrd_cols = _filter_columns('columns.arvore_carteiras_rentab', tree_hrztl.columns)
+        save_df(tree_hrztl[filtrd_cols], destination_path / 'arvore_carteiras_rentab', destination_file_format)
+
+
 def run_pipeline():
     (
         xml_source_path,
@@ -690,16 +706,11 @@ def run_pipeline():
     assign_returns(funds, ['cnpj'], 'fundos')
     assign_returns(portfolios, ['codcart', 'cnpb'], 'carteiras')
 
-    portfolios, port_submassa = extract_portfolio_submassa(debug_cfg, db_aux['dcadsubmassa'], portfolios)
-    compute_composition_portfolio_submassa(debug_cfg, port_submassa)
+    portfolios, port_submassa = process_portfolio_submassa(
+        portfolios, db_aux['dcadsubmassa'], debug_cfg
+    )
 
-    tree_hrztl, tree_hrztl_sub = build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa)
-    tree_hrztl_sub = explode_horizontal_tree_submassa(debug_cfg, tree_hrztl_sub, port_submassa)
-    tree_hrztl = pd.concat([tree_hrztl, tree_hrztl_sub], ignore_index=True)
-    #Preenche CODCART com vazio para as demais partes do codigo que passam a usar essa coluna
-    #para agregacoes
-    tree_hrztl['CODCART'] = tree_hrztl['CODCART'].fillna('')
-    tree_hrztl['SUBMASSA'] = tree_hrztl['SUBMASSA'].fillna('')
+    tree_hrztl = build_horizontal_tree(debug_cfg, funds, portfolios, port_submassa)
     enrich_horizontal_tree(tree_hrztl, db_aux['governance_struct'])
 
     adjust_rentab = compute_plan_returns_adjust(debug_cfg, tree_hrztl,
@@ -708,10 +719,9 @@ def run_pipeline():
 
     tree_hrztl = assign_adjustments(tree_hrztl, adjust_rentab)
 
-    with log_timing('finish', 'save_final_files'):
-        save_df(portfolios, destination_path / 'carteiras', destination_file_format)
-        save_df(funds,      destination_path / 'fundos',    destination_file_format)
-        save_df(tree_hrztl, destination_path / 'arvore_carteiras', destination_file_format)
+    save_pipeline_results(
+        portfolios, funds, tree_hrztl, destination_path, destination_file_format
+    )
 
 
 if __name__ == "__main__":

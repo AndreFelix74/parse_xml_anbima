@@ -159,7 +159,7 @@ def build_tree(funds, portfolios):
     cols_common = ['dtposicao', 'cnpjfundo', 'nome', 'equity_stake', 'valor_calc',
                   'isin', 'NEW_TIPO', 'fNUMERACA.DESCRICAO', 'fNUMERACA.TIPO_ATIVO',
                   'fEMISSOR.NOME_EMISSOR', 'NEW_NOME_ATIVO', 'NEW_GESTOR',
-                  'NEW_GESTOR_WORD_CLOUD', 'rentab', 'caracteristica']
+                  'NEW_GESTOR_WORD_CLOUD', 'rentab', 'caracteristica', 'coupom', 'indexador']
 
     funds = funds[funds['valor_serie'] == 0][['cnpj'] + cols_common].copy()
 
@@ -172,3 +172,75 @@ def build_tree(funds, portfolios):
     portfolios['cnpj'] = ''
 
     return build_tree_horizontal(portfolios.copy(), funds)
+
+
+def explode_horizontal_tree_submassa(tree_horzt_sub, port_submassa):
+    """
+    Propagates submassa attribution down the horizontal investment tree by
+    matching each level's ``isin`` (``isin``, ``isin_nivel_1``, ...) against
+    ``port_submassa`` and copying the submassa columns
+    (``COD_SUBMASSA``, ``SUBMASSA``, ``pct_submassa_isin_cnpb``, ``CODCART``)
+    onto the matched rows.
+
+    Rows whose submassa cannot be resolved at any level fall back to
+    ``COD_SUBMASSA = '1'`` / ``SUBMASSA = 'BSPS'`` and a participation of
+    ``1.0``.
+
+    Parameters
+    ----------
+    tree_horzt_sub : pandas.DataFrame
+        Horizontal tree restricted to (cnpb, dtposicao) pairs covered by
+        ``port_submassa``.
+    port_submassa : pandas.DataFrame
+        Submassa-tagged portfolios DataFrame with composition columns already
+        computed (see ``compute_composition_portfolio_submassa``).
+
+    Returns
+    -------
+    pandas.DataFrame
+        ``tree_horzt_sub`` enriched with the submassa columns above.
+    """
+    cols_port_submassa = ['dtposicao', 'CNPB', 'isin', 'CODCART',
+                          'COD_SUBMASSA', 'SUBMASSA', 'pct_submassa_isin_cnpb']
+    mask_port = (~port_submassa['isin'].isna())
+
+    tree_horzt_sub['COD_SUBMASSA'] = None
+    tree_horzt_sub['SUBMASSA'] = None
+    tree_horzt_sub['pct_submassa_isin_cnpb'] = 1.0
+    tree_horzt_sub['CODCART'] = None
+
+    max_depth = tree_horzt_sub['nivel'].max()
+
+    #max_depth != max_depth pega o caso float('nan'), 
+    # pois que NaN eh o único valor que nao eh igual a si mesmo.
+    if max_depth is None or max_depth != max_depth:
+        return tree_horzt_sub
+
+    for i in range(0, max_depth + 1):
+        suffix = '' if i == 0 else f'_nivel_{i}'
+        isin_col = f"isin{suffix}"
+
+        tree_horzt_sub = tree_horzt_sub.merge(
+            port_submassa[mask_port][cols_port_submassa],
+            left_on=['dtposicao', 'cnpb', isin_col],
+            right_on=['dtposicao', 'CNPB', 'isin'],
+            how='left',
+            suffixes=('', f"_{suffix}"),
+            indicator=True,
+        )
+
+        mask_merge = (tree_horzt_sub['_merge'] == 'both')
+
+        tree_horzt_sub.loc[mask_merge, 'COD_SUBMASSA'] = tree_horzt_sub[f"COD_SUBMASSA_{suffix}"]
+        tree_horzt_sub.loc[mask_merge, 'SUBMASSA'] = tree_horzt_sub[f"SUBMASSA_{suffix}"]
+        tree_horzt_sub.loc[mask_merge, 'pct_submassa_isin_cnpb'] = tree_horzt_sub[f"pct_submassa_isin_cnpb_{suffix}"]
+        tree_horzt_sub.loc[mask_merge, 'CODCART'] = tree_horzt_sub[f"CODCART_{suffix}"]
+
+        tree_horzt_sub.drop(columns=['_merge'], inplace=True)
+
+    tree_horzt_sub['pct_submassa_isin_cnpb'] = tree_horzt_sub['pct_submassa_isin_cnpb'].astype(float).fillna(1.0)
+    mask_bsps = (tree_horzt_sub['SUBMASSA'].isna())
+    tree_horzt_sub.loc[mask_bsps, 'COD_SUBMASSA'] = '1'
+    tree_horzt_sub.loc[mask_bsps, 'SUBMASSA'] = 'BSPS'
+
+    return tree_horzt_sub

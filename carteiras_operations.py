@@ -109,3 +109,99 @@ def integrate_allocated_partplanprev(entity, allocated_partplanprev):
     entity['valor_calc'] = entity['valor_calc'].where(entity['flag_rateio'] != 1, 0)
 
     return entity
+
+
+def extract_portfolio_submassa(cad_submassa, portfolios):
+    """
+    Splits the portfolios DataFrame between rows that belong to a 'submassa'
+    (according to ``cad_submassa['CODCART']``) and the remaining rows, and
+    enriches the submassa subset with the registry columns from cad_submassa.
+
+    Parameters
+    ----------
+    cad_submassa : pandas.DataFrame
+        Registry of submassas. Must contain at least 'CODCART'.
+    portfolios : pandas.DataFrame
+        Portfolios DataFrame. Must contain 'codcart'.
+
+    Returns
+    -------
+    list[pandas.DataFrame]
+        ``[portfolios_without_submassa, port_submassa]`` where
+        ``port_submassa`` is the submassa-tagged subset enriched with the
+        cad_submassa columns.
+    """
+    mask = portfolios['codcart'].isin(cad_submassa['CODCART'])
+
+    port_submassa = portfolios.loc[mask].merge(
+        cad_submassa,
+        left_on='codcart',
+        right_on='CODCART',
+        how='left',
+    )
+
+    return [portfolios.loc[~mask], port_submassa]
+
+
+def compute_composition_portfolio_submassa(port_submassa):
+    """
+    Adds composition columns to ``port_submassa`` in-place:
+
+    - ``total_submassa_isin_cnpb``: sum of ``valor_calc`` per
+      (``dtposicao``, ``CNPB``, ``isin``).
+    - ``pct_submassa_isin_cnpb``: ratio of the row's ``valor_calc`` to the
+      group total.
+
+    Parameters
+    ----------
+    port_submassa : pandas.DataFrame
+        Submassa-tagged portfolios DataFrame, already enriched with the
+        cad_submassa registry columns.
+    """
+    port_submassa['total_submassa_isin_cnpb'] = (
+        port_submassa.groupby(['dtposicao', 'CNPB', 'isin'])['valor_calc'].transform('sum')
+    )
+
+    port_submassa['pct_submassa_isin_cnpb'] = (
+        port_submassa['valor_calc'] / port_submassa['total_submassa_isin_cnpb']
+    )
+
+
+def forward_fill_submassa_pct(port_submassa: pd.DataFrame,
+                              portfolios: pd.DataFrame) -> pd.DataFrame:
+    """
+    Expands ``port_submassa`` to every ``(CNPB, dtposicao)`` observed in
+    ``portfolios``, then forward-fills all non-key columns within each
+    ``(CNPB, isin, CODCART, COD_SUBMASSA)`` group (ordered by ``dtposicao``).
+    Dates before the first real observation for a group stay NaN.
+    """
+    group_cols = ['CNPB', 'isin', 'CODCART', 'COD_SUBMASSA']
+
+    if port_submassa.empty:
+        return port_submassa.copy()
+
+    calendar = (
+        portfolios[['cnpb', 'dtposicao']]
+        .dropna(subset=['cnpb'])
+        .drop_duplicates()
+        .rename(columns={'cnpb': 'CNPB'})
+    )
+
+    keys = port_submassa[group_cols].drop_duplicates()
+    skeleton = keys.merge(calendar, on='CNPB', how='inner')
+
+    result = skeleton.merge(
+        port_submassa,
+        on=group_cols + ['dtposicao'],
+        how='left',
+    )
+
+    result = result.sort_values(group_cols + ['dtposicao'])
+
+    cols_to_ffill = ['pct_submassa_isin_cnpb']
+    if cols_to_ffill:
+        result[cols_to_ffill] = (
+            result.groupby(group_cols, sort=False)[cols_to_ffill].ffill()
+        )
+
+    return result.reset_index(drop=True)

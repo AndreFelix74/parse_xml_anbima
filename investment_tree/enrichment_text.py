@@ -82,7 +82,7 @@ def enrich_text(tree_horzt):
 
     final_cols_base = [
         'NEW_TIPO', 'NEW_NOME_ATIVO', 'NEW_GESTOR_WORD_CLOUD',
-        'fEMISSOR.NOME_EMISSOR', 'fNUMERACA.TIPO_ATIVO', 'fNUMERACA.DESCRICAO'
+        'fEMISSOR.NOME_EMISSOR', 'fNUMERACA.TIPO_ATIVO', 'fNUMERACA.DESCRICAO', 'coupom', 'indexador', 'caracteristica'
     ]
     for col_base in final_cols_base:
         create_column_based_on_levels(tree_horzt, f"{col_base}_FINAL", col_base, max_depth)
